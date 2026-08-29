@@ -15,7 +15,7 @@ from app.ml.validation import walk_forward, evaluate_predictions
 
 
 # Binance Futures API endpoints.
-# If one endpoint returns 418, HHHAI can try another endpoint.
+# If one endpoint returns 418, HHHAI moves to the next endpoint.
 BINANCE_KLINES_HOSTS = [
     "https://fapi.binance.com",
     "https://fapi1.binance.com",
@@ -80,11 +80,63 @@ def _request_binance_batch(
 
                 response.raise_for_status()
 
-                data = response.json()
+                # Do not blindly call response.json().
+                # Binance/Cloudflare can occasionally return an empty
+                # or non-JSON response even with a successful HTTP code.
+                content_type = response.headers.get(
+                    "content-type",
+                    "",
+                ).lower()
+
+                body = response.text.strip()
+
+                if not body:
+                    last_error = RuntimeError(
+                        f"Binance returned an empty response from "
+                        f"{url} (HTTP {response.status_code})."
+                    )
+
+                    if attempt + 1 < BINANCE_RETRIES_PER_HOST:
+                        time.sleep(1.0 + attempt)
+                        continue
+
+                    break
+
+                # Binance normally returns JSON. If the response is
+                # HTML/text from an upstream proxy or Cloudflare,
+                # retry rather than raising an unclear JSONDecodeError.
+                if "application/json" not in content_type:
+                    last_error = RuntimeError(
+                        f"Binance returned a non-JSON response from "
+                        f"{url} (HTTP {response.status_code}, "
+                        f"content-type={content_type!r}, "
+                        f"body={body[:500]!r})."
+                    )
+
+                    if attempt + 1 < BINANCE_RETRIES_PER_HOST:
+                        time.sleep(1.0 + attempt)
+                        continue
+
+                    break
+
+                try:
+                    data = response.json()
+                except ValueError as exc:
+                    last_error = RuntimeError(
+                        f"Binance returned invalid JSON from "
+                        f"{url}: {body[:500]!r}"
+                    )
+
+                    if attempt + 1 < BINANCE_RETRIES_PER_HOST:
+                        time.sleep(1.0 + attempt)
+                        continue
+
+                    raise last_error from exc
 
                 if not isinstance(data, list):
                     raise RuntimeError(
-                        "Binance returned an unexpected candle response."
+                        f"Binance returned an unexpected candle "
+                        f"response from {url}: {str(data)[:500]!r}"
                     )
 
                 return data
@@ -116,8 +168,7 @@ def _request_binance_batch(
 
                 break
 
-            except ValueError as exc:
-                # Invalid JSON response.
+            except RuntimeError as exc:
                 last_error = exc
 
                 if attempt + 1 < BINANCE_RETRIES_PER_HOST:
