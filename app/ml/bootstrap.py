@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -15,11 +14,105 @@ from app.ml.predictive import FEATURES, predictive_model
 from app.ml.validation import walk_forward, evaluate_predictions
 
 
-BINANCE_KLINES = "https://fapi.binance.com/fapi/v1/klines"
+# Binance Futures API endpoints.
+# If one endpoint returns 418, HHHAI can try another endpoint.
+BINANCE_KLINES_HOSTS = [
+    "https://fapi.binance.com",
+    "https://fapi1.binance.com",
+    "https://fapi2.binance.com",
+    "https://fapi3.binance.com",
+]
 
-# Binance allows large requests, but smaller batches are more reliable,
-# especially when the deployment IP has recently received a rate-limit response.
+BINANCE_KLINES_PATH = "/fapi/v1/klines"
+
+# Keep individual requests comfortably below Binance's maximum.
 BINANCE_BATCH_SIZE = 500
+
+# Maximum number of attempts against a single endpoint.
+BINANCE_RETRIES_PER_HOST = 2
+
+
+def _request_binance_batch(
+    client: httpx.Client,
+    symbol: str,
+    interval: str,
+    limit: int,
+    end_time: int | None,
+) -> list[list[Any]]:
+    """
+    Request one Binance Futures candle batch.
+
+    A 418 response means the current Binance route/IP has been rejected.
+    In that situation the caller can move to another Binance endpoint.
+    """
+
+    params: dict[str, Any] = {
+        "symbol": symbol.upper(),
+        "interval": interval,
+        "limit": min(BINANCE_BATCH_SIZE, limit),
+    }
+
+    if end_time is not None:
+        params["endTime"] = end_time
+
+    last_error: Exception | None = None
+
+    for host in BINANCE_KLINES_HOSTS:
+        url = f"{host}{BINANCE_KLINES_PATH}"
+
+        for attempt in range(BINANCE_RETRIES_PER_HOST):
+            try:
+                response = client.get(url, params=params)
+
+                # Binance 418 = temporary IP/rate-limit rejection.
+                # Do not keep hammering the same endpoint.
+                if response.status_code == 418:
+                    last_error = httpx.HTTPStatusError(
+                        "Binance returned HTTP 418 (rate-limit/IP restriction)",
+                        request=response.request,
+                        response=response,
+                    )
+
+                    # Brief pause before trying another route.
+                    time.sleep(1.0 + attempt)
+
+                    # Move immediately to the next Binance endpoint.
+                    break
+
+                response.raise_for_status()
+
+                data = response.json()
+
+                if not isinstance(data, list):
+                    raise RuntimeError(
+                        "Binance returned an unexpected candle response."
+                    )
+
+                return data
+
+            except httpx.HTTPStatusError as exc:
+                last_error = exc
+
+                # For ordinary HTTP errors, retry this endpoint once.
+                if response.status_code != 418 and attempt + 1 < BINANCE_RETRIES_PER_HOST:
+                    time.sleep(1.0 + attempt)
+                    continue
+
+                break
+
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_error = exc
+
+                if attempt + 1 < BINANCE_RETRIES_PER_HOST:
+                    time.sleep(1.0 + attempt)
+                    continue
+
+                break
+
+    if last_error is not None:
+        raise last_error
+
+    raise RuntimeError("Unable to retrieve Binance market data.")
 
 
 def fetch_binance_klines(
@@ -28,11 +121,14 @@ def fetch_binance_klines(
     limit: int = 1500,
 ) -> list[list[Any]]:
     """
-    Fetch historical Binance futures candles in smaller batches.
+    Fetch historical Binance Futures candles in multiple small batches.
 
-    The returned candles are ordered from oldest to newest and limited
-    to the requested number of candles.
+    The result is:
+        - ordered oldest -> newest
+        - duplicate-free
+        - limited to the requested number of candles
     """
+
     requested = max(500, min(1500, int(limit)))
     symbol = symbol.upper()
 
@@ -52,77 +148,49 @@ def fetch_binance_klines(
     ) as client:
 
         while len(all_klines) < requested:
-            batch_limit = min(BINANCE_BATCH_SIZE, requested - len(all_klines))
+            remaining = requested - len(all_klines)
+            batch_limit = min(BINANCE_BATCH_SIZE, remaining)
 
-            params: dict[str, Any] = {
-                "symbol": symbol,
-                "interval": interval,
-                "limit": batch_limit,
-            }
+            batch = _request_binance_batch(
+                client=client,
+                symbol=symbol,
+                interval=interval,
+                limit=batch_limit,
+                end_time=end_time,
+            )
 
-            if end_time is not None:
-                params["endTime"] = end_time
-
-            last_error: Exception | None = None
-            response: httpx.Response | None = None
-
-            # Retry temporary Binance/Cloudflare responses.
-            for attempt in range(4):
-                try:
-                    response = client.get(BINANCE_KLINES, params=params)
-
-                    if response.status_code == 418:
-                        # Binance has temporarily rejected the IP.
-                        # Wait progressively longer before retrying.
-                        wait_seconds = 2 ** attempt
-                        time.sleep(wait_seconds)
-                        continue
-
-                    response.raise_for_status()
-                    break
-
-                except httpx.HTTPError as exc:
-                    last_error = exc
-
-                    if attempt < 3:
-                        time.sleep(2 ** attempt)
-                    else:
-                        raise
-
-            if response is None:
-                if last_error is not None:
-                    raise last_error
-                raise RuntimeError("Binance returned no response.")
-
-            response.raise_for_status()
-
-            batch = response.json()
-
-            if not isinstance(batch, list) or not batch:
+            if not batch:
                 break
 
+            # We are walking backwards through history.
+            # Prepend the older batch to the existing candles.
             all_klines = batch + all_klines
 
-            # If fewer candles than requested were returned, there is
-            # nothing more to fetch.
+            # If Binance returned fewer candles than requested,
+            # there are no more historical candles needed.
             if len(batch) < batch_limit:
                 break
 
-            # Fetch the previous batch before the earliest candle.
+            # The first candle is now the oldest candle in this batch.
             earliest_open_time = int(batch[0][0])
+
+            # Next request must end immediately before this candle.
             end_time = earliest_open_time - 1
 
-            # Small delay between requests to reduce rate-limit pressure.
+            # Avoid unnecessarily aggressive requests.
             time.sleep(0.25)
 
-    # Remove duplicate candles by open timestamp.
+    # Remove duplicates by candle open timestamp.
     unique: dict[int, list[Any]] = {}
 
     for row in all_klines:
         if row:
             unique[int(row[0])] = row
 
-    result = sorted(unique.values(), key=lambda row: int(row[0]))
+    result = sorted(
+        unique.values(),
+        key=lambda row: int(row[0]),
+    )
 
     return result[-requested:]
 
@@ -132,6 +200,7 @@ def build_dataset(
     horizon: int = 6,
     threshold: float = 0.0025,
 ) -> list[dict[str, Any]]:
+
     candles = []
 
     for row in klines:
