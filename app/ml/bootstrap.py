@@ -42,8 +42,8 @@ def _request_binance_batch(
     """
     Request one Binance Futures candle batch.
 
-    A 418 response means the current Binance route/IP has been rejected.
-    In that situation the caller can move to another Binance endpoint.
+    If one Binance endpoint returns HTTP 418, HHHAI moves to
+    the next endpoint instead of repeatedly hitting the blocked route.
     """
 
     params: dict[str, Any] = {
@@ -64,19 +64,18 @@ def _request_binance_batch(
             try:
                 response = client.get(url, params=params)
 
-                # Binance 418 = temporary IP/rate-limit rejection.
-                # Do not keep hammering the same endpoint.
+                # Binance 418 means the current route/IP has
+                # temporarily been rejected.
                 if response.status_code == 418:
                     last_error = httpx.HTTPStatusError(
-                        "Binance returned HTTP 418 (rate-limit/IP restriction)",
+                        "Binance returned HTTP 418 "
+                        "(rate-limit/IP restriction)",
                         request=response.request,
                         response=response,
                     )
 
-                    # Brief pause before trying another route.
+                    # Do not keep retrying a blocked route.
                     time.sleep(1.0 + attempt)
-
-                    # Move immediately to the next Binance endpoint.
                     break
 
                 response.raise_for_status()
@@ -93,14 +92,32 @@ def _request_binance_batch(
             except httpx.HTTPStatusError as exc:
                 last_error = exc
 
-                # For ordinary HTTP errors, retry this endpoint once.
-                if response.status_code != 418 and attempt + 1 < BINANCE_RETRIES_PER_HOST:
+                # A 418 should move immediately to the next host.
+                if (
+                    exc.response is not None
+                    and exc.response.status_code == 418
+                ):
+                    break
+
+                # Retry ordinary HTTP errors on the same host.
+                if attempt + 1 < BINANCE_RETRIES_PER_HOST:
                     time.sleep(1.0 + attempt)
                     continue
 
                 break
 
             except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_error = exc
+
+                # Retry temporary network failures.
+                if attempt + 1 < BINANCE_RETRIES_PER_HOST:
+                    time.sleep(1.0 + attempt)
+                    continue
+
+                break
+
+            except ValueError as exc:
+                # Invalid JSON response.
                 last_error = exc
 
                 if attempt + 1 < BINANCE_RETRIES_PER_HOST:
@@ -112,7 +129,9 @@ def _request_binance_batch(
     if last_error is not None:
         raise last_error
 
-    raise RuntimeError("Unable to retrieve Binance market data.")
+    raise RuntimeError(
+        "Unable to retrieve Binance market data from any endpoint."
+    )
 
 
 def fetch_binance_klines(
@@ -200,8 +219,17 @@ def build_dataset(
     horizon: int = 6,
     threshold: float = 0.0025,
 ) -> list[dict[str, Any]]:
+    """
+    Convert OHLCV candles into supervised-learning examples.
 
-    candles = []
+    Each example contains:
+        - timestamp
+        - engineered features
+        - future-direction label
+        - realized future return
+    """
+
+    candles: list[dict[str, Any]] = []
 
     for row in klines:
         candles.append({
@@ -256,6 +284,10 @@ def build_dataset(
             else 0.0
         )
 
+        # Three-class target:
+        #  1  = price rises beyond threshold
+        #  0  = neutral
+        # -1  = price falls beyond threshold
         label = (
             1
             if future > threshold
@@ -266,20 +298,42 @@ def build_dataset(
 
         features = {
             "return_1": returns[-1] if returns else 0.0,
+
             "range_pct": (
                 (last["high"] - last["low"]) / last["close"]
                 if last["close"]
                 else 0.0
             ),
+
             "volume_change": vol_change,
+
+            # These values are placeholders during bootstrap.
+            # They can later be populated by the live intelligence
+            # and market-data components.
             "order_book_imbalance": 0.0,
             "funding_rate": 0.0,
             "open_interest_change": 0.0,
             "news_risk": 0.0,
             "news_sentiment": 0.0,
-            "volatility_proxy": min(1.0, vol * 10),
-            "trend_strength": min(1.0, abs(mean_ret) * 80),
-            "momentum": max(-1.0, min(1.0, mean_ret * 40)),
+
+            "volatility_proxy": min(
+                1.0,
+                vol * 10,
+            ),
+
+            "trend_strength": min(
+                1.0,
+                abs(mean_ret) * 80,
+            ),
+
+            "momentum": max(
+                -1.0,
+                min(
+                    1.0,
+                    mean_ret * 40,
+                ),
+            ),
+
             "liquidity_stress": 0.0,
         }
 
@@ -297,10 +351,24 @@ def validate_and_promote(
     rows: list[dict[str, Any]],
     version: str = "bootstrap",
 ) -> dict[str, Any]:
+    """
+    Validate a candidate model using walk-forward testing.
+
+    The model is promoted only when:
+        - accuracy >= 52%
+        - balanced accuracy >= 50%
+        - average simulated return > 0
+    """
 
     folds = walk_forward(
         rows,
-        min_train=max(300, min(700, len(rows) // 2)),
+        min_train=max(
+            300,
+            min(
+                700,
+                len(rows) // 2,
+            ),
+        ),
         test_size=100,
         step=100,
     )
@@ -308,55 +376,102 @@ def validate_and_promote(
     if not folds:
         return {
             "status": "REJECTED",
-            "reason": "Not enough historical rows for walk-forward validation.",
+            "reason": (
+                "Not enough historical rows "
+                "for walk-forward validation."
+            ),
             "rows": len(rows),
         }
 
-    fold_reports = []
+    fold_reports: list[dict[str, Any]] = []
+
     predictions: list[tuple[int, int, float]] = []
 
     for fold in folds:
         model = Pipeline([
-            ("scale", StandardScaler()),
-            ("clf", LogisticRegression(max_iter=500)),
+            (
+                "scale",
+                StandardScaler(),
+            ),
+            (
+                "clf",
+                LogisticRegression(
+                    max_iter=500,
+                ),
+            ),
         ])
 
         X = [
-            [r["features"].get(k, 0.0) for k in FEATURES]
+            [
+                r["features"].get(
+                    k,
+                    0.0,
+                )
+                for k in FEATURES
+            ]
             for r in fold.train
         ]
 
-        y = [r["label"] for r in fold.train]
+        y = [
+            r["label"]
+            for r in fold.train
+        ]
 
+        # A three-class classifier requires all three
+        # target classes in the training data.
         if len(set(y)) < 3:
             continue
 
         model.fit(X, y)
 
         Xtest = [
-            [r["features"].get(k, 0.0) for k in FEATURES]
+            [
+                r["features"].get(
+                    k,
+                    0.0,
+                )
+                for k in FEATURES
+            ]
             for r in fold.test
         ]
 
         pred = model.predict(Xtest)
         probs = model.predict_proba(Xtest)
 
-        for r, p, prob in zip(fold.test, pred, probs):
-            confidence = float(max(prob))
-            realized = float(r["outcome_return"])
+        actual_labels = [
+            r["label"]
+            for r in fold.test
+        ]
 
-            trade_return = (
-                realized
-                if confidence >= 0.55 and int(p) == r["label"]
-                else (
-                    -abs(realized)
-                    if confidence >= 0.55
-                    else 0.0
-                )
+        for r, p, prob in zip(
+            fold.test,
+            pred,
+            probs,
+        ):
+            confidence = float(
+                max(prob)
             )
 
+            realized = float(
+                r["outcome_return"]
+            )
+
+            # Only simulate a trade when the model
+            # has sufficient confidence.
+            if confidence >= 0.55:
+                if int(p) == r["label"]:
+                    trade_return = realized
+                else:
+                    trade_return = -abs(realized)
+            else:
+                trade_return = 0.0
+
             predictions.append(
-                (r["label"], int(p), trade_return)
+                (
+                    r["label"],
+                    int(p),
+                    trade_return,
+                )
             )
 
         fold_reports.append({
@@ -365,17 +480,37 @@ def validate_and_promote(
             "accuracy": float(
                 np.mean(
                     np.asarray(pred)
-                    == np.asarray(
-                        [r["label"] for r in fold.test]
-                    )
+                    == np.asarray(actual_labels)
                 )
             ),
         })
 
-    metrics = evaluate_predictions(predictions)
+    # It is possible for some folds to be skipped because
+    # their training data does not contain all three classes.
+    if not predictions:
+        return {
+            "status": "REJECTED",
+            "version": predictive_model.version,
+            "reason": (
+                "No valid walk-forward predictions "
+                "were produced."
+            ),
+            "rows": len(rows),
+            "folds": len(fold_reports),
+            "folds_detail": fold_reports,
+        }
 
-    metrics["folds"] = len(fold_reports)
-    metrics["folds_detail"] = fold_reports
+    metrics = evaluate_predictions(
+        predictions
+    )
+
+    metrics["folds"] = len(
+        fold_reports
+    )
+
+    metrics["folds_detail"] = (
+        fold_reports
+    )
 
     if (
         metrics["accuracy"] < 0.52
@@ -388,10 +523,15 @@ def validate_and_promote(
             "metrics": metrics,
         }
 
+    # Promote only after the candidate has passed
+    # the walk-forward validation gate.
     predictive_model.train(
         rows,
         version=version,
-        min_rows=max(1, len(rows)),
+        min_rows=max(
+            1,
+            len(rows),
+        ),
     )
 
     return {
