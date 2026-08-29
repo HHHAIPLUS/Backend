@@ -14,22 +14,28 @@ from app.ml.predictive import FEATURES, predictive_model
 from app.ml.validation import walk_forward, evaluate_predictions
 
 
-# Binance Futures API endpoints.
-# If one endpoint returns 418, HHHAI moves to the next endpoint.
+# Binance Futures REST endpoints.
+#
+# HHHAI tries these independently because a deployment IP may be
+# temporarily rejected by one Binance route while another route works.
 BINANCE_KLINES_HOSTS = [
     "https://fapi.binance.com",
     "https://fapi1.binance.com",
     "https://fapi2.binance.com",
     "https://fapi3.binance.com",
+    "https://fapi4.binance.com",
 ]
 
 BINANCE_KLINES_PATH = "/fapi/v1/klines"
 
-# Keep individual requests comfortably below Binance's maximum.
+# Keep individual requests well below Binance's maximum.
 BINANCE_BATCH_SIZE = 500
 
-# Maximum number of attempts against a single endpoint.
+# Maximum retries for temporary network/HTTP failures on one endpoint.
 BINANCE_RETRIES_PER_HOST = 2
+
+# Small delay between historical-data requests.
+BINANCE_REQUEST_DELAY = 0.25
 
 
 def _request_binance_batch(
@@ -42,14 +48,21 @@ def _request_binance_batch(
     """
     Request one Binance Futures candle batch.
 
-    If one Binance endpoint returns HTTP 418, HHHAI moves to
-    the next endpoint instead of repeatedly hitting the blocked route.
+    A Binance route is considered unusable when it returns:
+        - HTTP 418
+        - HTTP 202 with an empty body
+        - any other empty response
+        - a non-JSON response
+        - invalid JSON
+        - JSON that is not a list
+
+    In those situations HHHAI moves to the next Binance endpoint.
     """
 
     params: dict[str, Any] = {
         "symbol": symbol.upper(),
         "interval": interval,
-        "limit": min(BINANCE_BATCH_SIZE, limit),
+        "limit": min(BINANCE_BATCH_SIZE, max(1, int(limit))),
     }
 
     if end_time is not None:
@@ -61,39 +74,66 @@ def _request_binance_batch(
         url = f"{host}{BINANCE_KLINES_PATH}"
 
         for attempt in range(BINANCE_RETRIES_PER_HOST):
+            response: httpx.Response | None = None
+
             try:
-                response = client.get(url, params=params)
+                response = client.get(
+                    url,
+                    params=params,
+                )
 
-                # Binance 418 means the current route/IP has
-                # temporarily been rejected.
-                if response.status_code == 418:
-                    last_error = httpx.HTTPStatusError(
-                        "Binance returned HTTP 418 "
-                        "(rate-limit/IP restriction)",
-                        request=response.request,
-                        response=response,
-                    )
-
-                    # Do not keep retrying a blocked route.
-                    time.sleep(1.0 + attempt)
-                    break
-
-                response.raise_for_status()
-
-                # Do not blindly call response.json().
-                # Binance/Cloudflare can occasionally return an empty
-                # or non-JSON response even with a successful HTTP code.
+                status = response.status_code
+                body = response.text.strip()
                 content_type = response.headers.get(
                     "content-type",
                     "",
                 ).lower()
 
-                body = response.text.strip()
-
-                if not body:
+                # ---------------------------------------------------------
+                # HTTP 418
+                # ---------------------------------------------------------
+                # Binance may temporarily reject the deployment IP.
+                # Do not continue hammering the same endpoint.
+                if status == 418:
                     last_error = RuntimeError(
-                        f"Binance returned an empty response from "
-                        f"{url} (HTTP {response.status_code})."
+                        f"Binance returned HTTP 418 from {url} "
+                        f"(rate-limit/IP restriction)."
+                    )
+
+                    time.sleep(1.0 + attempt)
+
+                    # Immediately move to the next endpoint.
+                    break
+
+                # ---------------------------------------------------------
+                # HTTP 202
+                # ---------------------------------------------------------
+                # A 202 with no usable body is not valid candle data.
+                # Treat the endpoint as unusable and move on.
+                if status == 202:
+                    if not body:
+                        last_error = RuntimeError(
+                            f"Binance returned an empty response from "
+                            f"{url} (HTTP 202)."
+                        )
+                    else:
+                        last_error = RuntimeError(
+                            f"Binance returned HTTP 202 from {url} "
+                            f"with an unexpected response: "
+                            f"{body[:500]!r}"
+                        )
+
+                    # Do not repeatedly retry the same route.
+                    break
+
+                # ---------------------------------------------------------
+                # Other HTTP errors
+                # ---------------------------------------------------------
+                if status >= 400:
+                    last_error = httpx.HTTPStatusError(
+                        f"Binance HTTP error {status} from {url}",
+                        request=response.request,
+                        response=response,
                     )
 
                     if attempt + 1 < BINANCE_RETRIES_PER_HOST:
@@ -102,66 +142,114 @@ def _request_binance_batch(
 
                     break
 
-                # Binance normally returns JSON. If the response is
-                # HTML/text from an upstream proxy or Cloudflare,
-                # retry rather than raising an unclear JSONDecodeError.
-                if "application/json" not in content_type:
+                # ---------------------------------------------------------
+                # Empty response
+                # ---------------------------------------------------------
+                if not body:
+                    last_error = RuntimeError(
+                        f"Binance returned an empty response from "
+                        f"{url} (HTTP {status})."
+                    )
+
+                    # An empty successful response is not usable.
+                    # Move to the next endpoint.
+                    break
+
+                # ---------------------------------------------------------
+                # Content type
+                # ---------------------------------------------------------
+                # Binance normally returns application/json.
+                #
+                # Some upstream proxies may omit the exact content type,
+                # so application/json is preferred but we still allow
+                # a JSON-looking body.
+                looks_like_json = (
+                    body.startswith("[")
+                    or body.startswith("{")
+                )
+
+                if (
+                    "application/json" not in content_type
+                    and not looks_like_json
+                ):
                     last_error = RuntimeError(
                         f"Binance returned a non-JSON response from "
-                        f"{url} (HTTP {response.status_code}, "
+                        f"{url} (HTTP {status}, "
                         f"content-type={content_type!r}, "
                         f"body={body[:500]!r})."
                     )
 
-                    if attempt + 1 < BINANCE_RETRIES_PER_HOST:
-                        time.sleep(1.0 + attempt)
-                        continue
-
+                    # Move to another endpoint.
                     break
 
+                # ---------------------------------------------------------
+                # JSON decoding
+                # ---------------------------------------------------------
                 try:
                     data = response.json()
                 except ValueError as exc:
                     last_error = RuntimeError(
-                        f"Binance returned invalid JSON from "
-                        f"{url}: {body[:500]!r}"
+                        f"Binance returned invalid JSON from {url}: "
+                        f"{body[:500]!r}"
                     )
 
                     if attempt + 1 < BINANCE_RETRIES_PER_HOST:
                         time.sleep(1.0 + attempt)
                         continue
 
-                    raise last_error from exc
+                    break
 
+                # ---------------------------------------------------------
+                # Validate candle payload
+                # ---------------------------------------------------------
                 if not isinstance(data, list):
-                    raise RuntimeError(
-                        f"Binance returned an unexpected candle "
-                        f"response from {url}: {str(data)[:500]!r}"
+                    last_error = RuntimeError(
+                        f"Binance returned an unexpected candle response "
+                        f"from {url}: {str(data)[:500]!r}"
                     )
+
+                    break
+
+                if not data:
+                    last_error = RuntimeError(
+                        f"Binance returned an empty candle list from "
+                        f"{url}."
+                    )
+
+                    break
+
+                # Basic validation of the first candle.
+                if not isinstance(data[0], list) or len(data[0]) < 6:
+                    last_error = RuntimeError(
+                        f"Binance returned malformed candle data from "
+                        f"{url}: {str(data[0])[:500]!r}"
+                    )
+
+                    break
 
                 return data
 
-            except httpx.HTTPStatusError as exc:
+            except httpx.TimeoutException as exc:
                 last_error = exc
 
-                # A 418 should move immediately to the next host.
-                if (
-                    exc.response is not None
-                    and exc.response.status_code == 418
-                ):
-                    break
-
-                # Retry ordinary HTTP errors on the same host.
                 if attempt + 1 < BINANCE_RETRIES_PER_HOST:
                     time.sleep(1.0 + attempt)
                     continue
 
                 break
 
-            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            except httpx.NetworkError as exc:
                 last_error = exc
 
-                # Retry temporary network failures.
+                if attempt + 1 < BINANCE_RETRIES_PER_HOST:
+                    time.sleep(1.0 + attempt)
+                    continue
+
+                break
+
+            except httpx.HTTPStatusError as exc:
+                last_error = exc
+
                 if attempt + 1 < BINANCE_RETRIES_PER_HOST:
                     time.sleep(1.0 + attempt)
                     continue
@@ -171,10 +259,8 @@ def _request_binance_batch(
             except RuntimeError as exc:
                 last_error = exc
 
-                if attempt + 1 < BINANCE_RETRIES_PER_HOST:
-                    time.sleep(1.0 + attempt)
-                    continue
-
+                # Data/route problems should move to another endpoint
+                # instead of repeatedly requesting the same bad response.
                 break
 
     if last_error is not None:
@@ -199,10 +285,22 @@ def fetch_binance_klines(
         - limited to the requested number of candles
     """
 
-    requested = max(500, min(1500, int(limit)))
-    symbol = symbol.upper()
+    requested = max(
+        BINANCE_BATCH_SIZE,
+        min(1500, int(limit)),
+    )
+
+    symbol = symbol.upper().strip()
+
+    if not symbol:
+        raise ValueError("Symbol cannot be empty.")
+
+    if not interval:
+        raise ValueError("Interval cannot be empty.")
 
     all_klines: list[list[Any]] = []
+
+    # We walk backwards from the newest available candle.
     end_time: int | None = None
 
     headers = {
@@ -219,7 +317,11 @@ def fetch_binance_klines(
 
         while len(all_klines) < requested:
             remaining = requested - len(all_klines)
-            batch_limit = min(BINANCE_BATCH_SIZE, remaining)
+
+            batch_limit = min(
+                BINANCE_BATCH_SIZE,
+                remaining,
+            )
 
             batch = _request_binance_batch(
                 client=client,
@@ -233,36 +335,56 @@ def fetch_binance_klines(
                 break
 
             # We are walking backwards through history.
-            # Prepend the older batch to the existing candles.
+            # Prepend the older batch.
             all_klines = batch + all_klines
 
             # If Binance returned fewer candles than requested,
-            # there are no more historical candles needed.
+            # there is no need to request another historical batch.
             if len(batch) < batch_limit:
                 break
 
-            # The first candle is now the oldest candle in this batch.
-            earliest_open_time = int(batch[0][0])
+            # Find the earliest candle in this batch.
+            try:
+                earliest_open_time = int(batch[0][0])
+            except (TypeError, ValueError, IndexError) as exc:
+                raise RuntimeError(
+                    "Binance returned malformed candle timestamps."
+                ) from exc
 
-            # Next request must end immediately before this candle.
+            # The next request must end immediately before this candle.
             end_time = earliest_open_time - 1
 
-            # Avoid unnecessarily aggressive requests.
-            time.sleep(0.25)
+            time.sleep(BINANCE_REQUEST_DELAY)
 
+    # -------------------------------------------------------------
     # Remove duplicates by candle open timestamp.
+    # -------------------------------------------------------------
     unique: dict[int, list[Any]] = {}
 
     for row in all_klines:
-        if row:
-            unique[int(row[0])] = row
+        if not row:
+            continue
+
+        try:
+            timestamp = int(row[0])
+        except (TypeError, ValueError, IndexError):
+            continue
+
+        unique[timestamp] = row
 
     result = sorted(
         unique.values(),
         key=lambda row: int(row[0]),
     )
 
-    return result[-requested:]
+    result = result[-requested:]
+
+    if not result:
+        raise RuntimeError(
+            "Binance returned no usable historical candles."
+        )
+
+    return result
 
 
 def build_dataset(
@@ -280,34 +402,69 @@ def build_dataset(
         - realized future return
     """
 
+    if len(klines) < 50:
+        raise ValueError(
+            f"Not enough candles to build the dataset: {len(klines)}."
+        )
+
+    if horizon <= 0:
+        raise ValueError("Horizon must be greater than zero.")
+
+    if threshold <= 0:
+        raise ValueError("Threshold must be greater than zero.")
+
     candles: list[dict[str, Any]] = []
 
     for row in klines:
-        candles.append({
-            "observed_at": datetime.fromtimestamp(
-                int(row[0]) / 1000,
-                timezone.utc,
-            ).isoformat(),
-            "open": float(row[1]),
-            "high": float(row[2]),
-            "low": float(row[3]),
-            "close": float(row[4]),
-            "volume": float(row[5]),
-        })
+        if len(row) < 6:
+            continue
+
+        try:
+            candles.append({
+                "observed_at": datetime.fromtimestamp(
+                    int(row[0]) / 1000,
+                    timezone.utc,
+                ).isoformat(),
+                "open": float(row[1]),
+                "high": float(row[2]),
+                "low": float(row[3]),
+                "close": float(row[4]),
+                "volume": float(row[5]),
+            })
+        except (TypeError, ValueError, IndexError):
+            continue
+
+    if len(candles) < 50:
+        raise ValueError(
+            "Not enough valid OHLCV candles after validation."
+        )
 
     rows: list[dict[str, Any]] = []
 
     lookback = 24
 
-    for i in range(lookback, len(candles) - horizon):
-        window = candles[i - lookback:i + 1]
+    if len(candles) <= lookback + horizon:
+        raise ValueError(
+            "Not enough candles for the requested lookback and horizon."
+        )
+
+    for i in range(
+        lookback,
+        len(candles) - horizon,
+    ):
+        window = candles[
+            i - lookback:i + 1
+        ]
 
         last = window[-1]
         prev = window[-2]
 
         returns = [
             window[j]["close"] / window[j - 1]["close"] - 1
-            for j in range(1, len(window))
+            for j in range(
+                1,
+                len(window),
+            )
             if window[j - 1]["close"]
         ]
 
@@ -336,6 +493,7 @@ def build_dataset(
         )
 
         # Three-class target:
+        #
         #  1  = price rises beyond threshold
         #  0  = neutral
         # -1  = price falls beyond threshold
@@ -348,19 +506,26 @@ def build_dataset(
         )
 
         features = {
-            "return_1": returns[-1] if returns else 0.0,
+            "return_1": (
+                returns[-1]
+                if returns
+                else 0.0
+            ),
 
             "range_pct": (
-                (last["high"] - last["low"]) / last["close"]
+                (last["high"] - last["low"])
+                / last["close"]
                 if last["close"]
                 else 0.0
             ),
 
             "volume_change": vol_change,
 
-            # These values are placeholders during bootstrap.
-            # They can later be populated by the live intelligence
-            # and market-data components.
+            # These are intentionally neutral during historical
+            # bootstrap because these values are not contained in
+            # the OHLCV candle payload.
+            #
+            # The live intelligence layer can populate them later.
             "order_book_imbalance": 0.0,
             "funding_rate": 0.0,
             "open_interest_change": 0.0,
@@ -395,6 +560,11 @@ def build_dataset(
             "outcome_return": future,
         })
 
+    if not rows:
+        raise ValueError(
+            "Dataset construction produced zero training rows."
+        )
+
     return rows
 
 
@@ -410,6 +580,13 @@ def validate_and_promote(
         - balanced accuracy >= 50%
         - average simulated return > 0
     """
+
+    if not rows:
+        return {
+            "status": "REJECTED",
+            "reason": "No training rows were supplied.",
+            "rows": 0,
+        }
 
     folds = walk_forward(
         rows,
@@ -468,8 +645,8 @@ def validate_and_promote(
             for r in fold.train
         ]
 
-        # A three-class classifier requires all three
-        # target classes in the training data.
+        # A three-class classifier needs all three
+        # classes in the training data.
         if len(set(y)) < 3:
             continue
 
@@ -507,8 +684,8 @@ def validate_and_promote(
                 r["outcome_return"]
             )
 
-            # Only simulate a trade when the model
-            # has sufficient confidence.
+            # Only simulate a trade when confidence
+            # reaches the configured threshold.
             if confidence >= 0.55:
                 if int(p) == r["label"]:
                     trade_return = realized
@@ -536,8 +713,8 @@ def validate_and_promote(
             ),
         })
 
-    # It is possible for some folds to be skipped because
-    # their training data does not contain all three classes.
+    # Every fold may be skipped if its training data
+    # does not contain all three target classes.
     if not predictions:
         return {
             "status": "REJECTED",
@@ -563,6 +740,7 @@ def validate_and_promote(
         fold_reports
     )
 
+    # Promotion gate.
     if (
         metrics["accuracy"] < 0.52
         or metrics["balanced_accuracy"] < 0.50
@@ -574,8 +752,7 @@ def validate_and_promote(
             "metrics": metrics,
         }
 
-    # Promote only after the candidate has passed
-    # the walk-forward validation gate.
+    # Promote only after passing walk-forward validation.
     predictive_model.train(
         rows,
         version=version,
