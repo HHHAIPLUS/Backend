@@ -407,7 +407,7 @@ def _request_binance_batch(
 def fetch_binance_klines(
     symbol: str,
     interval: str = "5m",
-    limit: int = 1500,
+    limit: int = 10000,
 ) -> list[list[Any]]:
     """
     Fetch historical Binance Futures candles.
@@ -421,7 +421,7 @@ def fetch_binance_klines(
     requested = max(
         BINANCE_BATCH_SIZE,
         min(
-            1500,
+            10000,
             int(limit),
         ),
     )
@@ -870,7 +870,7 @@ def _request_bitget_batch(
 def fetch_bitget_klines(
     symbol: str,
     interval: str = "5m",
-    limit: int = 1500,
+    limit: int = 10000,
 ) -> list[list[Any]]:
     """
     Fetch historical Bitget USDT-M Futures candles.
@@ -882,7 +882,7 @@ def fetch_bitget_klines(
     requested = max(
         BITGET_BATCH_SIZE,
         min(
-            1500,
+            10000,
             int(limit),
         ),
     )
@@ -1003,7 +1003,7 @@ def fetch_bitget_klines(
 def fetch_historical_klines(
     symbol: str,
     interval: str = "5m",
-    limit: int = 1500,
+    limit: int = 10000,
 ) -> tuple[list[list[Any]], str]:
     """
     Fetch historical candles using provider fallback.
