@@ -19,8 +19,7 @@ def _realtime(exchange: str, symbol: str):
 
 
 def _bars(exchange: str, symbol: str) -> dict[str, list[MarketBar]]:
-    source = provider(exchange)
-    result: dict[str, list[MarketBar]] = {}
+    source = provider(exchange); result: dict[str, list[MarketBar]] = {}
     for frame in ("1m", "5m", "15m", "1H"):
         try: result[frame] = source.candles(symbol, interval=frame, limit=200)
         except Exception: result[frame] = []
@@ -28,8 +27,7 @@ def _bars(exchange: str, symbol: str) -> dict[str, list[MarketBar]]:
 
 
 def _context(exchange: str, symbol: str, snap) -> PointInTimeContext:
-    source = provider(exchange)
-    orderbook = source.order_book(symbol)
+    source = provider(exchange); orderbook = source.order_book(symbol)
     context = PointInTimeContext(timestamp=min(snap.observed_at, orderbook.timestamp), funding_rate=snap.funding_rate, open_interest=snap.open_interest, order_book_imbalance=orderbook.order_book_imbalance, spread_bps=orderbook.spread_bps)
     try:
         flow = source.trade_flow(symbol, limit=100); eligible = [x for x in flow if x.timestamp <= context.timestamp]
@@ -39,13 +37,21 @@ def _context(exchange: str, symbol: str, snap) -> PointInTimeContext:
         liquidations = source.liquidations(symbol, limit=100); eligible = [x for x in liquidations if x.timestamp <= context.timestamp]
         if eligible: context.liquidation_notional = sum(x.liquidation_notional or 0 for x in eligible)
     except Exception: pass
+    if exchange == "binance":
+        try:
+            oi_history = source.open_interest_history(symbol, period="5m", limit=10)
+            oi_history = sorted([x for x in oi_history if x.timestamp <= context.timestamp and x.open_interest is not None], key=lambda x: x.timestamp)
+            if len(oi_history) >= 2 and oi_history[-2].open_interest:
+                context.open_interest = oi_history[-1].open_interest
+                # Attach the point-in-time change through a private-compatible attribute
+                # consumed by the state builder below.
+                context._oi_change = context.open_interest / oi_history[-2].open_interest - 1.0
+        except Exception: pass
     return context
 
 
 def _cross_asset_bars(exchange: str, symbol: str) -> dict[str, list[MarketBar]]:
-    source = provider(exchange); assets = {"BTCUSDT", "ETHUSDT"}
-    assets.discard(symbol.upper())
-    result = {}
+    source = provider(exchange); assets = {"BTCUSDT", "ETHUSDT"}; assets.discard(symbol.upper()); result = {}
     for asset in assets:
         try: result[asset] = source.candles(asset, interval="5m", limit=200)
         except Exception: pass
@@ -54,22 +60,20 @@ def _cross_asset_bars(exchange: str, symbol: str) -> dict[str, list[MarketBar]]:
 
 @router.get("/snapshot")
 def snapshot(exchange: str = Query("binance"), symbol: str = Query("BTCUSDT", min_length=3)):
-    exchange = exchange.lower(); symbol = symbol.upper()
-    cache_key = f"{exchange}:{symbol}:market-state-v1"
+    exchange = exchange.lower(); symbol = symbol.upper(); cache_key = f"{exchange}:{symbol}:market-state-v1"
     cached = _cache.get(cache_key)
     if cached is not None: return cached
     snap = _realtime(exchange, symbol); frames = _bars(exchange, symbol)
     if not frames: raise HTTPException(status_code=503, detail="No candle timeframe is currently available")
     context = _context(exchange, symbol, snap)
     try:
-        news = fetch_rss("https://www.coindesk.com/arc/outboundfeeds/rss/", "coindesk")
-        news_summary = aggregate_news(news, now=snap.observed_at)
+        news_summary = aggregate_news(fetch_rss("https://www.coindesk.com/arc/outboundfeeds/rss/", "coindesk"), now=snap.observed_at)
     except Exception:
         news_summary = {"count": 0, "sentiment": 0.0, "risk": 0.0, "credibility": 0.0}
     state = build_market_state(symbol, frames, context, correlation_bars=_cross_asset_bars(exchange, symbol), news_count=int(news_summary["count"]), news_sentiment=float(news_summary["sentiment"]), news_risk=float(news_summary["risk"]), news_credibility=float(news_summary["credibility"]), observed_at=snap.observed_at)
-    payload = state.model_dump(mode="json")
-    _cache.set(cache_key, payload)
-    return payload
+    if hasattr(context, "_oi_change"):
+        state.derivatives["open_interest_change"] = float(context._oi_change)
+    payload = state.model_dump(mode="json"); _cache.set(cache_key, payload); return payload
 
 
 @router.get("/health")
