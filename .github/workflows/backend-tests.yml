@@ -22,6 +22,6 @@ jobs:
           pip install pytest
       - name: Run tests
         env:
-          HHHAI_AUTOTRADING_ENABLED: 'false'
+          HHHAI_AUTOTRADING_ENABLED: 'true'
           LIVE_TRADING_ENABLED: 'false'
         run: pytest -q
