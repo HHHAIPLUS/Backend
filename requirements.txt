@@ -4,6 +4,7 @@ pydantic-settings
 httpx
 python-dotenv
 pytest
+pytest-asyncio
 numpy
 scikit-learn
 websockets
