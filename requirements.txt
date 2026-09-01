@@ -7,4 +7,5 @@ pytest
 pytest-asyncio
 numpy
 scikit-learn
+joblib
 websockets
