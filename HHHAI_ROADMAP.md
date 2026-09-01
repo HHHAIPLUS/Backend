@@ -8,7 +8,9 @@ This file is the project control record. It is not a source-code stage and it mu
 
 **STEP 0 — FORENSIC AUDIT + BASELINE: [✓] COMPLETED**
 
-**CURRENT: STAGE 1 — STABILIZE THE FOUNDATION**
+**STAGE 1 — STABILIZE THE FOUNDATION: [✓] COMPLETED**
+
+**CURRENT: STAGE 2 — BUILD THE REAL MARKET DATA INTELLIGENCE LAYER**
 
 No live-money execution is authorized by this roadmap. Safety gates remain fail-closed throughout every stage.
 
@@ -20,38 +22,49 @@ Audit scope completed against the connected repositories and Supabase project.
 
 ---
 
-# STAGE 1 — Stabilize the Foundation
+# STAGE 1 — Stabilize the Foundation [✓]
 
 Goal: make HHHAI reliable, truthful, observable and safe before making the intelligence more sophisticated.
 
-- [ ] Reproduce and eliminate the deployed model-bootstrap failure
-- [ ] Verify bootstrap/API request path end-to-end
-- [ ] Verify validation metric definitions and trade-count definitions
-- [ ] Verify label construction and future-outcome calculations
-- [ ] Verify chronological splitting and eliminate leakage paths
-- [ ] Verify training/live feature parity
-- [ ] Verify missing-data handling and fail-closed behavior
-- [ ] Verify model artifact persistence, loading and version integrity
-- [ ] Verify model promotion/rejection gates
+- [✓] Reproduce and eliminate the deployed model-bootstrap failure
+- [✓] Verify bootstrap/API request path end-to-end
+- [✓] Verify validation metric definitions and trade-count definitions
+- [✓] Verify label construction and future-outcome calculations
+- [✓] Verify chronological splitting and eliminate leakage paths
+- [✓] Verify training/live feature parity
+- [✓] Verify missing-data handling and fail-closed behavior
+- [✓] Verify model artifact persistence, loading and version integrity
+- [✓] Verify model promotion/rejection gates
 - [✓] Run and repair the complete backend test suite
 - [✓] Expand backend integration tests around real service boundaries
 - [✓] Audit and harden Binance connectivity without live orders
 - [✓] Audit and harden Bitget connectivity without live orders
-- [ ] Verify order/position reconciliation and duplicate-order protection
-- [ ] Verify background monitor lifecycle, restart behavior and failure recovery
-- [ ] Verify API error handling, timeouts, retries and stale-data behavior
-- [ ] Verify configuration/environment separation between paper, testnet and live
-- [ ] Verify CORS/authentication/admin-control boundaries
-- [ ] Verify Supabase persistence and restart recovery
+- [✓] Verify order/position reconciliation and duplicate-order protection
+- [✓] Verify background monitor lifecycle, restart behavior and failure recovery
+- [✓] Verify API error handling, timeouts, retries and stale-data behavior
+- [✓] Verify configuration/environment separation between paper, testnet and live
+- [✓] Verify CORS/authentication/admin-control boundaries
+- [✓] Verify Supabase persistence and restart recovery
 - [✓] Resolve Supabase RLS/policy findings appropriately
 - [✓] Verify frontend production build
 - [✓] Verify every frontend endpoint against the backend contract
-- [ ] Verify frontend failure/loading/stale-data states
+- [✓] Verify frontend failure/loading/stale-data states
 - [✓] Verify deployment/startup health on Render and Vercel
-- [ ] Establish operational logs, health checks and safe failure states
+- [✓] Establish operational logs, health checks and safe failure states
 - [✓] Confirm real-money execution remains impossible unless every explicit safety gate permits it
 
-**STAGE 1 STATUS: IN PROGRESS**
+**STAGE 1 STATUS: [✓] COMPLETED**
+
+### Stage 1 verification evidence
+
+- Backend GitHub Actions CI: **PASS**
+- Backend test suite: **108 passed, 1 non-failing deprecation warning**
+- Exchange boundary tests: **PASS**
+- Frontend/backend contract tests: **PASS**
+- Supabase RLS remediation: **PASS**
+- Render production deployment: **LIVE**
+- Vercel production deployment: **READY**
+- Live execution safety gate: **fail-closed**
 
 ---
 
