@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from app.ml.features import build_model_features
-from app.ml.validation import evaluate_predictions, walk_forward
+from app.ml.validation import evaluate_predictions, validate_observations, walk_forward
 
 
 def _candles(count: int = 60) -> list[list[float]]:
@@ -37,15 +37,40 @@ def test_walk_forward_is_strictly_chronological() -> None:
         assert fold.train[-1]["observed_at"] < fold.test[0]["observed_at"]
 
 
+def test_walk_forward_rejects_unsorted_observations() -> None:
+    rows = [
+        {"observed_at": "2026-01-01T00:01:00+00:00"},
+        {"observed_at": "2026-01-01T00:00:00+00:00"},
+    ]
+    with pytest.raises(ValueError, match="chronological"):
+        validate_observations(rows)
+
+
+def test_walk_forward_rejects_duplicate_observations() -> None:
+    rows = [
+        {"observed_at": "2026-01-01T00:00:00+00:00"},
+        {"observed_at": "2026-01-01T00:00:00+00:00"},
+    ]
+    with pytest.raises(ValueError, match="Duplicate"):
+        validate_observations(rows)
+
+
 def test_evaluation_keeps_prediction_count_separate_from_trade_count() -> None:
     result = evaluate_predictions([
         (1, 1, 0.01),
         (0, 0, 0.0),
         (-1, 1, -0.02),
+        (1, 1, 0.0),
     ])
-    assert result["predictions"] == 3
-    assert result["trades"] == 2
-    assert result["class_support"] == {"-1": 1, "0": 1, "1": 1}
+    assert result["predictions"] == 4
+    assert result["trades"] == 3
+    assert result["avg_return"] == pytest.approx(-0.0033333333333333335)
+    assert result["class_support"] == {"-1": 1, "0": 1, "1": 2}
+
+
+def test_evaluation_rejects_non_finite_trade_return() -> None:
+    with pytest.raises(ValueError, match="Non-finite"):
+        evaluate_predictions([(1, 1, float("nan"))])
 
 
 def test_feature_contract_is_exact_and_finite() -> None:
@@ -67,9 +92,7 @@ def test_model_features_do_not_require_future_candles() -> None:
     assert earlier != later
 
 
-def test_feature_builder_rejects_no_data_only_by_neutral_contract() -> None:
-    # Empty candle input is allowed by the compatibility boundary, but it must
-    # produce a complete finite feature vector rather than a partial vector.
+def test_empty_feature_contract_is_explicit() -> None:
     features = build_model_features([])
     assert len(features) == 12
     assert all(value == 0.0 for value in features.values())
