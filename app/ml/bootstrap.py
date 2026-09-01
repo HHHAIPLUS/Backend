@@ -13,19 +13,9 @@ from sklearn.preprocessing import StandardScaler
 from app.ml.predictive import FEATURES, predictive_model
 from app.ml.validation import walk_forward, evaluate_predictions
 from app.ml.features import build_model_features
-from app.ml.dataset_integrity import audit_training_rows, DatasetIntegrityError
+from app.ml.dataset_integrity import require_production_ready, DatasetAudit
 
-# Historical market-data configuration and exchange helpers remain unchanged.
-# The important Stage 1A contract is that bootstrap must reject incomplete
-# context rather than encode missing information as if it were neutral.
-
-BINANCE_KLINES_HOSTS = [
-    "https://fapi.binance.com",
-    "https://fapi1.binance.com",
-    "https://fapi2.binance.com",
-    "https://fapi3.binance.com",
-    "https://fapi4.binance.com",
-]
+BINANCE_KLINES_HOSTS = ["https://fapi.binance.com", "https://fapi1.binance.com", "https://fapi2.binance.com", "https://fapi3.binance.com", "https://fapi4.binance.com"]
 BINANCE_KLINES_PATH = "/fapi/v1/klines"
 BITGET_KLINES_URL = "https://api.bitget.com/api/v2/mix/market/candles"
 BINANCE_BATCH_SIZE = 500
@@ -34,6 +24,7 @@ BINANCE_RETRIES_PER_HOST = 2
 BITGET_RETRIES_PER_REQUEST = 2
 HISTORICAL_REQUEST_DELAY = 0.25
 HTTP_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
+CONTEXT_FEATURES = ("order_book_imbalance", "funding_rate", "open_interest_change", "news_risk", "news_sentiment", "liquidity_stress")
 
 
 def _is_json_response(response: httpx.Response) -> bool:
@@ -96,7 +87,7 @@ def _request_binance_batch(client: httpx.Client, symbol: str, interval: str, lim
 
 
 def fetch_binance_klines(symbol: str, interval: str = "5m", limit: int = 1500) -> list[list[Any]]:
-    requested = max(BINANCE_BATCH_SIZE, min(1500, int(limit)))
+    requested = min(10000, max(500, int(limit)))
     symbol = symbol.upper().strip()
     if not symbol or not interval:
         raise ValueError("Symbol and interval are required")
@@ -104,8 +95,7 @@ def fetch_binance_klines(symbol: str, interval: str = "5m", limit: int = 1500) -
     end_time: int | None = None
     with httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True, trust_env=False, headers={"User-Agent": "HHHAI/1.0", "Accept": "application/json"}) as client:
         while len(all_klines) < requested:
-            remaining = requested - len(all_klines)
-            batch_limit = min(BINANCE_BATCH_SIZE, remaining)
+            batch_limit = min(BINANCE_BATCH_SIZE, requested - len(all_klines))
             batch = _request_binance_batch(client, symbol, interval, batch_limit, end_time)
             all_klines = batch + all_klines
             if len(batch) < batch_limit:
@@ -157,7 +147,7 @@ def _request_bitget_batch(client: httpx.Client, symbol: str, granularity: str, l
 
 
 def fetch_bitget_klines(symbol: str, interval: str = "5m", limit: int = 1500) -> list[list[Any]]:
-    requested = max(BITGET_BATCH_SIZE, min(1500, int(limit)))
+    requested = min(10000, max(500, int(limit)))
     symbol = symbol.upper().strip()
     if not symbol or not interval:
         raise ValueError("Symbol and interval are required")
@@ -189,10 +179,7 @@ def fetch_historical_klines(symbol: str, interval: str = "5m", limit: int = 1500
 
 
 def _candle_to_dict(row: list[Any]) -> dict[str, Any]:
-    return {
-        "observed_at": datetime.fromtimestamp(int(row[0]) / 1000, timezone.utc).isoformat(),
-        "open": float(row[1]), "high": float(row[2]), "low": float(row[3]), "close": float(row[4]), "volume": max(0.0, float(row[5])),
-    }
+    return {"observed_at": datetime.fromtimestamp(int(row[0]) / 1000, timezone.utc).isoformat(), "open": float(row[1]), "high": float(row[2]), "low": float(row[3]), "close": float(row[4]), "volume": max(0.0, float(row[5]))}
 
 
 def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 0.0025) -> list[dict[str, Any]]:
@@ -208,16 +195,11 @@ def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 
     for i in range(lookback, len(candles) - horizon):
         window = candles[i - lookback:i + 1]
         last = window[-1]
-        future = candles[i + horizon]["close"] / last["close"] - 1.0
-        label = 1 if future > threshold else -1 if future < -threshold else 0
+        future_return = candles[i + horizon]["close"] / last["close"] - 1.0
+        label = 1 if future_return > threshold else -1 if future_return < -threshold else 0
         candle_rows = [[int(datetime.fromisoformat(c["observed_at"]).timestamp() * 1000), c["open"], c["high"], c["low"], c["close"], c["volume"]] for c in window]
         model_features = build_model_features(candle_rows)
-        # Do not silently claim missing context is neutral. These values are
-        # explicitly marked unavailable so the training gate can reject them.
-        context_availability = {name: False for name in ("order_book_imbalance", "funding_rate", "open_interest_change", "news_risk", "news_sentiment", "liquidity_stress")}
-        rows.append({"observed_at": last["observed_at"], "features": model_features, "label": label, "outcome_return": future, "context_available": context_availability, "data_source": "ohlcv_only"})
-    if not rows:
-        raise ValueError("Dataset construction produced zero training rows")
+        rows.append({"observed_at": last["observed_at"], "features": model_features, "label": label, "outcome_return": future_return, "context_available": {name: False for name in CONTEXT_FEATURES}, "feature_provenance": {}, "data_source": "ohlcv_only"})
     return rows
 
 
@@ -225,28 +207,35 @@ def validate_and_promote(rows: list[dict[str, Any]], version: str = "bootstrap")
     if not rows:
         return {"status": "REJECTED", "reason": "No training rows were supplied.", "rows": 0}
     try:
-        audit = audit_training_rows(rows, required_context_features=("order_book_imbalance", "funding_rate", "open_interest_change", "news_risk", "news_sentiment", "liquidity_stress"))
-    except DatasetIntegrityError as exc:
+        audit: DatasetAudit = require_production_ready(rows)
+    except Exception as exc:
         return {"status": "REJECTED", "reason": f"Dataset integrity gate failed: {exc}", "rows": len(rows)}
+
     min_train = max(300, min(700, len(rows) // 2))
     folds = walk_forward(rows, min_train=min_train, test_size=100, step=100)
     if not folds:
-        return {"status": "REJECTED", "reason": "Not enough historical rows for walk-forward validation.", "rows": len(rows), "audit": audit}
+        return {"status": "REJECTED", "reason": "Not enough historical rows for walk-forward validation.", "rows": len(rows), "audit": audit.__dict__}
+
     predictions: list[tuple[int, int, float]] = []
     for fold in folds:
-        X = [[r["features"].get(k, 0.0) for k in FEATURES] for r in fold.train]
+        X = [[r["features"][k] for k in FEATURES] for r in fold.train]
         y = [int(r["label"]) for r in fold.train]
         if len(set(y)) < 3:
             continue
         model = Pipeline([("scale", StandardScaler()), ("clf", LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42))])
         model.fit(X, y)
-        Xtest = [[r["features"].get(k, 0.0) for k in FEATURES] for r in fold.test]
+        Xtest = [[r["features"][k] for k in FEATURES] for r in fold.test]
         pred = model.predict(Xtest)
-        probs = model.predict_proba(Xtest)
-        classes = list(model.classes_)
-        for r, p, prob in zip(fold.test, pred, probs):
-            confidence = float(max(prob)) if len(prob) else 0.0
-            predictions.append((int(r["label"]), int(p), float(r["outcome_return"]) if p != 0 else 0.0))
+        for r, p in zip(fold.test, pred):
+            future_return = float(r["outcome_return"])
+            signed_return = future_return * (1.0 if int(p) == 1 else -1.0 if int(p) == -1 else 0.0)
+            predictions.append((int(r["label"]), int(p), signed_return))
+
     metrics = evaluate_predictions(predictions)
-    status = "PROMOTED" if metrics.get("accuracy", 0.0) >= 0.52 and metrics.get("balanced_accuracy", 0.0) >= 0.50 and metrics.get("average_return", 0.0) > 0 else "REJECTED"
-    return {"status": status, "version": version, "metrics": metrics, "rows": len(rows), "audit": audit}
+    if metrics.get("balanced_accuracy", 0.0) < 0.50 or metrics.get("avg_return", 0.0) <= 0.0:
+        return {"status": "REJECTED", "version": version, "metrics": metrics, "rows": len(rows), "audit": audit.__dict__, "reason": "Candidate did not clear the conservative baseline promotion gate."}
+
+    report = predictive_model.train(rows, version=version, min_rows=500)
+    if not report.trained:
+        return {"status": "REJECTED", "version": version, "metrics": metrics, "rows": len(rows), "audit": audit.__dict__, "reason": report.reason}
+    return {"status": "PROMOTED", "version": version, "metrics": metrics, "rows": len(rows), "audit": audit.__dict__, "model_artifact": predictive_model.artifact()}
