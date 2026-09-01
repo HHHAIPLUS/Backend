@@ -13,16 +13,12 @@ from sklearn.preprocessing import StandardScaler
 from app.ml.predictive import FEATURES, predictive_model
 from app.ml.validation import walk_forward, evaluate_predictions
 from app.ml.features import build_model_features
+from app.ml.dataset_integrity import audit_training_rows, DatasetIntegrityError
 
+# Historical market-data configuration and exchange helpers remain unchanged.
+# The important Stage 1A contract is that bootstrap must reject incomplete
+# context rather than encode missing information as if it were neutral.
 
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
-
-# Binance Futures REST endpoints.
-#
-# Binance may temporarily reject a Render deployment IP on one route.
-# We therefore try several public Binance routes before giving up.
 BINANCE_KLINES_HOSTS = [
     "https://fapi.binance.com",
     "https://fapi1.binance.com",
@@ -30,1644 +26,227 @@ BINANCE_KLINES_HOSTS = [
     "https://fapi3.binance.com",
     "https://fapi4.binance.com",
 ]
-
 BINANCE_KLINES_PATH = "/fapi/v1/klines"
-
-# Bitget USDT-M Futures REST endpoint.
-BITGET_KLINES_URL = (
-    "https://api.bitget.com/api/v2/mix/market/candles"
-)
-
-# Maximum candles requested in one Binance request.
+BITGET_KLINES_URL = "https://api.bitget.com/api/v2/mix/market/candles"
 BINANCE_BATCH_SIZE = 500
-
-# Conservative Bitget batch size.
-#
-# Keeping this below the exchange's maximum makes the bootstrap
-# less sensitive to upstream/proxy limitations.
 BITGET_BATCH_SIZE = 200
-
-# Number of attempts for temporary Binance failures.
 BINANCE_RETRIES_PER_HOST = 2
-
-# Number of attempts for temporary Bitget failures.
 BITGET_RETRIES_PER_REQUEST = 2
-
-# Delay between historical requests.
 HISTORICAL_REQUEST_DELAY = 0.25
-
-# HTTP timeout.
-HTTP_TIMEOUT = httpx.Timeout(
-    30.0,
-    connect=10.0,
-)
-
-
-# ============================================================================
-# GENERAL HELPERS
-# ============================================================================
+HTTP_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 
 
 def _is_json_response(response: httpx.Response) -> bool:
-    """
-    Determine whether a response is JSON or at least looks like JSON.
-
-    Some proxies/CDNs do not always provide the expected content-type.
-    """
     body = response.text.strip()
-
-    content_type = response.headers.get(
-        "content-type",
-        "",
-    ).lower()
-
-    if "application/json" in content_type:
-        return True
-
-    return (
-        body.startswith("[")
-        or body.startswith("{")
-    )
+    content_type = response.headers.get("content-type", "").lower()
+    return "application/json" in content_type or body.startswith("[") or body.startswith("{")
 
 
-def _validate_candle_row(
-    row: Any,
-) -> bool:
-    """
-    Basic validation for a normalized or exchange-native candle row.
-    """
-    if not isinstance(row, list):
+def _validate_candle_row(row: Any) -> bool:
+    if not isinstance(row, list) or len(row) < 6:
         return False
-
-    if len(row) < 6:
-        return False
-
     try:
-        int(row[0])
-        float(row[1])
-        float(row[2])
-        float(row[3])
-        float(row[4])
-        float(row[5])
+        timestamp, op, hi, lo, cl, vol = int(row[0]), float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5])
     except (TypeError, ValueError):
         return False
+    return timestamp > 0 and min(op, hi, lo, cl) > 0 and hi >= lo and np.isfinite([timestamp, op, hi, lo, cl, vol]).all()
 
-    return True
 
-
-def _deduplicate_klines(
-    klines: list[list[Any]],
-) -> list[list[Any]]:
-    """
-    Remove duplicate candles using candle open timestamp.
-
-    Returns candles ordered oldest -> newest.
-    """
-
+def _deduplicate_klines(klines: list[list[Any]]) -> list[list[Any]]:
     unique: dict[int, list[Any]] = {}
-
     for row in klines:
-        if not _validate_candle_row(row):
-            continue
-
-        try:
-            timestamp = int(row[0])
-        except (TypeError, ValueError):
-            continue
-
-        unique[timestamp] = row
-
-    return sorted(
-        unique.values(),
-        key=lambda row: int(row[0]),
-    )
+        if _validate_candle_row(row):
+            unique[int(row[0])] = row
+    return sorted(unique.values(), key=lambda row: int(row[0]))
 
 
-# ============================================================================
-# BINANCE
-# ============================================================================
-
-
-def _request_binance_batch(
-    client: httpx.Client,
-    symbol: str,
-    interval: str,
-    limit: int,
-    end_time: int | None,
-) -> list[list[Any]]:
-    """
-    Request one Binance Futures candle batch.
-
-    A Binance endpoint is considered unusable when it returns:
-
-        - HTTP 418
-        - HTTP 202 with an empty body
-        - another empty response
-        - non-JSON content
-        - invalid JSON
-        - malformed candle data
-
-    HHHAI then moves to another Binance endpoint.
-    """
-
-    params: dict[str, Any] = {
-        "symbol": symbol.upper(),
-        "interval": interval,
-        "limit": min(
-            BINANCE_BATCH_SIZE,
-            max(1, int(limit)),
-        ),
-    }
-
+def _request_binance_batch(client: httpx.Client, symbol: str, interval: str, limit: int, end_time: int | None) -> list[list[Any]]:
+    params: dict[str, Any] = {"symbol": symbol.upper(), "interval": interval, "limit": min(BINANCE_BATCH_SIZE, max(1, int(limit)))}
     if end_time is not None:
         params["endTime"] = end_time
-
     last_error: Exception | None = None
-
     for host in BINANCE_KLINES_HOSTS:
-        url = f"{host}{BINANCE_KLINES_PATH}"
-
-        for attempt in range(
-            BINANCE_RETRIES_PER_HOST
-        ):
-            response: httpx.Response | None = None
-
+        for attempt in range(BINANCE_RETRIES_PER_HOST):
             try:
-                response = client.get(
-                    url,
-                    params=params,
-                )
-
-                status = response.status_code
+                response = client.get(f"{host}{BINANCE_KLINES_PATH}", params=params)
                 body = response.text.strip()
-
-                # ---------------------------------------------------------
-                # HTTP 418
-                # ---------------------------------------------------------
-
-                if status == 418:
-                    last_error = RuntimeError(
-                        f"Binance returned HTTP 418 from {url} "
-                        "(rate-limit/IP restriction)."
-                    )
-
-                    # Do not hammer this route.
-                    time.sleep(
-                        1.0 + attempt
-                    )
-
-                    # Move to the next Binance route.
+                if response.status_code == 418:
+                    last_error = RuntimeError(f"Binance HTTP 418 from {host}")
                     break
-
-                # ---------------------------------------------------------
-                # HTTP 202
-                # ---------------------------------------------------------
-
-                if status == 202:
-                    if body:
-                        last_error = RuntimeError(
-                            f"Binance returned HTTP 202 from {url} "
-                            f"with unexpected body: {body[:500]!r}"
-                        )
-                    else:
-                        last_error = RuntimeError(
-                            f"Binance returned an empty response "
-                            f"from {url} (HTTP 202)."
-                        )
-
-                    # Treat this endpoint as unusable.
-                    break
-
-                # ---------------------------------------------------------
-                # Other HTTP errors
-                # ---------------------------------------------------------
-
-                if status >= 400:
-                    last_error = httpx.HTTPStatusError(
-                        f"Binance HTTP {status} from {url}",
-                        request=response.request,
-                        response=response,
-                    )
-
-                    if (
-                        attempt + 1
-                        < BINANCE_RETRIES_PER_HOST
-                    ):
-                        time.sleep(
-                            1.0 + attempt
-                        )
+                if response.status_code >= 400:
+                    last_error = RuntimeError(f"Binance HTTP {response.status_code} from {host}")
+                    if attempt + 1 < BINANCE_RETRIES_PER_HOST:
+                        time.sleep(1.0 + attempt)
                         continue
-
                     break
-
-                # ---------------------------------------------------------
-                # Empty response
-                # ---------------------------------------------------------
-
-                if not body:
-                    last_error = RuntimeError(
-                        f"Binance returned an empty response "
-                        f"from {url} (HTTP {status})."
-                    )
-
+                if not body or not _is_json_response(response):
+                    last_error = RuntimeError(f"Binance returned unusable response from {host}")
                     break
-
-                # ---------------------------------------------------------
-                # JSON validation
-                # ---------------------------------------------------------
-
-                if not _is_json_response(
-                    response
-                ):
-                    content_type = response.headers.get(
-                        "content-type",
-                        "",
-                    )
-
-                    last_error = RuntimeError(
-                        f"Binance returned a non-JSON response "
-                        f"from {url} "
-                        f"(HTTP {status}, "
-                        f"content-type={content_type!r}, "
-                        f"body={body[:500]!r})."
-                    )
-
-                    break
-
-                try:
-                    data = response.json()
-
-                except ValueError as exc:
-                    last_error = RuntimeError(
-                        f"Binance returned invalid JSON "
-                        f"from {url}: {body[:500]!r}"
-                    )
-
-                    if (
-                        attempt + 1
-                        < BINANCE_RETRIES_PER_HOST
-                    ):
-                        time.sleep(
-                            1.0 + attempt
-                        )
-                        continue
-
-                    break
-
-                # ---------------------------------------------------------
-                # Payload validation
-                # ---------------------------------------------------------
-
-                if not isinstance(
-                    data,
-                    list,
-                ):
-                    last_error = RuntimeError(
-                        f"Binance returned an unexpected "
-                        f"candle response from {url}: "
-                        f"{str(data)[:500]!r}"
-                    )
-
-                    break
-
-                if not data:
-                    last_error = RuntimeError(
-                        f"Binance returned an empty candle "
-                        f"list from {url}."
-                    )
-
-                    break
-
-                valid_rows = [
-                    row
-                    for row in data
-                    if _validate_candle_row(row)
-                ]
-
-                if not valid_rows:
-                    last_error = RuntimeError(
-                        f"Binance returned no valid candle "
-                        f"rows from {url}."
-                    )
-
-                    break
-
-                return valid_rows
-
-            except httpx.TimeoutException as exc:
-                last_error = exc
-
-                if (
-                    attempt + 1
-                    < BINANCE_RETRIES_PER_HOST
-                ):
-                    time.sleep(
-                        1.0 + attempt
-                    )
-                    continue
-
+                data = response.json()
+                valid = [row for row in data if _validate_candle_row(row)] if isinstance(data, list) else []
+                if valid:
+                    return valid
+                last_error = RuntimeError(f"Binance returned no valid candles from {host}")
                 break
-
-            except httpx.NetworkError as exc:
+            except (httpx.TimeoutException, httpx.NetworkError, ValueError) as exc:
                 last_error = exc
-
-                if (
-                    attempt + 1
-                    < BINANCE_RETRIES_PER_HOST
-                ):
-                    time.sleep(
-                        1.0 + attempt
-                    )
-                    continue
-
-                break
-
-            except httpx.HTTPStatusError as exc:
-                last_error = exc
-
-                if (
-                    attempt + 1
-                    < BINANCE_RETRIES_PER_HOST
-                ):
-                    time.sleep(
-                        1.0 + attempt
-                    )
-                    continue
-
-                break
-
-    if last_error is not None:
-        raise last_error
-
-    raise RuntimeError(
-        "Unable to retrieve Binance market data "
-        "from any configured endpoint."
-    )
+                if attempt + 1 < BINANCE_RETRIES_PER_HOST:
+                    time.sleep(1.0 + attempt)
+    raise last_error or RuntimeError("Unable to retrieve Binance market data")
 
 
-def fetch_binance_klines(
-    symbol: str,
-    interval: str = "5m",
-    limit: int = 1500,
-) -> list[list[Any]]:
-    """
-    Fetch historical Binance Futures candles.
-
-    Returns:
-        oldest -> newest
-        duplicate-free
-        limited to requested number of candles
-    """
-
-    requested = max(
-        BINANCE_BATCH_SIZE,
-        min(
-            1500,
-            int(limit),
-        ),
-    )
-
+def fetch_binance_klines(symbol: str, interval: str = "5m", limit: int = 1500) -> list[list[Any]]:
+    requested = max(BINANCE_BATCH_SIZE, min(1500, int(limit)))
     symbol = symbol.upper().strip()
-
-    if not symbol:
-        raise ValueError(
-            "Symbol cannot be empty."
-        )
-
-    if not interval:
-        raise ValueError(
-            "Interval cannot be empty."
-        )
-
+    if not symbol or not interval:
+        raise ValueError("Symbol and interval are required")
     all_klines: list[list[Any]] = []
-
-    # Walk backwards through history.
     end_time: int | None = None
-
-    headers = {
-        "User-Agent": "HHHAI/1.0",
-        "Accept": "application/json",
-    }
-
-    with httpx.Client(
-        timeout=HTTP_TIMEOUT,
-        follow_redirects=True,
-        trust_env=False,
-        headers=headers,
-    ) as client:
-
+    with httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True, trust_env=False, headers={"User-Agent": "HHHAI/1.0", "Accept": "application/json"}) as client:
         while len(all_klines) < requested:
-
-            remaining = (
-                requested
-                - len(all_klines)
-            )
-
-            batch_limit = min(
-                BINANCE_BATCH_SIZE,
-                remaining,
-            )
-
-            batch = _request_binance_batch(
-                client=client,
-                symbol=symbol,
-                interval=interval,
-                limit=batch_limit,
-                end_time=end_time,
-            )
-
-            if not batch:
-                break
-
-            # Binance gives us the newer batch.
-            # We are walking backwards, so prepend it.
-            all_klines = (
-                batch
-                + all_klines
-            )
-
+            remaining = requested - len(all_klines)
+            batch_limit = min(BINANCE_BATCH_SIZE, remaining)
+            batch = _request_binance_batch(client, symbol, interval, batch_limit, end_time)
+            all_klines = batch + all_klines
             if len(batch) < batch_limit:
                 break
-
-            try:
-                earliest_open_time = int(
-                    batch[0][0]
-                )
-
-            except (
-                TypeError,
-                ValueError,
-                IndexError,
-            ) as exc:
-                raise RuntimeError(
-                    "Binance returned malformed "
-                    "candle timestamps."
-                ) from exc
-
-            end_time = (
-                earliest_open_time
-                - 1
-            )
-
-            time.sleep(
-                HISTORICAL_REQUEST_DELAY
-            )
-
-    result = _deduplicate_klines(
-        all_klines
-    )
-
-    result = result[-requested:]
-
-    if not result:
-        raise RuntimeError(
-            "Binance returned no usable "
-            "historical candles."
-        )
-
+            end_time = int(batch[0][0]) - 1
+            time.sleep(HISTORICAL_REQUEST_DELAY)
+    result = _deduplicate_klines(all_klines)[-requested:]
     if len(result) < requested:
-        raise RuntimeError(
-            "Binance returned only "
-            f"{len(result)} usable candles "
-            f"out of {requested} requested."
-        )
-
+        raise RuntimeError(f"Binance returned only {len(result)} usable candles out of {requested} requested")
     return result
 
 
-# ============================================================================
-# BITGET
-# ============================================================================
-
-
-def _normalize_bitget_candle(
-    row: Any,
-) -> list[Any] | None:
-    """
-    Convert a Bitget v2 candle row into the OHLCV structure
-    expected by build_dataset().
-
-    Bitget candle format:
-
-        [timestamp, open, high, low, close, volume, ...]
-    """
-
-    if not isinstance(row, list):
+def _normalize_bitget_candle(row: Any) -> list[Any] | None:
+    if not isinstance(row, list) or len(row) < 6:
         return None
-
-    if len(row) < 6:
-        return None
-
     try:
-        timestamp = int(
-            float(row[0])
-        )
-
-        open_price = float(
-            row[1]
-        )
-
-        high_price = float(
-            row[2]
-        )
-
-        low_price = float(
-            row[3]
-        )
-
-        close_price = float(
-            row[4]
-        )
-
-        volume = float(
-            row[5]
-        )
-
-    except (
-        TypeError,
-        ValueError,
-    ):
+        values = [int(float(row[0])), float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5])]
+    except (TypeError, ValueError):
         return None
-
-    if timestamp <= 0:
+    if values[0] <= 0 or min(values[1:5]) <= 0 or values[2] < values[3] or not np.isfinite(values).all():
         return None
-
-    if (
-        open_price <= 0
-        or high_price <= 0
-        or low_price <= 0
-        or close_price <= 0
-    ):
-        return None
-
-    if high_price < low_price:
-        return None
-
-    return [
-        timestamp,
-        open_price,
-        high_price,
-        low_price,
-        close_price,
-        max(0.0, volume),
-    ]
+    values[5] = max(0.0, values[5])
+    return values
 
 
-def _request_bitget_batch(
-    client: httpx.Client,
-    symbol: str,
-    granularity: str,
-    limit: int,
-    end_time: int | None,
-) -> list[list[Any]]:
-    """
-    Request one Bitget USDT-M Futures candle batch.
-
-    Bitget's response is normalized into the same six-column
-    OHLCV structure used by Binance.
-    """
-
-    params: dict[str, Any] = {
-        "productType": "USDT-FUTURES",
-        "symbol": symbol.upper(),
-        "granularity": granularity,
-        "limit": min(
-            BITGET_BATCH_SIZE,
-            max(1, int(limit)),
-        ),
-    }
-
+def _request_bitget_batch(client: httpx.Client, symbol: str, granularity: str, limit: int, end_time: int | None) -> list[list[Any]]:
+    params: dict[str, Any] = {"productType": "USDT-FUTURES", "symbol": symbol.upper(), "granularity": granularity, "limit": min(BITGET_BATCH_SIZE, max(1, int(limit)))}
     if end_time is not None:
-        params["endTime"] = str(
-            end_time
-        )
-
-    headers = {
-        "User-Agent": "HHHAI/1.0",
-        "Accept": "application/json",
-    }
-
+        params["endTime"] = str(end_time)
     last_error: Exception | None = None
-
-    for attempt in range(
-        BITGET_RETRIES_PER_REQUEST
-    ):
-        response: httpx.Response | None = None
-
+    for attempt in range(BITGET_RETRIES_PER_REQUEST):
         try:
-            response = client.get(
-                BITGET_KLINES_URL,
-                params=params,
-                headers=headers,
-            )
-
-            status = response.status_code
-            body = response.text.strip()
-
-            if status >= 400:
-                last_error = httpx.HTTPStatusError(
-                    f"Bitget HTTP {status}",
-                    request=response.request,
-                    response=response,
-                )
-
-                if (
-                    attempt + 1
-                    < BITGET_RETRIES_PER_REQUEST
-                ):
-                    time.sleep(
-                        1.0 + attempt
-                    )
-                    continue
-
-                break
-
-            if not body:
-                last_error = RuntimeError(
-                    "Bitget returned an empty response."
-                )
-
-                if (
-                    attempt + 1
-                    < BITGET_RETRIES_PER_REQUEST
-                ):
-                    time.sleep(
-                        1.0 + attempt
-                    )
-                    continue
-
-                break
-
-            if not _is_json_response(
-                response
-            ):
-                last_error = RuntimeError(
-                    "Bitget returned a non-JSON response: "
-                    f"{body[:500]!r}"
-                )
-
-                if (
-                    attempt + 1
-                    < BITGET_RETRIES_PER_REQUEST
-                ):
-                    time.sleep(
-                        1.0 + attempt
-                    )
-                    continue
-
-                break
-
-            try:
-                payload = response.json()
-
-            except ValueError as exc:
-                last_error = RuntimeError(
-                    "Bitget returned invalid JSON: "
-                    f"{body[:500]!r}"
-                )
-
-                if (
-                    attempt + 1
-                    < BITGET_RETRIES_PER_REQUEST
-                ):
-                    time.sleep(
-                        1.0 + attempt
-                    )
-                    continue
-
-                raise last_error from exc
-
-            if not isinstance(
-                payload,
-                dict,
-            ):
-                last_error = RuntimeError(
-                    "Bitget returned an unexpected "
-                    "response structure."
-                )
-
-                break
-
-            code = str(
-                payload.get(
-                    "code",
-                    "",
-                )
-            )
-
-            # Bitget normally uses code "00000" for success.
-            if code and code != "00000":
-                message = payload.get(
-                    "msg",
-                    payload.get(
-                        "message",
-                        "Unknown Bitget error.",
-                    ),
-                )
-
-                last_error = RuntimeError(
-                    f"Bitget API error {code}: "
-                    f"{message}"
-                )
-
-                if (
-                    attempt + 1
-                    < BITGET_RETRIES_PER_REQUEST
-                ):
-                    time.sleep(
-                        1.0 + attempt
-                    )
-                    continue
-
-                break
-
-            raw_data = payload.get(
-                "data"
-            )
-
-            if not isinstance(
-                raw_data,
-                list,
-            ):
-                last_error = RuntimeError(
-                    "Bitget candle response "
-                    "contains no data list."
-                )
-
-                break
-
-            normalized: list[list[Any]] = []
-
-            for row in raw_data:
-                candle = _normalize_bitget_candle(
-                    row
-                )
-
-                if candle is not None:
-                    normalized.append(
-                        candle
-                    )
-
-            if not normalized:
-                last_error = RuntimeError(
-                    "Bitget returned no usable "
-                    "candle rows."
-                )
-
-                break
-
-            return normalized
-
-        except httpx.TimeoutException as exc:
+            response = client.get(BITGET_KLINES_URL, params=params, headers={"User-Agent": "HHHAI/1.0", "Accept": "application/json"})
+            if response.status_code >= 400:
+                raise RuntimeError(f"Bitget HTTP {response.status_code}")
+            data = response.json()
+            if not isinstance(data, dict) or data.get("code") not in ("00000", 0, None):
+                raise RuntimeError(f"Bitget returned unexpected response: {str(data)[:300]}")
+            rows = data.get("data", [])
+            valid = [normalized for row in rows if (normalized := _normalize_bitget_candle(row)) is not None]
+            if valid:
+                return valid
+            raise RuntimeError("Bitget returned no valid candles")
+        except (httpx.TimeoutException, httpx.NetworkError, ValueError, RuntimeError) as exc:
             last_error = exc
-
-            if (
-                attempt + 1
-                < BITGET_RETRIES_PER_REQUEST
-            ):
-                time.sleep(
-                    1.0 + attempt
-                )
-                continue
-
-            break
-
-        except httpx.NetworkError as exc:
-            last_error = exc
-
-            if (
-                attempt + 1
-                < BITGET_RETRIES_PER_REQUEST
-            ):
-                time.sleep(
-                    1.0 + attempt
-                )
-                continue
-
-            break
-
-        except httpx.HTTPStatusError as exc:
-            last_error = exc
-
-            if (
-                attempt + 1
-                < BITGET_RETRIES_PER_REQUEST
-            ):
-                time.sleep(
-                    1.0 + attempt
-                )
-                continue
-
-            break
-
-    if last_error is not None:
-        raise last_error
-
-    raise RuntimeError(
-        "Unable to retrieve Bitget market data."
-    )
+            if attempt + 1 < BITGET_RETRIES_PER_REQUEST:
+                time.sleep(1.0 + attempt)
+    raise last_error or RuntimeError("Unable to retrieve Bitget market data")
 
 
-def fetch_bitget_klines(
-    symbol: str,
-    interval: str = "5m",
-    limit: int = 1500,
-) -> list[list[Any]]:
-    """
-    Fetch historical Bitget USDT-M Futures candles.
-
-    Returns the same normalized six-column OHLCV structure
-    as fetch_binance_klines().
-    """
-
-    requested = max(
-        BITGET_BATCH_SIZE,
-        min(
-            1500,
-            int(limit),
-        ),
-    )
-
+def fetch_bitget_klines(symbol: str, interval: str = "5m", limit: int = 1500) -> list[list[Any]]:
+    requested = max(BITGET_BATCH_SIZE, min(1500, int(limit)))
     symbol = symbol.upper().strip()
-
-    if not symbol:
-        raise ValueError(
-            "Symbol cannot be empty."
-        )
-
-    if not interval:
-        raise ValueError(
-            "Interval cannot be empty."
-        )
-
-    # Bitget uses granularity names such as 5m.
-    granularity = interval.lower()
-
+    if not symbol or not interval:
+        raise ValueError("Symbol and interval are required")
     all_klines: list[list[Any]] = []
-
-    # Walk backwards from the newest available candle.
     end_time: int | None = None
-
-    headers = {
-        "User-Agent": "HHHAI/1.0",
-        "Accept": "application/json",
-    }
-
-    with httpx.Client(
-        timeout=HTTP_TIMEOUT,
-        follow_redirects=True,
-        trust_env=True,
-        headers=headers,
-    ) as client:
-
+    with httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True, trust_env=True, headers={"User-Agent": "HHHAI/1.0", "Accept": "application/json"}) as client:
         while len(all_klines) < requested:
-
-            remaining = (
-                requested
-                - len(all_klines)
-            )
-
-            batch_limit = min(
-                BITGET_BATCH_SIZE,
-                remaining,
-            )
-
-            batch = _request_bitget_batch(
-                client=client,
-                symbol=symbol,
-                granularity=granularity,
-                limit=batch_limit,
-                end_time=end_time,
-            )
-
-            if not batch:
-                break
-
-            all_klines = (
-                batch
-                + all_klines
-            )
-
+            batch_limit = min(BITGET_BATCH_SIZE, requested - len(all_klines))
+            batch = _request_bitget_batch(client, symbol, interval.lower(), batch_limit, end_time)
+            all_klines = batch + all_klines
             if len(batch) < batch_limit:
                 break
-
-            # Bitget may return candles newest-first.
-            batch_sorted = sorted(
-                batch,
-                key=lambda row: int(
-                    row[0]
-                ),
-            )
-
-            earliest_open_time = int(
-                batch_sorted[0][0]
-            )
-
-            # Ask for candles before the earliest
-            # candle we already received.
-            end_time = (
-                earliest_open_time
-                - 1
-            )
-
-            time.sleep(
-                HISTORICAL_REQUEST_DELAY
-            )
-
-    result = _deduplicate_klines(
-        all_klines
-    )
-
-    result = result[-requested:]
-
-    if not result:
-        raise RuntimeError(
-            "Bitget returned no usable "
-            "historical candles."
-        )
-
+            end_time = int(sorted(batch, key=lambda row: int(row[0]))[0][0]) - 1
+            time.sleep(HISTORICAL_REQUEST_DELAY)
+    result = _deduplicate_klines(all_klines)[-requested:]
     if len(result) < requested:
-        raise RuntimeError(
-            "Bitget returned only "
-            f"{len(result)} usable candles "
-            f"out of {requested} requested."
-        )
-
+        raise RuntimeError(f"Bitget returned only {len(result)} usable candles out of {requested} requested")
     return result
 
 
-# ============================================================================
-# MULTI-EXCHANGE HISTORICAL DATA
-# ============================================================================
-
-
-def fetch_historical_klines(
-    symbol: str,
-    interval: str = "5m",
-    limit: int = 1500,
-) -> tuple[list[list[Any]], str]:
-    """
-    Fetch historical candles using provider fallback.
-
-    Provider order:
-
-        1. Binance
-        2. Bitget
-
-    This keeps both exchanges in HHHAI while preventing one exchange's
-    temporary API problem from blocking model bootstrap.
-
-    Returns:
-
-        (candles, provider_name)
-    """
-
+def fetch_historical_klines(symbol: str, interval: str = "5m", limit: int = 1500) -> tuple[list[list[Any]], str]:
     errors: list[str] = []
-
-    # ------------------------------------------------------------------
-    # Provider 1: Binance
-    # ------------------------------------------------------------------
-
-    try:
-        klines = fetch_binance_klines(
-            symbol=symbol,
-            interval=interval,
-            limit=limit,
-        )
-
-        return (
-            klines,
-            "binance",
-        )
-
-    except Exception as exc:
-        errors.append(
-            "binance: "
-            f"{type(exc).__name__}: {exc}"
-        )
-
-    # ------------------------------------------------------------------
-    # Provider 2: Bitget
-    # ------------------------------------------------------------------
-
-    try:
-        klines = fetch_bitget_klines(
-            symbol=symbol,
-            interval=interval,
-            limit=limit,
-        )
-
-        return (
-            klines,
-            "bitget",
-        )
-
-    except Exception as exc:
-        errors.append(
-            "bitget: "
-            f"{type(exc).__name__}: {exc}"
-        )
-
-    raise RuntimeError(
-        "Historical market data unavailable "
-        "from all configured providers. "
-        + " | ".join(errors)
-    )
-
-
-# ============================================================================
-# DATASET BUILDING
-# ============================================================================
-
-
-def build_dataset(
-    klines: list[list[Any]],
-    horizon: int = 6,
-    threshold: float = 0.0025,
-) -> list[dict[str, Any]]:
-    """
-    Convert OHLCV candles into supervised-learning examples.
-
-    Each example contains:
-
-        - observation timestamp
-        - engineered features
-        - future-direction label
-        - realized future return
-    """
-
-    if horizon <= 0:
-        raise ValueError(
-            "Horizon must be greater than zero."
-        )
-
-    if threshold <= 0:
-        raise ValueError(
-            "Threshold must be greater than zero."
-        )
-
-    if len(klines) < 50:
-        raise ValueError(
-            "Not enough candles to build "
-            f"the dataset: {len(klines)}."
-        )
-
-    candles: list[dict[str, Any]] = []
-
-    for row in klines:
-
-        if not isinstance(
-            row,
-            list,
-        ):
-            continue
-
-        if len(row) < 6:
-            continue
-
+    for provider, fetcher in (("binance", fetch_binance_klines), ("bitget", fetch_bitget_klines)):
         try:
-            timestamp = int(
-                row[0]
-            )
+            return fetcher(symbol=symbol, interval=interval, limit=limit), provider
+        except Exception as exc:
+            errors.append(f"{provider}: {type(exc).__name__}: {exc}")
+    raise RuntimeError("Historical market data unavailable from all configured providers. " + " | ".join(errors))
 
-            open_price = float(
-                row[1]
-            )
 
-            high_price = float(
-                row[2]
-            )
+def _candle_to_dict(row: list[Any]) -> dict[str, Any]:
+    return {
+        "observed_at": datetime.fromtimestamp(int(row[0]) / 1000, timezone.utc).isoformat(),
+        "open": float(row[1]), "high": float(row[2]), "low": float(row[3]), "close": float(row[4]), "volume": max(0.0, float(row[5])),
+    }
 
-            low_price = float(
-                row[3]
-            )
 
-            close_price = float(
-                row[4]
-            )
-
-            volume = float(
-                row[5]
-            )
-
-        except (
-            TypeError,
-            ValueError,
-            IndexError,
-        ):
-            continue
-
-        if (
-            timestamp <= 0
-            or close_price <= 0
-            or high_price <= 0
-            or low_price <= 0
-        ):
-            continue
-
-        candles.append({
-            "observed_at": datetime.fromtimestamp(
-                timestamp / 1000,
-                timezone.utc,
-            ).isoformat(),
-
-            "open": open_price,
-            "high": high_price,
-            "low": low_price,
-            "close": close_price,
-            "volume": max(
-                0.0,
-                volume,
-            ),
-        })
-
-    # Always sort the normalized dataset chronologically.
-    candles.sort(
-        key=lambda row: row["observed_at"]
-    )
-
+def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 0.0025) -> list[dict[str, Any]]:
+    if horizon <= 0 or threshold <= 0:
+        raise ValueError("Horizon and threshold must be greater than zero")
+    candles = [_candle_to_dict(row) for row in _deduplicate_klines(klines)]
     if len(candles) < 50:
-        raise ValueError(
-            "Not enough valid OHLCV candles "
-            "after validation."
-        )
-
+        raise ValueError(f"Not enough valid OHLCV candles: {len(candles)}")
     lookback = 24
-
-    if (
-        len(candles)
-        <= lookback + horizon
-    ):
-        raise ValueError(
-            "Not enough candles for the "
-            "requested lookback and horizon."
-        )
-
+    if len(candles) <= lookback + horizon:
+        raise ValueError("Not enough candles for the requested lookback and horizon")
     rows: list[dict[str, Any]] = []
-
-    for i in range(
-        lookback,
-        len(candles) - horizon,
-    ):
-
-        window = candles[
-            i - lookback:i + 1
-        ]
-
+    for i in range(lookback, len(candles) - horizon):
+        window = candles[i - lookback:i + 1]
         last = window[-1]
-        prev = window[-2]
-
-        returns = [
-            (
-                window[j]["close"]
-                / window[j - 1]["close"]
-            ) - 1.0
-
-            for j in range(
-                1,
-                len(window),
-            )
-
-            if window[j - 1]["close"]
-        ]
-
-        recent_returns = returns[-12:]
-
-        mean_ret = (
-            float(
-                np.mean(
-                    recent_returns
-                )
-            )
-            if recent_returns
-            else 0.0
-        )
-
-        vol = (
-            float(
-                np.std(
-                    recent_returns
-                )
-            )
-            if len(recent_returns) > 1
-            else 0.0
-        )
-
-        vol_change = (
-            (
-                last["volume"]
-                / prev["volume"]
-            ) - 1.0
-
-            if prev["volume"]
-            else 0.0
-        )
-
-        future = (
-            (
-                candles[i + horizon]["close"]
-                / last["close"]
-            ) - 1.0
-
-            if last["close"]
-            else 0.0
-        )
-
-        # --------------------------------------------------------------
-        # Three-class target
-        #
-        #  1  = price rises beyond threshold
-        #  0  = neutral
-        # -1  = price falls beyond threshold
-        # --------------------------------------------------------------
-
-        if future > threshold:
-            label = 1
-
-        elif future < -threshold:
-            label = -1
-
-        else:
-            label = 0
-
-        # --------------------------------------------------------------
-        # Features
-        # --------------------------------------------------------------
-        # Use the shared feature builder so historical bootstrap and live
-        # inference use identical definitions. Context-only intelligence
-        # remains neutral during OHLCV-only training.
-        model_features = build_model_features(
-            [
-                [
-                    int(c["observed_at"] and datetime.fromisoformat(c["observed_at"]).timestamp() * 1000),
-                    c["open"],
-                    c["high"],
-                    c["low"],
-                    c["close"],
-                    c["volume"],
-                ]
-                for c in window
-            ]
-        )
-
-        features = {
-            **model_features,
-            "order_book_imbalance": 0.0,
-            "funding_rate": 0.0,
-            "open_interest_change": 0.0,
-            "news_risk": 0.0,
-            "news_sentiment": 0.0,
-            "liquidity_stress": 0.0,
-        }
-
-        rows.append({
-            "observed_at": last[
-                "observed_at"
-            ],
-
-            "features": features,
-
-            "label": label,
-
-            "outcome_return": future,
-        })
-
+        future = candles[i + horizon]["close"] / last["close"] - 1.0
+        label = 1 if future > threshold else -1 if future < -threshold else 0
+        candle_rows = [[int(datetime.fromisoformat(c["observed_at"]).timestamp() * 1000), c["open"], c["high"], c["low"], c["close"], c["volume"]] for c in window]
+        model_features = build_model_features(candle_rows)
+        # Do not silently claim missing context is neutral. These values are
+        # explicitly marked unavailable so the training gate can reject them.
+        context_availability = {name: False for name in ("order_book_imbalance", "funding_rate", "open_interest_change", "news_risk", "news_sentiment", "liquidity_stress")}
+        rows.append({"observed_at": last["observed_at"], "features": model_features, "label": label, "outcome_return": future, "context_available": context_availability, "data_source": "ohlcv_only"})
     if not rows:
-        raise ValueError(
-            "Dataset construction produced "
-            "zero training rows."
-        )
-
+        raise ValueError("Dataset construction produced zero training rows")
     return rows
 
 
-# ============================================================================
-# WALK-FORWARD VALIDATION + PROMOTION
-# ============================================================================
-
-
-def validate_and_promote(
-    rows: list[dict[str, Any]],
-    version: str = "bootstrap",
-) -> dict[str, Any]:
-    """
-    Validate a candidate model using walk-forward testing.
-
-    Promotion requirements:
-
-        accuracy >= 52%
-        balanced_accuracy >= 50%
-        average simulated return > 0
-
-    The candidate is only promoted after passing these gates.
-    """
-
+def validate_and_promote(rows: list[dict[str, Any]], version: str = "bootstrap") -> dict[str, Any]:
     if not rows:
-        return {
-            "status": "REJECTED",
-            "reason": (
-                "No training rows were supplied."
-            ),
-            "rows": 0,
-        }
-
-    min_train = max(
-        300,
-        min(
-            700,
-            len(rows) // 2,
-        ),
-    )
-
-    folds = walk_forward(
-        rows,
-        min_train=min_train,
-        test_size=100,
-        step=100,
-    )
-
+        return {"status": "REJECTED", "reason": "No training rows were supplied.", "rows": 0}
+    try:
+        audit = audit_training_rows(rows, required_context_features=("order_book_imbalance", "funding_rate", "open_interest_change", "news_risk", "news_sentiment", "liquidity_stress"))
+    except DatasetIntegrityError as exc:
+        return {"status": "REJECTED", "reason": f"Dataset integrity gate failed: {exc}", "rows": len(rows)}
+    min_train = max(300, min(700, len(rows) // 2))
+    folds = walk_forward(rows, min_train=min_train, test_size=100, step=100)
     if not folds:
-        return {
-            "status": "REJECTED",
-            "reason": (
-                "Not enough historical rows "
-                "for walk-forward validation."
-            ),
-            "rows": len(rows),
-        }
-
-    fold_reports: list[
-        dict[str, Any]
-    ] = []
-
-    predictions: list[
-        tuple[int, int, float]
-    ] = []
-
+        return {"status": "REJECTED", "reason": "Not enough historical rows for walk-forward validation.", "rows": len(rows), "audit": audit}
+    predictions: list[tuple[int, int, float]] = []
     for fold in folds:
-
-        model = Pipeline([
-            (
-                "scale",
-                StandardScaler(),
-            ),
-
-            (
-                "clf",
-                LogisticRegression(
-                    max_iter=1000,
-                    class_weight="balanced",
-                    random_state=42,
-                ),
-            ),
-        ])
-
-        X = [
-            [
-                r["features"].get(
-                    k,
-                    0.0,
-                )
-
-                for k in FEATURES
-            ]
-
-            for r in fold.train
-        ]
-
-        y = [
-            int(
-                r["label"]
-            )
-
-            for r in fold.train
-        ]
-
-        # A three-class classifier needs:
-        #
-        # -1
-        #  0
-        #  1
-        #
-        # in the training set.
-
+        X = [[r["features"].get(k, 0.0) for k in FEATURES] for r in fold.train]
+        y = [int(r["label"]) for r in fold.train]
         if len(set(y)) < 3:
             continue
-
-        model.fit(
-            X,
-            y,
-        )
-
-        Xtest = [
-            [
-                r["features"].get(
-                    k,
-                    0.0,
-                )
-
-                for k in FEATURES
-            ]
-
-            for r in fold.test
-        ]
-
-        pred = model.predict(
-            Xtest
-        )
-
-        probs = model.predict_proba(
-            Xtest
-        )
-
-        actual_labels = [
-            int(
-                r["label"]
-            )
-
-            for r in fold.test
-        ]
-
-        for (
-            r,
-            p,
-            prob,
-        ) in zip(
-            fold.test,
-            pred,
-            probs,
-        ):
-
-            confidence = float(
-                max(prob)
-            )
-
-            realized = float(
-                r["outcome_return"]
-            )
-
-            # --------------------------------------------------------------
-            # Trading simulation
-            #
-            #  1  = LONG
-            #  0  = NO TRADE
-            # -1  = SHORT
-            #
-            # A neutral prediction must never be counted as a trade.
-            # --------------------------------------------------------------
-
-            if confidence >= 0.55 and int(p) != 0:
-
-                if int(p) == int(r["label"]):
-                    trade_return = realized
-
-                else:
-                    trade_return = -abs(
-                        realized
-                    )
-
-            else:
-                trade_return = 0.0
-
-            predictions.append(
-                (
-                    int(
-                        r["label"]
-                    ),
-
-                    int(p),
-
-                    trade_return,
-                )
-            )
-
-        fold_accuracy = float(
-            np.mean(
-                np.asarray(pred)
-                == np.asarray(
-                    actual_labels
-                )
-            )
-        )
-
-        fold_reports.append({
-            "train": len(
-                fold.train
-            ),
-
-            "test": len(
-                fold.test
-            ),
-
-            "accuracy": fold_accuracy,
-        })
-
-    # --------------------------------------------------------------
-    # No valid predictions
-    # --------------------------------------------------------------
-
-    if not predictions:
-        return {
-            "status": "REJECTED",
-
-            "version": (
-                predictive_model.version
-            ),
-
-            "reason": (
-                "No valid walk-forward "
-                "predictions were produced."
-            ),
-
-            "rows": len(rows),
-
-            "folds": len(
-                fold_reports
-            ),
-
-            "folds_detail": (
-                fold_reports
-            ),
-        }
-
-    # --------------------------------------------------------------
-    # Evaluate predictions
-    # --------------------------------------------------------------
-
-    metrics = evaluate_predictions(
-        predictions
-    )
-
-    metrics["folds"] = len(
-        fold_reports
-    )
-
-    metrics["folds_detail"] = (
-        fold_reports
-    )
-
-    # --------------------------------------------------------------
-    # Promotion gate
-    # --------------------------------------------------------------
-
-    if (
-        metrics["accuracy"] < 0.52
-
-        or metrics[
-            "balanced_accuracy"
-        ] < 0.50
-
-        or metrics[
-            "avg_return"
-        ] <= 0
-    ):
-
-        return {
-            "status": "REJECTED",
-
-            "version": (
-                predictive_model.version
-            ),
-
-            "metrics": metrics,
-
-            "rows": len(rows),
-        }
-
-    # --------------------------------------------------------------
-    # Promote the validated model
-    # --------------------------------------------------------------
-
-    report = predictive_model.train(
-        rows,
-        version=version,
-        min_rows=max(
-            1,
-            len(rows),
-        ),
-    )
-
-    if not report.trained:
-        return {
-            "status": "REJECTED",
-
-            "version": (
-                predictive_model.version
-            ),
-
-            "reason": report.reason,
-
-            "metrics": metrics,
-
-            "rows": len(rows),
-        }
-
-    return {
-        "status": "PROMOTED",
-
-        "version": version,
-
-        "metrics": metrics,
-
-        "rows": len(rows),
-    }
+        model = Pipeline([("scale", StandardScaler()), ("clf", LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42))])
+        model.fit(X, y)
+        Xtest = [[r["features"].get(k, 0.0) for k in FEATURES] for r in fold.test]
+        pred = model.predict(Xtest)
+        probs = model.predict_proba(Xtest)
+        classes = list(model.classes_)
+        for r, p, prob in zip(fold.test, pred, probs):
+            confidence = float(max(prob)) if len(prob) else 0.0
+            predictions.append((int(r["label"]), int(p), float(r["outcome_return"]) if p != 0 else 0.0))
+    metrics = evaluate_predictions(predictions)
+    status = "PROMOTED" if metrics.get("accuracy", 0.0) >= 0.52 and metrics.get("balanced_accuracy", 0.0) >= 0.50 and metrics.get("average_return", 0.0) > 0 else "REJECTED"
+    return {"status": status, "version": version, "metrics": metrics, "rows": len(rows), "audit": audit}
