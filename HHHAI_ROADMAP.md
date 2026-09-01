@@ -8,7 +8,7 @@ This file is the project control record. It is not a source-code stage and it mu
 
 **STEP 0 — FORENSIC AUDIT + BASELINE: [✓] COMPLETED**
 
-**NEXT: STAGE 1 — STABILIZE THE FOUNDATION**
+**CURRENT: STAGE 1 — STABILIZE THE FOUNDATION**
 
 No live-money execution is authorized by this roadmap. Safety gates remain fail-closed throughout every stage.
 
@@ -16,25 +16,7 @@ No live-money execution is authorized by this roadmap. Safety gates remain fail-
 
 # STEP 0 — Forensic Audit + Baseline [✓]
 
-Audit scope completed against the connected repositories and Supabase project:
-
-- [✓] Backend repository inventory
-- [✓] Frontend repository inventory
-- [✓] AI/model pipeline inspection
-- [✓] Autonomous/background-process inspection
-- [✓] Binance integration inspection
-- [✓] Bitget integration inspection
-- [✓] API surface inspection
-- [✓] Persistence/Supabase inspection
-- [✓] Deployment/configuration inspection from repository configuration
-- [✓] Frontend/API integration inspection
-- [✓] Existing tests and testing gaps inspection
-- [✓] Safety/execution boundary inspection
-- [✓] Current intelligence architecture classification
-- [✓] Existing placeholder/deterministic intelligence identified
-- [✓] Stage 1–9 upgrade backlog derived from the audit
-
-**Audit conclusion:** ambitious architecture / early intelligence implementation. Preserve the safety, orchestration and exchange foundation; upgrade the data, predictive, adaptive and decision layers with learned, calibrated and empirically validated intelligence.
+Audit scope completed against the connected repositories and Supabase project.
 
 ---
 
@@ -51,7 +33,7 @@ Goal: make HHHAI reliable, truthful, observable and safe before making the intel
 - [ ] Verify missing-data handling and fail-closed behavior
 - [ ] Verify model artifact persistence, loading and version integrity
 - [ ] Verify model promotion/rejection gates
-- [ ] Run and repair the complete backend test suite
+- [✓] Run and repair the complete backend test suite
 - [ ] Expand backend integration tests around real service boundaries
 - [ ] Audit and harden Binance connectivity without live orders
 - [ ] Audit and harden Bitget connectivity without live orders
@@ -62,14 +44,14 @@ Goal: make HHHAI reliable, truthful, observable and safe before making the intel
 - [ ] Verify CORS/authentication/admin-control boundaries
 - [ ] Verify Supabase persistence and restart recovery
 - [ ] Resolve Supabase RLS/policy findings appropriately
-- [ ] Verify frontend production build
+- [✓] Verify frontend production build
 - [ ] Verify every frontend endpoint against the backend contract
 - [ ] Verify frontend failure/loading/stale-data states
 - [ ] Verify deployment/startup health on Render and Vercel
 - [ ] Establish operational logs, health checks and safe failure states
 - [ ] Confirm real-money execution remains impossible unless every explicit safety gate permits it
 
-**STAGE 1 STATUS: NOT COMPLETE**
+**STAGE 1 STATUS: IN PROGRESS**
 
 ---
 
