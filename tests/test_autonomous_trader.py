@@ -7,6 +7,7 @@ from ai.autonomous_trader import AutonomousTrader
 
 def test_default_execution_is_fail_closed(monkeypatch):
     monkeypatch.delenv("HHHAI_TRADING_MODE", raising=False)
+    monkeypatch.setenv("HHHAI_AUTOTRADING_ENABLED", "false")
     monkeypatch.setattr("ai.autonomous_trader.settings.live_trading_enabled", False)
     monkeypatch.setattr("ai.autonomous_trader.settings.testnet_trading_enabled", False)
     t = AutonomousTrader()
@@ -17,6 +18,7 @@ def test_default_execution_is_fail_closed(monkeypatch):
 
 def test_testnet_requires_explicit_gate(monkeypatch):
     monkeypatch.setenv("HHHAI_TRADING_MODE", "testnet")
+    monkeypatch.setenv("HHHAI_AUTOTRADING_ENABLED", "true")
     monkeypatch.setattr("ai.autonomous_trader.settings.testnet_trading_enabled", False)
     t = AutonomousTrader()
     allowed, reason = t._execution_gate()
@@ -26,6 +28,7 @@ def test_testnet_requires_explicit_gate(monkeypatch):
 
 def test_live_requires_explicit_live_gate(monkeypatch):
     monkeypatch.setenv("HHHAI_TRADING_MODE", "live")
+    monkeypatch.setenv("HHHAI_AUTOTRADING_ENABLED", "true")
     monkeypatch.setattr("ai.autonomous_trader.settings.live_trading_enabled", False)
     t = AutonomousTrader()
     assert t._execution_gate()[0] is False
@@ -33,6 +36,7 @@ def test_live_requires_explicit_live_gate(monkeypatch):
 
 def test_live_mode_does_not_require_testnet_flag(monkeypatch):
     monkeypatch.setenv("HHHAI_TRADING_MODE", "live")
+    monkeypatch.setenv("HHHAI_AUTOTRADING_ENABLED", "true")
     monkeypatch.setattr("ai.autonomous_trader.settings.live_trading_enabled", True)
     monkeypatch.setattr("ai.autonomous_trader.settings.testnet_trading_enabled", False)
     t = AutonomousTrader()
