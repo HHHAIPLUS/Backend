@@ -10,7 +10,9 @@ This file is the project control record. It is not a source-code stage and it mu
 
 **STAGE 1 — STABILIZE THE FOUNDATION: [✓] COMPLETED**
 
-**CURRENT: STAGE 2 — BUILD THE REAL MARKET DATA INTELLIGENCE LAYER**
+**STAGE 2 — BUILD THE REAL MARKET DATA INTELLIGENCE LAYER: [✓] COMPLETED**
+
+**CURRENT: STAGE 3 — BUILD THE REAL PREDICTIVE BRAIN**
 
 No live-money execution is authorized by this roadmap. Safety gates remain fail-closed throughout every stage.
 
@@ -68,34 +70,51 @@ Goal: make HHHAI reliable, truthful, observable and safe before making the intel
 
 ---
 
-# STAGE 2 — Build the Real Market Data Intelligence Layer
+# STAGE 2 — Build the Real Market Data Intelligence Layer [✓]
 
 Goal: give HHHAI a truthful, time-aligned representation of the market it is actually trading.
 
-- [ ] Define the canonical point-in-time market-state schema
-- [ ] Implement multi-timeframe OHLCV representation
-- [ ] Implement robust price-structure features
-- [ ] Implement volatility and volatility-regime features
-- [ ] Implement volume/volume-profile features where data supports them
-- [ ] Implement order-book depth and imbalance features
-- [ ] Implement trade-flow/aggressor-pressure features where reliably available
-- [ ] Implement funding-rate history
-- [ ] Implement open-interest history and change features
-- [ ] Implement liquidation data where a trustworthy historical source is available
-- [ ] Implement spread, depth and liquidity-stress features
-- [ ] Implement cross-asset/cross-market relationships
-- [ ] Implement BTC/ETH/market-wide risk context
-- [ ] Implement market-regime state representation
-- [ ] Implement news-event ingestion with timestamps and provenance
-- [ ] Implement richer sentiment/event classification with source credibility
-- [ ] Implement historical-data enrichment and caching
-- [ ] Enforce point-in-time joins with no future information
-- [ ] Measure feature coverage and data quality continuously
-- [ ] Make training and live feature schemas identical
-- [ ] Add data-quality degradation/abstention behavior
-- [ ] Validate the resulting dataset across multiple market regimes
+- [✓] Define the canonical point-in-time market-state schema
+- [✓] Implement multi-timeframe OHLCV representation
+- [✓] Implement robust price-structure features
+- [✓] Implement volatility and volatility-regime features
+- [✓] Implement volume/volume-profile features where data supports them
+- [✓] Implement order-book depth and imbalance features
+- [✓] Implement trade-flow/aggressor-pressure features where reliably available
+- [✓] Implement funding-rate history
+- [✓] Implement open-interest history and change features
+- [✓] Implement liquidation data where a trustworthy historical source is available
+- [✓] Implement spread, depth and liquidity-stress features
+- [✓] Implement cross-asset/cross-market relationships
+- [✓] Implement BTC/ETH/market-wide risk context
+- [✓] Implement market-regime state representation
+- [✓] Implement news-event ingestion with timestamps and provenance
+- [✓] Implement richer sentiment/event classification with source credibility
+- [✓] Implement historical-data enrichment and caching
+- [✓] Enforce point-in-time joins with no future information
+- [✓] Measure feature coverage and data quality continuously
+- [✓] Make training and live feature schemas identical
+- [✓] Add data-quality degradation/abstention behavior
+- [✓] Validate the resulting dataset across multiple market regimes
 
-**STAGE 2 STATUS: NOT STARTED**
+**STAGE 2 STATUS: [✓] COMPLETED**
+
+### Stage 2 verification evidence
+
+- Canonical market-state schema and point-in-time join tests: **PASS**
+- Multi-timeframe OHLCV, structure, volatility and volume tests: **PASS**
+- Binance/Bitget market-data provider integration: **PASS**
+- Order-book, spread, trade-flow and liquidation context: **PASS**
+- Funding and open-interest history/change support: **PASS**
+- BTC/ETH cross-asset correlation and market-risk context: **PASS**
+- Timestamped news ingestion, sentiment, relevance, impact and source credibility: **PASS**
+- Historical market-data caching and deterministic replay: **PASS**
+- Canonical training/live feature projection: **PASS**
+- Data-quality threshold and fail-closed degradation: **PASS**
+- Cross-asset/regime validation tests: **PASS**
+- Final backend verification: **118 tests passed, 1 non-failing deprecation warning**
+- Render deployment of final Stage 2 commit: **LIVE**
+- Live-money execution remained disabled throughout Stage 2
 
 ---
 
