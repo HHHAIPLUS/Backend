@@ -1,84 +1,97 @@
-# HHHAI Stage 0 — Forensic Audit Baseline
+# HHHAI Stage 0 — Full Forensic Audit Baseline
 
 Date: 2026-09-01
+Status: **COMPLETED**
 
 ## Purpose
 
-This document records the engineering baseline before the intelligence upgrade. It is intentionally descriptive: Stage 0 does not promote a new trading model or enable real-money execution.
+Stage 0 establishes what HHHAI actually contains before further engineering. It does not enable real-money execution.
 
-## Repository inventory
+## Repositories inspected
 
-The backend contains dedicated modules for autonomous trading, specialist agents, adaptive position management, adversarial analysis, scenarios, counterfactuals, predictive modeling, learning, simulation, paper trading, stress testing, portfolio/capital risk, exchange integrations, APIs, and tests.
+- Backend: `HHHAIPLUS/Backend`
+- Frontend: `HHHAIPLUS/Frontend`
+- Supabase project: `HHHAIPLUS's Project` (`tpvmxjphnamwgyrsbnkp`)
 
-The frontend is a compact React/Vite application with a single primary application entry point, admin UI, styles, Vite configuration and Vercel configuration.
+## Backend audit
 
-## Findings
+The backend contains substantial architecture for autonomous trading, specialist agents, adaptive logic, adversarial analysis, scenarios, counterfactuals, predictive modeling, learning, simulation, paper trading, stress testing, portfolio/capital risk, exchange adapters, APIs, persistence and tests. The repository also contains a dedicated real-time market-data subsystem and deployment configuration.
 
-### 1. Architecture: GOOD FOUNDATION
+### What exists
 
-The architecture has a useful separation between market observations, specialist intelligence, predictive gating, risk/execution controls, autonomous monitoring, learning and UI. The autonomous trader is started only when the explicit HHHAI_AUTOTRADING_ENABLED environment flag is true.
+- FastAPI application and broad API surface.
+- Binance and Bitget exchange adapters.
+- Persistent/REST-fallback Binance market feed with ticker, depth, funding, OI and derived market features.
+- Autonomous trader and monitor worker.
+- Specialist council with nine named agents.
+- Cognitive exit, position management, capital guard, portfolio risk and execution guard.
+- Scenario, adversarial, counterfactual and decision-fusion modules.
+- Learning/candidate/model-registry infrastructure.
+- Paper trading, simulation and stress-harness infrastructure.
+- Predictive model persistence and validation modules.
+- Supabase persistence and migrations.
+- Extensive unit-level tests.
 
-### 2. Predictive brain: NOT ADVANCED ENOUGH
+### What is currently too simple or not yet production-grade
 
-The production predictive model is currently a StandardScaler + LogisticRegression three-class direction model. Logistic Regression should remain as a baseline, but it should not be treated as the final advanced intelligence layer.
+- Production predictive model is still a StandardScaler + LogisticRegression three-class direction baseline.
+- Specialist-agent scores and weights are largely hand-coded formulas; they are orchestration, not nine independently learned models.
+- Scenario probabilities are largely formula-driven rather than empirically calibrated distributions.
+- News intelligence is minimal and requires richer event/source/credibility handling.
+- Historical training/live feature parity remains incomplete until historical derivatives/order-flow/news context is genuinely populated.
+- Learning/promotion logic requires stronger statistical, economic and robustness criteria.
+- Stress infrastructure exists but must be exercised at real service boundaries.
 
-### 3. Specialist council: MOSTLY DETERMINISTIC
+## Frontend audit
 
-The nine-agent council is real orchestration, but its specialist scores and weights are hand-coded. This is useful as a safety/explainability baseline, not as evidence of nine independently learned intelligent agents.
+The frontend is a compact React 19/Vite application. It has a main operator console, an admin control room, responsive styling and Vercel configuration.
 
-### 4. Scenario engine: DETERMINISTIC
+### What exists
 
-Scenario probabilities and expected moves are generated from hand-written formulas. The engine should eventually be replaced or augmented by empirically calibrated scenario/return distributions learned from historical data.
+- Overview/live market screen.
+- Control Center.
+- Live AI Watch.
+- Intelligence Council view.
+- Scenario view.
+- Position management view.
+- Learning view.
+- Admin authentication/control surface.
+- Exchange and symbol selectors.
+- Direct backend API integration.
+- Live refresh of backend state.
+- Safety-mode indicators and emergency-stop UI.
 
-### 5. News intelligence: INCOMPLETE
+### What is currently insufficient
 
-The news abstraction is intentionally minimal and currently scores impact × credibility × relevance. Provider selection, source validation, deduplication and richer event understanding are not yet a production-grade intelligence system.
+- UI is a functional observability/control surface, not yet the final advanced AI console.
+- It does not yet expose a full calibrated model ensemble, uncertainty decomposition, expected edge after costs, data lineage, model agreement, detailed adversarial evidence or learned position-thesis state because the backend does not yet provide those authoritative signals.
+- Frontend has limited dependency surface and no dedicated API-client/type layer; contract drift therefore needs explicit testing.
+- Error/loading/degraded-feed behavior needs production integration testing.
 
-### 6. Feature/training mismatch risk
+## Database/Supabase audit
 
-The model feature schema includes market, order-flow, funding, open-interest, news, sentiment, volatility, trend and liquidity fields. The historical bootstrap path must be audited to ensure these fields are populated from time-aligned historical sources rather than neutral placeholders. Training and live inference must represent the same information available at the decision timestamp.
+Current public tables include decision records/outcomes, system events, model registry/artifacts, learning examples and position states. RLS is enabled on these tables. The current Supabase security advisor reports RLS-enabled/no-policy findings for the public tables, which must be resolved appropriately during stabilization rather than ignored.
 
-### 7. Position intelligence: PROMISING BUT RULE-BASED
+The project is currently `ACTIVE_HEALTHY` at the database level.
 
-The adaptive position models support HOLD, PROTECT_PROFIT, REDUCE and EXIT and maintain position memory. This is a strong architectural foundation for thesis-aware autonomous management, but the decision logic needs empirical calibration and learned expected-value reasoning.
+## Exchange/deployment/safety audit
 
-### 8. Learning: SAFE FOUNDATION, TOO SIMPLE FOR FINAL SYSTEM
+Binance and Bitget adapters contain authenticated account/position/order functionality and protective-order logic. These paths require exchange-state reconciliation and integration testing before any live authority is considered safe.
 
-Candidate promotion is gated by trade count, win rate and average return. This is appropriately conservative but insufficient for production promotion. Future promotion must include walk-forward/out-of-sample performance, fees/slippage, drawdown, risk-adjusted metrics, calibration, regime robustness and statistical stability.
+The application defaults to live trading disabled, and autonomous trading requires an explicit environment flag. This fail-closed boundary must remain intact throughout the project.
 
-### 9. Stress testing: FOUNDATION EXISTS
+Render/Vercel deployment configuration exists. Deployment reliability and startup/import behavior remain Stage 1 work items.
 
-The stress harness includes exchange outage, stale data, news failure, database failure, restart, duplicate order, partial fill, extreme volatility, clock skew and network partition scenarios. These tests need to become executable integration tests against the real service boundaries rather than remaining primarily helper-level checks.
+## Important cleanup
 
-### 10. Frontend: FUNCTIONAL CONTROL/OBSERVABILITY UI, NOT YET AN ADVANCED AI CONSOLE
+The temporary engineering file `app/ml/stage1a.py` was removed. Stage names are roadmap concepts, not source-file names.
 
-The frontend already exposes live market data, model status, control center, council, scenarios, positions and learning. It currently consumes backend endpoints directly and refreshes the world view periodically. It should later expose model agreement, calibrated uncertainty, expected edge, thesis integrity, adversarial findings, data lineage and position reasoning in a clearer operator console.
+## Stage 0 conclusion
 
-### 11. Deployment
+**Architecture: strong and ambitious.**
 
-Render is configured for automatic deployment from the backend main branch. The latest deployment is live. Recent deployment history contains several failed updates, so deployment reliability and startup/import testing must remain part of the stabilization stage.
+**Current intelligence: early/partially deterministic.**
 
-### 12. Safety
+HHHAI is not yet the extraordinary predictive/adaptive trading system envisioned. The correct approach is to keep the safety/execution/orchestration foundation while systematically upgrading the data, predictive, adaptive, decision, autonomous-position and learning layers.
 
-The current application defaults to no production execution authority, and autonomous trading requires an explicit environment flag. This safety boundary must remain fail-closed throughout all upgrades. No model improvement should silently enable live exchange execution.
-
-## Stage 0 verdict
-
-**Overall: AMBITIOUS ARCHITECTURE / EARLY INTELLIGENCE IMPLEMENTATION.**
-
-The correct strategy is not to discard HHHAI. Preserve the safety, orchestration and exchange architecture while replacing the simplistic predictive/scenario/agent scoring layers with data-driven, calibrated and empirically validated intelligence.
-
-## Next engineering stage
-
-Stage 1 — Stabilization and truthfulness:
-
-1. Reproduce and eliminate the model bootstrap failure in the deployed environment.
-2. Verify every model metric and trade-count definition.
-3. Verify historical dataset construction and label correctness.
-4. Verify training/live feature parity and timestamp discipline.
-5. Run the complete backend test suite and expand integration coverage where gaps are found.
-6. Verify Binance/Bitget market-data and execution state reconciliation without placing live orders.
-7. Verify database persistence, restart recovery and security policies.
-8. Verify frontend production build and API contract compatibility.
-
-Only after this baseline is green should the advanced intelligence replacement begin.
+The authoritative implementation roadmap is `HHHAI_ROADMAP.md`. It must be checked before future work and is the source of truth for stage progression.
