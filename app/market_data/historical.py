@@ -31,15 +31,24 @@ def _raise(response: httpx.Response, source: str) -> Any:
         raise MarketDataProviderError(f"{source} returned non-JSON data") from exc
 
 
+def _imbalance(bids: list, asks: list) -> tuple[float, float | None]:
+    bid_qty = sum(float(x[1]) for x in bids if len(x) >= 2)
+    ask_qty = sum(float(x[1]) for x in asks if len(x) >= 2)
+    total = bid_qty + ask_qty
+    imbalance = (bid_qty - ask_qty) / total if total > 0 else 0.0
+    bid = float(bids[0][0]) if bids else 0.0
+    ask = float(asks[0][0]) if asks else 0.0
+    spread_bps = ((ask - bid) / ((ask + bid) / 2.0)) * 10000 if bid > 0 and ask > 0 else None
+    return max(-1.0, min(1.0, imbalance)), spread_bps
+
+
 class BinanceMarketData:
     base = "https://fapi.binance.com"
 
     def candles(self, symbol: str, interval: str = "5m", limit: int = 500, start_ms: int | None = None, end_ms: int | None = None) -> list[MarketBar]:
         params: dict[str, Any] = {"symbol": symbol.upper(), "interval": interval, "limit": min(max(limit, 1), 1500)}
-        if start_ms is not None:
-            params["startTime"] = start_ms
-        if end_ms is not None:
-            params["endTime"] = end_ms
+        if start_ms is not None: params["startTime"] = start_ms
+        if end_ms is not None: params["endTime"] = end_ms
         with _client() as client:
             data = _raise(client.get(f"{self.base}/fapi/v1/klines", params=params), "binance klines")
         return [MarketBar(symbol=symbol.upper(), timeframe=interval, timestamp=_dt(row[0]), open=float(row[1]), high=float(row[2]), low=float(row[3]), close=float(row[4]), volume=float(row[5]), quote_volume=float(row[7])) for row in data if len(row) >= 8]
@@ -59,6 +68,24 @@ class BinanceMarketData:
         with _client() as client:
             data = _raise(client.get(f"{self.base}/futures/data/openInterestHist", params=params), "binance open interest")
         return [PointInTimeContext(timestamp=_dt(row["timestamp"]), open_interest=float(row["sumOpenInterest"])) for row in data]
+
+    def trade_flow(self, symbol: str, limit: int = 500) -> list[PointInTimeContext]:
+        with _client() as client:
+            data = _raise(client.get(f"{self.base}/fapi/v1/aggTrades", params={"symbol": symbol.upper(), "limit": min(max(limit, 1), 1000)}), "binance aggregate trades")
+        return [PointInTimeContext(timestamp=_dt(row["T"]), aggressive_buy_ratio=(0.0 if row.get("m") else 1.0)) for row in data]
+
+    def liquidations(self, symbol: str, limit: int = 100) -> list[PointInTimeContext]:
+        # Binance's public REST force-order endpoint is limited historical data;
+        # the feed is treated as recent context rather than an unlimited archive.
+        with _client() as client:
+            data = _raise(client.get(f"{self.base}/fapi/v1/forceOrders", params={"symbol": symbol.upper(), "limit": min(max(limit, 1), 1000)}), "binance liquidations")
+        return [PointInTimeContext(timestamp=_dt(row["time"]), liquidation_notional=float(row.get("price", 0)) * float(row.get("origQty", 0))) for row in data]
+
+    def order_book(self, symbol: str, limit: int = 20) -> PointInTimeContext:
+        with _client() as client:
+            data = _raise(client.get(f"{self.base}/fapi/v1/depth", params={"symbol": symbol.upper(), "limit": min(max(limit, 5), 1000)}), "binance orderbook")
+        imbalance, spread = _imbalance(data.get("bids", []), data.get("asks", []))
+        return PointInTimeContext(timestamp=_dt(data.get("E") or int(datetime.now(timezone.utc).timestamp() * 1000)), order_book_imbalance=imbalance, spread_bps=spread)
 
 
 class BitgetMarketData:
@@ -88,16 +115,15 @@ class BitgetMarketData:
         with _client() as client:
             payload = _raise(client.get(f"{self.base}/api/v3/market/orderbook", params=params), "bitget orderbook")
         data = payload.get("data", {}) if isinstance(payload, dict) else {}
-        bids, asks = data.get("b", []), data.get("a", [])
-        bid_qty = sum(float(x[1]) for x in bids if len(x) >= 2)
-        ask_qty = sum(float(x[1]) for x in asks if len(x) >= 2)
-        bid = float(bids[0][0]) if bids else 0.0
-        ask = float(asks[0][0]) if asks else 0.0
-        total = bid_qty + ask_qty
-        imbalance = (bid_qty - ask_qty) / total if total > 0 else 0.0
-        spread_bps = ((ask - bid) / ((ask + bid) / 2.0)) * 10000 if bid > 0 and ask > 0 else None
+        imbalance, spread = _imbalance(data.get("b", []), data.get("a", []))
         ts = int(data.get("ts") or payload.get("requestTime") or 0)
-        return PointInTimeContext(timestamp=_dt(ts), order_book_imbalance=imbalance, spread_bps=spread_bps)
+        return PointInTimeContext(timestamp=_dt(ts), order_book_imbalance=imbalance, spread_bps=spread)
+
+    def trade_flow(self, symbol: str, limit: int = 100) -> list[PointInTimeContext]:
+        with _client() as client:
+            payload = _raise(client.get(f"{self.base}/api/v2/mix/market/fills", params={"productType": "USDT-FUTURES", "symbol": symbol.upper(), "limit": min(max(limit, 1), 100)}), "bitget recent fills")
+        rows = payload.get("data", []) if isinstance(payload, dict) else []
+        return [PointInTimeContext(timestamp=_dt(row["ts"]), aggressive_buy_ratio=(1.0 if str(row.get("side", "")).lower() == "buy" else 0.0)) for row in rows]
 
     def liquidations(self, symbol: str, limit: int = 100) -> list[PointInTimeContext]:
         params = {"category": "USDT-FUTURES", "symbol": symbol.upper(), "limit": min(max(limit, 1), 100)}
