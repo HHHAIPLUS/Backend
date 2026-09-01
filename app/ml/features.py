@@ -6,12 +6,17 @@ from typing import Any
 
 from app.ml.predictive import FEATURES
 
+_CANDLE_INDEX = {"timestamp": 0, "open": 1, "high": 2, "low": 3, "close": 4, "volume": 5}
+
 
 def _value(source: Any, key: str, default: float = 0.0) -> float:
     if source is None:
         return default
     if isinstance(source, Mapping):
         value = source.get(key, default)
+    elif isinstance(source, (list, tuple)):
+        index = _CANDLE_INDEX.get(key)
+        value = source[index] if index is not None and len(source) > index else default
     else:
         value = getattr(source, key, default)
     try:
@@ -29,10 +34,8 @@ def _nested(source: Any, key: str) -> Any:
 
 
 def _context_values(context: Any) -> Mapping[str, Any]:
-    """Extract only explicitly available point-in-time context values."""
     if context is None:
         return {}
-    # HistoricalContext exposes an explicit availability set and values map.
     values = getattr(context, "values", None)
     available = getattr(context, "available", None)
     if isinstance(values, Mapping) and available is not None:
@@ -45,12 +48,7 @@ def _context_values(context: Any) -> Mapping[str, Any]:
 
 
 def build_model_features(candles: Iterable[Any] | None = None, context: Any | None = None) -> dict[str, float]:
-    """Build the exact predictive feature vector from information available at T.
-
-    HistoricalContext values are consumed explicitly; missing fields are not
-    silently treated as historical neutral observations by this boundary.
-    Live callers may still omit optional context for compatibility.
-    """
+    """Build the exact predictive feature vector from information available at T."""
     rows = list(candles or [])
     market = _nested(context, "market") or context
     historical = _context_values(context)
@@ -95,4 +93,11 @@ def build_model_features(candles: Iterable[Any] | None = None, context: Any | No
         "momentum": context_or_live("momentum", max(-1.0, min(1.0, mean_return * 40.0))),
         "liquidity_stress": context_or_live("liquidity_stress"),
     }
-    return {name: (float(features.get(name, 0.0)) if features.get(name, 0.0) == features.get(name, 0.0) and abs(float(features.get(name, 0.0))) != float("inf") else 0.0) for name in FEATURES}
+    normalized: dict[str, float] = {}
+    for name in FEATURES:
+        try:
+            value = float(features.get(name, 0.0) or 0.0)
+        except (TypeError, ValueError):
+            value = 0.0
+        normalized[name] = value if value == value and abs(value) != float("inf") else 0.0
+    return normalized
