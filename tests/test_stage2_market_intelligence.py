@@ -21,12 +21,13 @@ def test_point_in_time_join_never_uses_future_context():
 
 
 def test_timeframe_aggregation_preserves_ohlcv_without_lookahead():
-    result = aggregate_timeframes(bars(12), 15)
+    source = bars(12)
+    result = aggregate_timeframes(source, 15)
     assert result
-    assert result[0].open == bars(12)[0].open
-    assert result[0].close == bars(12)[2].close
-    assert result[0].high == max(x.high for x in bars(12)[:3])
-    assert result[0].volume == sum(x.volume for x in bars(12)[:3])
+    assert result[0].open == source[0].open
+    assert result[0].close == source[2].close
+    assert result[0].high == max(x.high for x in source[:3])
+    assert result[0].volume == sum(x.volume for x in source[:3])
 
 
 def test_market_state_contains_structure_derivatives_regime_and_quality():
@@ -49,6 +50,16 @@ def test_canonical_model_features_have_stable_schema():
     expected = {"return_1", "range_pct", "volume_change", "order_book_imbalance", "funding_rate", "open_interest_change", "news_risk", "news_sentiment", "volatility_proxy", "trend_strength", "momentum", "liquidity_stress"}
     assert set(features) == expected
     assert all(isinstance(v, float) for v in features.values())
+
+
+def test_cross_asset_relationships_are_time_aligned():
+    primary = bars(60, step=0.01)
+    correlated = bars(60, step=0.01)
+    correlated = [x.model_copy(update={"symbol": "ETHUSDT"}) for x in correlated]
+    context = PointInTimeContext(timestamp=primary[-1].timestamp, funding_rate=0.0001, open_interest=1234, order_book_imbalance=0.25, spread_bps=1.2)
+    state = build_market_state("BTCUSDT", {"5m": primary}, context, correlation_bars={"ETHUSDT": correlated}, observed_at=primary[-1].timestamp)
+    assert state.correlations["ETHUSDT"] is not None
+    assert state.correlations["ETHUSDT"] > 0.9
 
 
 def test_market_state_fails_quality_when_core_context_missing():
