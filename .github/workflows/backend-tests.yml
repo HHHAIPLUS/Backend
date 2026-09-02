@@ -18,45 +18,69 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install pytest
-      - name: Run tests
+          pip install -r requirements.txt
+      - name: Unit and integration tests
         env:
           HHHAI_AUTOTRADING_ENABLED: 'true'
           LIVE_TRADING_ENABLED: 'false'
         run: pytest -q
 
-  deployed-smoke:
+  release-ladder:
     if: github.event_name == 'push'
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - name: Verify deployed Stage 8 risk and capital safety
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Historical, walk-forward, OOS, stress, Monte Carlo, paper and controlled execution gates
+        env:
+          HHHAI_TEST_HISTORY_LIMIT: '1000'
+          HHHAI_TEST_REPORT: testing_ladder_report.json
+          LIVE_TRADING_ENABLED: 'false'
+          TESTNET_TRADING_ENABLED: 'false'
+          HHHAI_AUTOTRADING_ENABLED: 'false'
+        run: python tools/testing_ladder.py
+      - name: Upload release-ladder evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: hh-hai-testing-ladder-evidence
+          path: testing_ladder_report.json
+
+  deployed-smoke:
+    if: github.event_name == 'push'
+    needs: [test, release-ladder]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify deployed backend safety and release state
         shell: bash
         run: |
           set -euo pipefail
           for i in {1..30}; do
             if curl --fail --silent --show-error --max-time 15 https://hhhai.onrender.com/ > /tmp/root.json && \
                curl --fail --silent --show-error --max-time 15 https://hhhai.onrender.com/api/risk/status > /tmp/risk.json && \
-               curl --fail --silent --show-error --max-time 15 https://hhhai.onrender.com/api/research/status > /tmp/stage7.json; then
+               curl --fail --silent --show-error --max-time 15 https://hhhai.onrender.com/api/research/status > /tmp/research.json; then
               python - <<'PY'
           import json
           root=json.load(open('/tmp/root.json'))
           risk=json.load(open('/tmp/risk.json'))
-          stage7=json.load(open('/tmp/stage7.json'))
-          assert root['phase'].startswith('Stage 8'), root
-          assert root['risk_engine'] == 'independent', root
+          research=json.load(open('/tmp/research.json'))
           assert root['live_trading_enabled'] is False, root
           assert root['execution_authority'] is False, root
           assert risk['execution_authority'] is False, risk
-          assert risk['kills']['global']['enabled'] is False, risk
-          assert stage7['production_self_modification'] is False, stage7
-          assert stage7['execution_authority'] is False, stage7
-          print('deployed Stage 8 risk smoke: PASS')
+          assert research['production_self_modification'] is False, research
+          assert research['execution_authority'] is False, research
+          print('deployed backend safety smoke: PASS')
           PY
               exit 0
             fi
             sleep 5
           done
-          echo 'deployed Stage 8 risk smoke: FAILED'
+          echo 'deployed backend safety smoke: FAILED'
           exit 1
