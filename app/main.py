@@ -30,14 +30,17 @@ from app.api.trading import router as trading_router
 from app.api.market_intelligence import router as market_intelligence_router
 from app.api.stage5 import router as stage5_router
 from app.api.position_intelligence import router as position_intelligence_router
+from app.api.risk_capital import router as risk_capital_router
 from app.ml.model_persistence import hydrate_model
 from ai.autonomous_trader import trader
 from ai.position_intelligence import install_stage6_position_intelligence
 from ai.stage6_hydration import install_stage6_hydration
+from ai.stage8_integration import install_stage8_risk, hydrate_stage8_risk
 from app.core.config import settings
 
 install_stage6_position_intelligence(trader)
 install_stage6_hydration(trader)
+stage8_risk = install_stage8_risk(trader)
 
 @asynccontextmanager
 async def lifespan(app):
@@ -45,6 +48,7 @@ async def lifespan(app):
     await hydrate_adaptive()
     await hydrate_research()
     await hydrate_model()
+    await hydrate_stage8_risk(stage8_risk)
     task = asyncio.create_task(monitor.run())
     if os.getenv("HHHAI_AUTOTRADING_ENABLED", "false").lower() == "true":
         await trader.start()
@@ -56,13 +60,13 @@ async def lifespan(app):
         if trader.running:
             await trader.stop()
 
-app = FastAPI(title=settings.app_name, version='1.0.0', description='HHHAI backend — cumulative Stage 7', lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version='1.0.0', description='HHHAI backend — cumulative Stage 8', lifespan=lifespan)
 allowed_origins = [x.strip() for x in (os.getenv('HHHAI_CORS_ORIGINS') or settings.cors_origins).split(',') if x.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
 app.include_router(adversarial_router); app.include_router(model_router); app.include_router(markets_router); app.include_router(trading_router); app.include_router(market_intelligence_router)
 app.include_router(simulation_router); app.include_router(paper_router); app.include_router(stress_router); app.include_router(capital_router); app.include_router(portfolio_router); app.include_router(control_center_router); app.include_router(trade_optimizer_router); app.include_router(performance_router)
-app.include_router(health_router); app.include_router(status_router); app.include_router(integration_router); app.include_router(admin_router); app.include_router(adaptive_router); app.include_router(council_router); app.include_router(realtime_router); app.include_router(positions_router); app.include_router(scenarios_router); app.include_router(learning_router); app.include_router(research_router); app.include_router(stage5_router); app.include_router(position_intelligence_router)
+app.include_router(health_router); app.include_router(status_router); app.include_router(integration_router); app.include_router(admin_router); app.include_router(adaptive_router); app.include_router(council_router); app.include_router(realtime_router); app.include_router(positions_router); app.include_router(scenarios_router); app.include_router(learning_router); app.include_router(research_router); app.include_router(stage5_router); app.include_router(position_intelligence_router); app.include_router(risk_capital_router)
 
 @app.get('/')
 def root():
-    return {'name': settings.app_name, 'version': settings.app_version if hasattr(settings, 'app_version') else '1.0.0', 'phase': 'Stage 7 - Self-Learning Research Loop', 'live_trading_enabled': settings.live_trading_enabled, 'execution_authority': False, 'mode': settings.app_env}
+    return {'name': settings.app_name, 'version': settings.app_version if hasattr(settings, 'app_version') else '1.0.0', 'phase': 'Stage 8 - Risk & Capital Intelligence', 'live_trading_enabled': settings.live_trading_enabled, 'execution_authority': False, 'mode': settings.app_env, 'risk_engine': 'independent'}
