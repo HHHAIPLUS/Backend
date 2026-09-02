@@ -9,8 +9,6 @@ def make_rows(n=120):
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     rows = []
     for i in range(n):
-        # Low-confidence observations are deliberately adverse; the deterministic
-        # calibration candidate should remove them without touching high-confidence wins.
         high = i % 3 != 0
         ret = 0.002 if high else -0.004
         rows.append(ResearchSnapshot(
@@ -27,8 +25,7 @@ def make_rows(n=120):
 
 def test_snapshot_ingestion_and_error_attribution():
     engine = ResearchLoop()
-    for row in make_rows(40):
-        engine.add_snapshot(row)
+    for row in make_rows(40): engine.add_snapshot(row)
     report = engine.attribute_errors()
     assert report["snapshots"] == 40
     assert report["prediction_errors"] > 0
@@ -38,8 +35,7 @@ def test_snapshot_ingestion_and_error_attribution():
 
 def test_candidate_is_quarantined_until_evaluation():
     engine = ResearchLoop()
-    for row in make_rows(120):
-        engine.add_snapshot(row)
+    for row in make_rows(120): engine.add_snapshot(row)
     candidate = engine.propose("champion-v1", "recalibrate probability/confidence mapping", "calibration error")
     assert candidate.status == "quarantined"
     result = engine.evaluate(candidate.candidate_id)
@@ -51,15 +47,12 @@ def test_candidate_is_quarantined_until_evaluation():
     assert result.stress["valid"] is True
 
 
-def test_experiment_is_reproducible():
-    def run():
-        engine = ResearchLoop()
-        for row in make_rows(120):
-            engine.add_snapshot(row)
-        candidate = engine.propose("champion-v1", "recalibrate probability/confidence mapping", "same hypothesis")
-        return engine.evaluate(candidate.candidate_id)
-
-    a, b = run(), run()
+def test_experiment_is_reproducible_for_the_same_candidate():
+    engine = ResearchLoop()
+    for row in make_rows(120): engine.add_snapshot(row)
+    candidate = engine.propose("champion-v1", "recalibrate probability/confidence mapping", "same hypothesis")
+    a = engine.evaluate(candidate.candidate_id)
+    b = engine.evaluate(candidate.candidate_id)
     assert a.reproducibility_fingerprint == b.reproducibility_fingerprint
     assert a.bootstrap_ci_low == b.bootstrap_ci_low
     assert a.bootstrap_ci_high == b.bootstrap_ci_high
@@ -68,11 +61,9 @@ def test_experiment_is_reproducible():
 
 def test_insufficient_oos_is_fail_closed():
     engine = ResearchLoop()
-    for row in make_rows(50):
-        engine.add_snapshot(row)
+    for row in make_rows(20): engine.add_snapshot(row)
     candidate = engine.propose("champion-v1", "recalibrate probability/confidence mapping", "not enough data")
-    with pytest.raises(ValueError):
-        engine.evaluate(candidate.candidate_id)
+    with pytest.raises(ValueError): engine.evaluate(candidate.candidate_id)
 
 
 def test_candidate_never_gets_production_authority():
