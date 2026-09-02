@@ -31,28 +31,32 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - name: Verify deployed root and Stage 7 research status endpoint
+      - name: Verify deployed Stage 8 risk and capital safety
         shell: bash
         run: |
           set -euo pipefail
-          for i in {1..24}; do
+          for i in {1..30}; do
             if curl --fail --silent --show-error --max-time 15 https://hhhai.onrender.com/ > /tmp/root.json && \
+               curl --fail --silent --show-error --max-time 15 https://hhhai.onrender.com/api/risk/status > /tmp/risk.json && \
                curl --fail --silent --show-error --max-time 15 https://hhhai.onrender.com/api/research/status > /tmp/stage7.json; then
               python - <<'PY'
           import json
           root=json.load(open('/tmp/root.json'))
-          status=json.load(open('/tmp/stage7.json'))
-          assert root['phase'].startswith('Stage 7'), root
-          assert status['engine'] == 'stage7-research-loop-v1', status
-          assert status['production_self_modification'] is False
-          assert status['execution_authority'] is False
-          assert isinstance(status['snapshots'], int)
-          assert isinstance(status['candidates'], int)
-          print('deployed Stage 7 smoke: PASS')
+          risk=json.load(open('/tmp/risk.json'))
+          stage7=json.load(open('/tmp/stage7.json'))
+          assert root['phase'].startswith('Stage 8'), root
+          assert root['risk_engine'] == 'independent', root
+          assert root['live_trading_enabled'] is False, root
+          assert root['execution_authority'] is False, root
+          assert risk['execution_authority'] is False, risk
+          assert risk['kills']['global']['enabled'] is False, risk
+          assert stage7['production_self_modification'] is False, stage7
+          assert stage7['execution_authority'] is False, stage7
+          print('deployed Stage 8 risk smoke: PASS')
           PY
               exit 0
             fi
             sleep 5
           done
-          echo 'deployed Stage 7 smoke: FAILED'
+          echo 'deployed Stage 8 risk smoke: FAILED'
           exit 1
