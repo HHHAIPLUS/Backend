@@ -25,3 +25,34 @@ jobs:
           HHHAI_AUTOTRADING_ENABLED: 'true'
           LIVE_TRADING_ENABLED: 'false'
         run: pytest -q
+
+  deployed-smoke:
+    if: github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify deployed root and Stage 6 status endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in {1..24}; do
+            if curl --fail --silent --show-error --max-time 15 https://hhhai.onrender.com/ > /tmp/root.json && \
+               curl --fail --silent --show-error --max-time 15 https://hhhai.onrender.com/api/position-intelligence/status > /tmp/stage6.json; then
+              python - <<'PY'
+          import json
+          root=json.load(open('/tmp/root.json'))
+          status=json.load(open('/tmp/stage6.json'))
+          assert root['phase'].startswith('Stage 6'), root
+          assert status['engine'] == 'stage6-position-intelligence-v1', status
+          assert status['continuous_review'] is True
+          assert status['position_state_persistence'] is True
+          assert status['restart_recovery'] is True
+          assert status['live_money_enabled'] is False
+          print('deployed Stage 6 smoke: PASS')
+          PY
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'deployed Stage 6 smoke: FAILED'
+          exit 1
