@@ -2,15 +2,15 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from ai.adaptive_engine import AdaptivePositionEngine
 from ai.adaptive_models import MarketObservation, PositionSnapshot
-from app.ml.adaptive_intelligence import AdaptiveIntelligence, AdaptiveObservation
+from app.ml.adaptive_intelligence import AdaptiveObservation, adaptive_intelligence as adaptive
 from app.persistence.repository import record_adaptive_candidate, record_adaptive_observation, load_adaptive_observations, update_adaptive_candidate
 from app.persistence.supabase import store
 from dataclasses import asdict
 from datetime import datetime, timezone
+from uuid import uuid4
 
 router = APIRouter(prefix='/api/adaptive', tags=['adaptive-intelligence'])
 _engine = AdaptivePositionEngine()
-adaptive = AdaptiveIntelligence()
 
 class RegisterPositionRequest(BaseModel):
     position: PositionSnapshot
@@ -70,7 +70,7 @@ async def add_intelligence_observation(request: ObservationRequest):
     adaptive.add_observation(observation)
     if store.configured:
         try:
-            await record_adaptive_observation({'id': __import__('uuid').uuid4().__str__(), **asdict(observation)})
+            await record_adaptive_observation({'id': str(uuid4()), **asdict(observation)})
         except Exception:
             pass
     return asdict(observation)
