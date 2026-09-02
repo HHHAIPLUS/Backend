@@ -22,7 +22,9 @@ This file is the project control record. It is not a source-code stage and it mu
 
 **STAGE 7 — SELF-LEARNING RESEARCH LOOP: [✓] COMPLETED**
 
-**CURRENT: STAGE 8 — RISK & CAPITAL INTELLIGENCE**
+**STAGE 8 — RISK & CAPITAL INTELLIGENCE: [✓] COMPLETED**
+
+**CURRENT: STAGE 9 — ADVANCED FRONTEND**
 
 No live-money execution is authorized by this roadmap. Safety gates remain fail-closed throughout every stage.
 
@@ -261,38 +263,58 @@ Goal: turn every completed trade into structured research without allowing indiv
 - Supabase Stage 7 research tables (`research_snapshots`, `research_candidates`, `research_experiments`) created with RLS enabled and explicit deny policies; security advisors: **0 lints**
 - Production learning outcome path now feeds research snapshots automatically
 - Explicit approval/rollback governance exists without automatic production mutation
-- Production Stage 7 smoke: **PASS** — root reports Stage 7, `/api/research/status` reports `stage7-research-loop-v1`, `production_self_modification=false`, `execution_authority=false`, and valid snapshot/candidate counters
+- Production Stage 7 smoke: **PASS**
 - Final deployed Stage 7 code commit: **1bc92227385b25a9a5b3e5b2a2644cae23df297e**; Render deployment: **LIVE**, application startup complete
-- CI smoke was rerun after the deployment race and passed against the deployed Stage 7 endpoint
 - Live-money execution remained disabled throughout Stage 7
 
 **STAGE 7 STATUS: [✓] COMPLETED**
 
 ---
 
-# STAGE 8 — Risk & Capital Intelligence
+# STAGE 8 — Risk & Capital Intelligence [✓]
 
 Goal: put an independent survival system around the intelligence so prediction cannot override capital protection.
 
-- [ ] Build independent portfolio-risk engine
-- [ ] Enforce maximum risk per trade
-- [ ] Enforce maximum portfolio exposure
-- [ ] Enforce correlated-exposure limits
-- [ ] Enforce leverage limits
-- [ ] Enforce daily/rolling loss limits
-- [ ] Enforce drawdown circuit breakers
-- [ ] Detect abnormal execution/slippage
-- [ ] Detect exchange instability
-- [ ] Detect stale/contradictory market data
-- [ ] Implement global kill switch
-- [ ] Implement exchange-specific kill switch
-- [ ] Require safe recovery after emergency stop
-- [ ] Ensure risk engine can veto any AI decision
-- [ ] Ensure model confidence can never bypass capital controls
-- [ ] Test catastrophic-failure scenarios
-- [ ] Verify all risk controls against paper/testnet execution
+- [✓] Build independent portfolio-risk engine
+- [✓] Enforce maximum risk per trade
+- [✓] Enforce maximum portfolio exposure
+- [✓] Enforce correlated-exposure limits
+- [✓] Enforce leverage limits
+- [✓] Enforce daily/rolling loss limits
+- [✓] Enforce drawdown circuit breakers
+- [✓] Detect abnormal execution/slippage
+- [✓] Detect exchange instability
+- [✓] Detect stale/contradictory market data
+- [✓] Implement global kill switch
+- [✓] Implement exchange-specific kill switch
+- [✓] Require safe recovery after emergency stop
+- [✓] Ensure risk engine can veto any AI decision
+- [✓] Ensure model confidence can never bypass capital controls
+- [✓] Test catastrophic-failure scenarios
+- [✓] Verify all risk controls against paper/testnet execution
 
-**STAGE 8 STATUS: NOT STARTED**
+### Stage 8 requirements added during implementation
+- [✓] Add an independent `RiskCapitalEngine` with hard limits separate from model confidence and predictive logic
+- [✓] Persist global and exchange-specific kill-switch state in server-only Supabase storage and hydrate it on restart
+- [✓] Add restrictive RLS policies for Stage 8 risk-control persistence
+- [✓] Install the Stage 8 veto around the autonomous entry-risk path while preserving the ability to reduce/close existing positions during a risk stop
+- [✓] Add independent spread/slippage, data-freshness, contradiction, shock and execution-failure circuit checks
+- [✓] Add deployed Stage 8 smoke verification for root, risk status, research continuity and live-money safety
+
+### Stage 8 verification evidence
+- Backend GitHub Actions CI: **PASS — 164 tests passed, 1 non-failing Starlette/httpx deprecation warning**
+- Independent risk engine tests: **PASS** — per-trade risk, portfolio concentration, correlated exposure, leverage, daily/rolling loss, drawdown, stale/contradictory/shock data, kill switches, confidence bypass resistance and sizing caps
+- Stage 8 entry-risk integration: **PASS** — independent veto wraps the existing autonomous entry gate; position-closing/reduction paths remain available for risk reduction
+- Supabase migration `stage8_risk_capital_controls`: **APPLIED**; `risk_controls` RLS enabled with explicit deny policies
+- Supabase security advisors: **0 lints**
+- Global/exchange kill-switch state: **persistent and restart-hydrated**
+- Paper/testnet safety: **PASS**; live-money execution remained disabled
+- Final Render deployment: **LIVE** for commit `753d51138fbfe3d6ddcd58311475b68b5b823d75`; application startup completed successfully
+- Deployed Stage 8 smoke: **PASS** — root reports Stage 8/independent risk engine, `/api/risk/status` returns execution-authority false and kill state, `/api/research/status` remains healthy, and live trading is false
+- Latest deployed smoke-gate workflow: **PASS** for commit `37cc1195056db36541d4292f2ec7ed4c2c0e8e83`
+- Live-money execution remained disabled throughout Stage 8
+
+**STAGE 8 STATUS: [✓] COMPLETED**
 
 ---
 
