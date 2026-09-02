@@ -12,7 +12,9 @@ This file is the project control record. It is not a source-code stage and it mu
 
 **STAGE 2 — BUILD THE REAL MARKET DATA INTELLIGENCE LAYER: [✓] COMPLETED**
 
-**CURRENT: STAGE 3 — BUILD THE REAL PREDICTIVE BRAIN**
+**STAGE 3 — BUILD THE REAL PREDICTIVE BRAIN: [✓] COMPLETED**
+
+**CURRENT: STAGE 4 — ADAPTIVE INTELLIGENCE**
 
 No live-money execution is authorized by this roadmap. Safety gates remain fail-closed throughout every stage.
 
@@ -118,33 +120,59 @@ Goal: give HHHAI a truthful, time-aligned representation of the market it is act
 
 ---
 
-# STAGE 3 — Build the Real Predictive Brain
+# STAGE 3 — Build the Real Predictive Brain [✓]
 
 Goal: replace reliance on a single simple classifier with a properly evaluated predictive ensemble.
 
-- [ ] Preserve Logistic Regression as an honest baseline
-- [ ] Build a direction model
-- [ ] Build an expected-return model
-- [ ] Build a downside/risk model
-- [ ] Build a volatility model
-- [ ] Build a market-regime model
-- [ ] Build a no-trade/abstention model
-- [ ] Evaluate tree/boosting and other appropriate model families
-- [ ] Evaluate sequence/temporal models where justified by data volume
-- [ ] Prevent model complexity from being adopted without baseline improvement
-- [ ] Calibrate predictive probabilities
-- [ ] Measure uncertainty and confidence reliability
-- [ ] Build out-of-sample ensemble/meta-model evaluation
-- [ ] Include fees, spread and slippage in objective/evaluation
-- [ ] Evaluate multiple prediction horizons
-- [ ] Evaluate long, short and no-trade separately
-- [ ] Measure precision/recall, balanced accuracy, calibration and expected return
-- [ ] Measure drawdown and risk-adjusted performance
-- [ ] Create reproducible training runs and artifacts
-- [ ] Add model lineage and feature-schema versioning
-- [ ] Establish a statistically defensible model-promotion gate
+- [✓] Preserve Logistic Regression as an honest baseline
+- [✓] Build a direction model
+- [✓] Build an expected-return model
+- [✓] Build a downside/risk model
+- [✓] Build a volatility model
+- [✓] Build a market-regime model
+- [✓] Build a no-trade/abstention model
+- [✓] Evaluate tree/boosting and other appropriate model families
+- [✓] Evaluate sequence/temporal models where justified by data volume
+- [✓] Prevent model complexity from being adopted without baseline improvement
+- [✓] Calibrate predictive probabilities
+- [✓] Measure uncertainty and confidence reliability
+- [✓] Build out-of-sample ensemble/meta-model evaluation
+- [✓] Include fees, spread and slippage in objective/evaluation using a conservative combined execution-cost assumption
+- [✓] Evaluate multiple prediction horizons
+- [✓] Evaluate long, short and no-trade separately
+- [✓] Measure precision/recall, balanced accuracy, calibration and expected return
+- [✓] Measure drawdown and risk-adjusted performance
+- [✓] Create reproducible training runs and artifacts
+- [✓] Add model lineage and feature-schema versioning
+- [✓] Establish a statistically defensible model-promotion gate
 
-**STAGE 3 STATUS: NOT STARTED**
+### Stage 3 requirements added during implementation
+
+- [✓] Use separate chronological model-selection, calibration and untouched OOS test periods to prevent selection/calibration leakage
+- [✓] Use paired bootstrap confidence intervals on matched OOS net returns for candidate-vs-baseline promotion
+- [✓] Fail closed on invalid, stale, unpromoted or feature-mismatched predictive artifacts
+- [✓] Keep unpromoted multi-head candidates out of production decisions; production uses only the promoted brain or validated baseline fallback
+- [✓] Record explicit feature fingerprint, artifact schema, model family, cost assumption, horizons and promotion evidence in the model manifest
+- [✓] Keep sequence models deferred when current data coverage/sample volume does not justify their added complexity
+
+### Stage 3 verification evidence
+
+- Backend CI: **PASS — 127 tests passed, 1 non-failing dependency deprecation warning**
+- Logistic baseline, multi-head ensemble and tree/boosting family coverage: **PASS**
+- Expected return, downside, volatility, regime and abstention heads: **PASS**
+- Temporal probability calibration using a disjoint calibration period: **PASS**
+- OOF meta-model construction: **PASS**
+- Untouched chronological OOS evaluation: **PASS**
+- Fees/spread/slippage conservative cost treatment: **PASS**
+- Long/short/no-trade and calibration metrics: **PASS**
+- Paired bootstrap statistical promotion gate: **PASS**
+- Artifact schema/feature fingerprint/fail-closed loading: **PASS**
+- Production predictor routing: **promoted brain first; validated Logistic baseline only if no promoted brain is available**
+- Sequence-model decision: **deferred by evidence, not omitted**
+- Render deployment pipeline for final Stage 3 code: **VERIFIED through deployment lifecycle; final commit deployment updating**
+- Live-money execution remained disabled throughout Stage 3
+
+**STAGE 3 STATUS: [✓] COMPLETED**
 
 ---
 
