@@ -24,7 +24,9 @@ This file is the project control record. It is not a source-code stage and it mu
 
 **STAGE 8 — RISK & CAPITAL INTELLIGENCE: [✓] COMPLETED**
 
-**CURRENT: STAGE 9 — ADVANCED FRONTEND**
+**STAGE 9 — ADVANCED FRONTEND: [✓] COMPLETED**
+
+**CURRENT: TESTING LADDER — NON-NEGOTIABLE RELEASE GATES**
 
 No live-money execution is authorized by this roadmap. Safety gates remain fail-closed throughout every stage.
 
@@ -318,35 +320,55 @@ Goal: put an independent survival system around the intelligence so prediction c
 
 ---
 
-# STAGE 9 — Advanced Frontend
+# STAGE 9 — Advanced Frontend [✓]
 
 Goal: make the frontend a serious operator/observability console for the intelligence, not merely a dashboard.
 
-- [ ] Redesign the live brain overview around canonical backend state
-- [ ] Show market regime
-- [ ] Show direction probabilities and calibrated confidence
-- [ ] Show expected edge after realistic costs
-- [ ] Show uncertainty
-- [ ] Show model agreement/disagreement
-- [ ] Show data quality and source freshness
-- [ ] Show order-flow/funding/OI/liquidity context
-- [ ] Show news/event risk and provenance
-- [ ] Show adversarial challenge results
-- [ ] Show decision and explicit reasons
-- [ ] Show what evidence would change the decision
-- [ ] Show open-position thesis integrity
-- [ ] Show expected continuation and dynamic risk
-- [ ] Show profit-protection state
-- [ ] Show autonomous-cycle health
-- [ ] Show exchange reconciliation state
-- [ ] Show model/version lineage
-- [ ] Show learning/research candidates and promotion state
-- [ ] Add robust mobile experience
-- [ ] Add safe admin controls and authentication UX
-- [ ] Add clear stale/error/degraded-state UX
-- [ ] Verify frontend against production backend contracts
+- [✓] Redesign the live brain overview around canonical backend state
+- [✓] Show market regime
+- [✓] Show direction probabilities and calibrated confidence
+- [✓] Show expected edge after realistic costs
+- [✓] Show uncertainty
+- [✓] Show model agreement/disagreement
+- [✓] Show data quality and source freshness
+- [✓] Show order-flow/funding/OI/liquidity context
+- [✓] Show news/event risk and provenance
+- [✓] Show adversarial challenge results
+- [✓] Show decision and explicit reasons
+- [✓] Show what evidence would change the decision
+- [✓] Show open-position thesis integrity
+- [✓] Show expected continuation and dynamic risk
+- [✓] Show profit-protection state
+- [✓] Show autonomous-cycle health
+- [✓] Show exchange reconciliation state
+- [✓] Show model/version lineage
+- [✓] Show learning/research candidates and promotion state
+- [✓] Add robust mobile experience
+- [✓] Add safe admin controls and authentication UX
+- [✓] Add clear stale/error/degraded-state UX
+- [✓] Verify frontend against production backend contracts
 
-**STAGE 9 STATUS: NOT STARTED**
+### Stage 9 requirements added during implementation
+- [✓] Make the console backend-authoritative: no client-side trading decision, exchange credential, or execution path is introduced
+- [✓] Add a single synchronized operator console spanning market, decision, position, risk, research and operations views
+- [✓] Add automatic refresh with explicit unavailable/degraded rendering instead of fabricated values
+- [✓] Add exchange/symbol context switching against the canonical backend market-state endpoint
+- [✓] Add a production backend contract smoke covering all frontend-consumed Stage 5–8 endpoints and canonical market state
+- [✓] Make the frontend production build reproducible without requiring an absent lockfile
+- [✓] Add responsive mobile navigation and layouts for the complete operator surface
+- [✓] Expose backend safety state prominently and never treat frontend state as permission to trade
+
+### Stage 9 verification evidence
+- Frontend GitHub Actions CI: **PASS** — production build completed successfully
+- Production backend contract smoke: **PASS — 11/11 frontend-consumed backend endpoints returned successful non-empty responses**
+- Vercel production deployment: **READY** for commit `15805497ceaa1ce60301a523380d0fb9c59d9ed8`; production alias `hhhai.vercel.app` returned **HTTP 200**
+- Deployed JavaScript asset verified to contain the Stage 9 operator console, backend API URL, market/decision/position/risk/research/operations views and 15-second synchronization behavior
+- Stage 9 frontend covers canonical market state, regime, prediction/confidence/edge/uncertainty, decision reasoning, position intelligence, risk/capital posture, research promotion state, exchange context, source freshness and degraded states
+- Frontend contains no client-side Supabase service-role secret or exchange execution credential
+- Backend remains the authority for live-money state; frontend displays live money as disabled when backend reports it disabled
+- Live-money execution remained disabled throughout Stage 9
+
+**STAGE 9 STATUS: [✓] COMPLETED**
 
 ---
 
