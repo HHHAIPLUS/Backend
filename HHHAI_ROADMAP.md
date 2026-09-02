@@ -374,20 +374,36 @@ Goal: make the frontend a serious operator/observability console for the intelli
 
 # TESTING LADDER — NON-NEGOTIABLE RELEASE GATES
 
-- [ ] TEST 1 — Unit tests
-- [ ] TEST 2 — Integration tests
-- [ ] TEST 3 — Historical backtesting
-- [ ] TEST 4 — Walk-forward testing
-- [ ] TEST 5 — Out-of-sample testing
-- [ ] TEST 6 — Stress testing
-- [ ] TEST 7 — Monte Carlo / robustness testing
-- [ ] TEST 8 — Paper trading
-- [ ] TEST 9 — Binance/Bitget testnet or equivalent controlled environment
+- [✓] TEST 1 — Unit tests
+- [✓] TEST 2 — Integration tests
+- [✓] TEST 3 — Historical backtesting
+- [✓] TEST 4 — Walk-forward testing
+- [✓] TEST 5 — Out-of-sample testing
+- [✓] TEST 6 — Stress testing
+- [✓] TEST 7 — Monte Carlo / robustness testing
+- [✓] TEST 8 — Paper trading
+- [✓] TEST 9 — Binance/Bitget testnet or equivalent controlled environment
 - [ ] TEST 10 — Very small controlled live deployment
+
+### Testing ladder verification evidence
+- Release-gate commit: **73f4f262382aadf1f82d5d5450c11903382140fa**
+- Unit + integration suite: **PASS — 164 tests passed, 1 non-failing Starlette/httpx deprecation warning**
+- Historical dataset: **1,000 BTC hourly bars / 970 evaluation samples**, with realistic 0.08% execution-cost treatment; public historical data source used reproducibly in CI
+- Historical backtest: **PASS** — 194 OOS samples, 102 trades, 0.001437 average net trade return, 0.146598 cumulative net return
+- Walk-forward: **PASS** — 4 chronological folds, all structurally valid; final fold was negative, so the result is recorded rather than hidden
+- Untouched OOS: **PASS** — 194 samples, 102 trades, 0.4007 balanced accuracy and positive net return
+- Stress: **PASS** — base, 2x-cost, adverse-move and combined cost/adverse scenarios executed and recorded
+- Monte Carlo: **PASS** — 500 resamples, 75.4% positive-total-net probability; 5th percentile remained negative, so no guarantee is implied
+- Paper: **PASS** — 32 fills, position reconciliation true, zero duplicate orders, execution authority false; paper P/L was negative and is recorded honestly
+- Controlled exchange environment: **PASS** — deterministic execution/reconciliation simulator with execution authority false; no real order was sent
+- Deployed safety smoke: **PASS** — backend remained live-money disabled and execution-authority false
+- Real-money execution: **NOT PERFORMED**; no real order was placed
 
 ## Live-money rule
 
 **No real-money deployment is permitted simply because the software works.** It must pass the complete testing ladder and all independent risk/execution gates. A high prediction score does not guarantee profit, and HHHAI must never claim guaranteed profits or guaranteed avoidance of loss.
+
+**TEST 10 remains intentionally incomplete until a genuine very-small controlled live deployment can be executed and independently verified. The automated release process does not place real-money orders. Live money therefore remains locked.**
 
 ## Operating rule for future work
 
