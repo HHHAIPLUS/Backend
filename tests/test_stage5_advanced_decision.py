@@ -50,7 +50,7 @@ def test_low_data_quality_abstains():
 
 
 def test_material_cross_layer_contradiction_is_detected():
-    bearish = state(regime={"label": "TRENDING_DOWN", "market_risk": 0.2}, order_flow={"aggressive_buy_ratio": 0.2})
+    bearish = state(price_structure={"trend": -0.8, "last_return": -0.02}, timeframes={"5m": {"return": -0.03}}, order_flow={"aggressive_buy_ratio": 0.05}, regime={"label": "TRENDING_DOWN", "market_risk": 0.2})
     result = Stage5DecisionEngine(trained_adaptive()).evaluate(market_state=bearish, predictive=predictive())
     assert "predictive_model_vs_council" in result.contradictions or "predictive_model_vs_learned_scenario" in result.contradictions
 
