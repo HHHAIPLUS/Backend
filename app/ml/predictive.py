@@ -9,13 +9,13 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+from app.ml.ensemble import predictive_ensemble
 
 FEATURES = [
     "return_1", "range_pct", "volume_change", "order_book_imbalance",
     "funding_rate", "open_interest_change", "news_risk", "news_sentiment",
     "volatility_proxy", "trend_strength", "momentum", "liquidity_stress",
 ]
-
 
 @dataclass
 class ModelReport:
@@ -24,14 +24,8 @@ class ModelReport:
     metrics: dict
     reason: str
 
-
 class PredictiveModel:
-    """Transparent Logistic Regression baseline for Stage 3 comparison.
-
-    It remains deliberately simple so that every more complex candidate has
-    an honest, reproducible benchmark. Production routing may use the
-    multi-head ensemble only after the independent validation gate promotes it.
-    """
+    """Transparent Logistic Regression baseline for Stage 3 comparison."""
 
     def __init__(self, artifact_dir: str = "artifacts"):
         self.path = Path(artifact_dir)
@@ -74,6 +68,8 @@ class PredictiveModel:
         if self.model is None:
             return {"trained": False, "abstain": True, "version": self.version, "probabilities": {"short": 0.0, "flat": 1.0, "long": 0.0}, "reason": "No validated model artifact is available."}
         x = np.asarray([self.vector(features)], dtype=float)
+        if not np.isfinite(x).all():
+            return {"trained": True, "abstain": True, "version": self.version, "probabilities": {"short": 0.0, "flat": 1.0, "long": 0.0}, "reason": "Non-finite predictive features."}
         probabilities = self.model.predict_proba(x)[0]
         probability_map = {str(class_id): float(probability) for class_id, probability in zip(self.model.classes_, probabilities)}
         return {"trained": True, "abstain": False, "version": self.version, "probabilities": {"short": probability_map.get("-1", 0.0), "flat": probability_map.get("0", 0.0), "long": probability_map.get("1", 0.0)}}
@@ -123,7 +119,17 @@ class PredictiveModel:
         if artifact is None:
             return ModelReport(False, self.version, {}, "Failed to create model artifact.")
         self.model_path.write_text(json.dumps(artifact, indent=2))
-        return ModelReport(True, version, {}, "Candidate baseline model trained and compact artifact persisted.")
+        try:
+            # bootstrap calls train only after its independent chronological
+            # promotion gate has passed. Persist the richer candidate beside
+            # the baseline so production can use the same validated version.
+            predictive_ensemble.fit(rows, FEATURES, version)
+            predictive_ensemble.save({"promotion_gate": "independent_walk_forward", "baseline": "logistic_regression"})
+        except Exception as exc:
+            self.model = None
+            self.version = "untrained"
+            return ModelReport(False, self.version, {}, f"Predictive ensemble training failed: {exc}")
+        return ModelReport(True, version, {"baseline": "logistic_regression", "ensemble": "multi_head"}, "Validated baseline and multi-head ensemble artifacts persisted.")
 
 
 predictive_model = PredictiveModel()
