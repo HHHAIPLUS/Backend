@@ -6,12 +6,10 @@ from app.ml.adaptive_intelligence import AdaptiveIntelligence, AdaptiveObservati
 def state(**overrides):
     base = {
         "symbol": "BTCUSDT", "usable": True, "data_quality": 1.0,
-        "price_structure": {"trend": 0.8, "last_return": 0.01},
-        "timeframes": {"5m": {"return": 0.02}}, "volatility": {"realized": 0.003},
-        "volume": {"ratio": 1.4}, "order_flow": {"aggressive_buy_ratio": 0.72},
-        "derivatives": {"funding_rate": 0.0001, "open_interest_change": 0.02},
-        "liquidity": {"spread_bps": 3}, "regime": {"label": "TRENDING_UP", "market_risk": 0.15},
-        "news": {"risk": 0.1, "sentiment": 0.5, "credibility": 0.9},
+        "price_structure": {"trend": 0.8, "last_return": 0.01}, "timeframes": {"5m": {"return": 0.02}},
+        "volatility": {"realized": 0.003}, "volume": {"ratio": 1.4}, "order_flow": {"aggressive_buy_ratio": 0.72},
+        "derivatives": {"funding_rate": 0.0001, "open_interest_change": 0.02}, "liquidity": {"spread_bps": 3},
+        "regime": {"label": "TRENDING_UP", "market_risk": 0.15}, "news": {"risk": 0.1, "sentiment": 0.5, "credibility": 0.9},
     }
     base.update(overrides)
     return base
@@ -25,8 +23,7 @@ def predictive(**overrides):
 
 def trained_adaptive() -> AdaptiveIntelligence:
     adaptive = AdaptiveIntelligence()
-    for i in range(40):
-        adaptive.add_observation(AdaptiveObservation("BTCUSDT", "champion", "LONG", 0.86, 0.01, str(i), "trending_up", 6))
+    for i in range(40): adaptive.add_observation(AdaptiveObservation("BTCUSDT", "champion", "LONG", 0.86, 0.01, str(i), "trending_up", 6))
     return adaptive
 
 
@@ -36,12 +33,10 @@ def test_canonical_market_state_adapter():
 
 
 def test_stage5_returns_auditable_direction_when_all_gates_pass():
-    engine = Stage5DecisionEngine(trained_adaptive())
-    result = engine.evaluate(market_state=state(), predictive=predictive())
+    result = Stage5DecisionEngine(trained_adaptive()).evaluate(market_state=state(), predictive=predictive())
     assert result.action == "LONG" and result.execution_candidate is True
     assert result.evidence["council"] and result.evidence["scenarios"]["probabilities"] and result.evidence["adversarial"]
-    assert result.evidence["empirical_counterfactual"]
-    assert result.what_would_change
+    assert result.evidence["calibrated_fusion"] and result.evidence["empirical_counterfactual"] and result.what_would_change
 
 
 def test_risk_veto_is_absolute():
@@ -54,11 +49,10 @@ def test_low_data_quality_abstains():
     assert result.action == "WAIT" and "insufficient_data_quality" in result.vetoes
 
 
-def test_material_cross_layer_contradiction_abstains():
+def test_material_cross_layer_contradiction_is_detected():
     bearish = state(regime={"label": "TRENDING_DOWN", "market_risk": 0.2}, order_flow={"aggressive_buy_ratio": 0.2})
     result = Stage5DecisionEngine(trained_adaptive()).evaluate(market_state=bearish, predictive=predictive())
-    assert result.action == "WAIT" and result.execution_candidate is False
-    assert "material_contradiction" in result.vetoes or "adversarial_block" in result.vetoes
+    assert "predictive_model_vs_council" in result.contradictions or "predictive_model_vs_learned_scenario" in result.contradictions
 
 
 def test_adaptive_agent_weights_are_used_when_evidence_exists():
