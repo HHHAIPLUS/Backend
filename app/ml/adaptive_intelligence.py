@@ -114,7 +114,6 @@ class AdaptiveIntelligence:
             return {"samples": 0.0, "win_rate": 0.0, "avg_return": 0.0, "confidence_reliability": 0.0}
         wins = sum(r.realized_return > 0 for r in rows)
         returns = [r.realized_return for r in rows]
-        # Beta(1,1) shrinkage prevents small samples from producing extreme reliability.
         win_rate = (wins + 1) / (len(rows) + 2)
         confidence_reliability = mean((r.confidence if r.realized_return > 0 else 1 - r.confidence) for r in rows)
         return {"samples": float(len(rows)), "win_rate": float(win_rate), "avg_return": float(mean(returns)), "confidence_reliability": float(confidence_reliability)}
@@ -139,9 +138,7 @@ class AdaptiveIntelligence:
         bins: dict[int, list[AdaptiveObservation]] = {}
         for r in rows:
             bins.setdefault(min(9, int(r.expected_probability * 10)), []).append(r)
-        ece = 0.0
-        for group in bins.values():
-            ece += len(group) / len(rows) * abs(mean(r.expected_probability for r in group) - mean(r.realized_return > 0 for r in group))
+        ece = sum(len(group) / len(rows) * abs(mean(r.expected_probability for r in group) - mean(r.realized_return > 0 for r in group)) for group in bins.values())
         baseline = self.observations[:-len(rows)] if len(self.observations) > len(rows) else []
         base_rows = [r for r in baseline if r.expected_probability is not None][-window:]
         base_brier = mean((r.expected_probability - (1.0 if r.realized_return > 0 else 0.0)) ** 2 for r in base_rows) if base_rows else brier
@@ -151,13 +148,20 @@ class AdaptiveIntelligence:
     def _psi(reference: list[float], current: list[float], bins: int = 10) -> float:
         if len(reference) < 20 or len(current) < 20:
             return 0.0
-        edges = sorted(reference)[:: max(1, len(reference) // bins)]
-        edges = [-float("inf")] + edges[1:-1] + [float("inf")]
+        ref_mean = mean(reference)
+        ref_sd = pstdev(reference)
+        if ref_sd < 1e-12:
+            return 10.0 if abs(mean(current) - ref_mean) > 1e-9 else 0.0
+        quantiles = sorted(reference)
+        edges = [quantiles[int(i * (len(quantiles) - 1) / bins)] for i in range(bins + 1)]
+        edges = sorted(set(edges))
+        if len(edges) < 2:
+            return 10.0 if abs(mean(current) - ref_mean) > 1e-9 else 0.0
         def counts(values):
             out = [0] * (len(edges) - 1)
             for value in values:
-                for i in range(len(edges) - 1):
-                    if edges[i] <= value < edges[i + 1]: out[i] += 1; break
+                index = next((i for i in range(len(edges) - 1) if edges[i] <= value < edges[i + 1]), len(out) - 1)
+                out[index] += 1
             return [max(c / len(values), 1e-6) for c in out]
         a, b = counts(reference), counts(current)
         return float(sum((x - y) * log(x / y) for x, y in zip(a, b)))
@@ -176,7 +180,12 @@ class AdaptiveIntelligence:
         return {"feature_psi": feature_drift, "max_psi": max(feature_drift.values(), default=0.0), "recent_win_rate": recent_win, "prior_win_rate": prior_win, "concept_drift": abs(recent_win - prior_win) >= 0.15 and len(recent) >= 50}
 
     def unfamiliar_state(self, features: dict[str, float], threshold: float = 3.0) -> dict[str, Any]:
-        zscores = {k: abs((float(v) - mu) / sd) for k, v in self.reference.items() if k in features and isfinite(float(v)) for mu, sd in [self.reference[k]]}
+        zscores: dict[str, float] = {}
+        for key, value in features.items():
+            if key not in self.reference or not isfinite(float(value)):
+                continue
+            mu, sd = self.reference[key]
+            zscores[key] = abs((float(value) - mu) / sd)
         max_z = max(zscores.values(), default=0.0)
         return {"unfamiliar": max_z >= threshold, "max_zscore": max_z, "outlier_features": [k for k, z in zscores.items() if z >= threshold], "reference_features": len(self.reference)}
 
@@ -194,14 +203,13 @@ class AdaptiveIntelligence:
         rows = [r for r in self.observations if r.action != "NO_TRADE"]
         if len(rows) < self.MIN_RELIABILITY_SAMPLES:
             return self.DEFAULT_ABSTENTION
-        bins = sorted(rows, key=lambda r: r.confidence)
         candidates = [0.50 + i * 0.02 for i in range(21)]
-        best = self.DEFAULT_ABSTENTION
-        best_score = -float("inf")
+        best, best_score = self.DEFAULT_ABSTENTION, -float("inf")
         for threshold in candidates:
-            selected = [r for r in bins if r.confidence >= threshold]
+            selected = [r for r in rows if r.confidence >= threshold]
             if len(selected) < self.MIN_RELIABILITY_SAMPLES: continue
-            score = mean(r.realized_return for r in selected) - 0.25 * mean(abs(r.realized_return) for r in selected if r.realized_return < 0)
+            losses = [abs(r.realized_return) for r in selected if r.realized_return < 0]
+            score = mean(r.realized_return for r in selected) - 0.25 * mean(losses) if losses else mean(r.realized_return for r in selected)
             if score > best_score: best, best_score = threshold, score
         return round(best, 2)
 
@@ -227,22 +235,21 @@ class AdaptiveIntelligence:
         import numpy as np
         from app.ml.model_validation import paired_bootstrap_ci
         a, b = np.asarray(champion_returns, dtype=float), np.asarray(challenger_returns, dtype=float)
-        delta = b - a
-        lo, hi = paired_bootstrap_ci(delta.tolist(), iterations=2000, seed=42)
+        if not np.isfinite(a).all() or not np.isfinite(b).all(): raise ValueError("Champion/challenger returns must be finite")
+        ci = paired_bootstrap_ci(b, a)
+        lo, hi = float(ci["ci_low"]), float(ci["ci_high"])
         stable = True
         regime_results: dict[str, float] = {}
-        if regimes and len(regimes) == len(delta):
+        if regimes and len(regimes) == len(a):
             for regime in sorted(set(regimes)):
-                vals = delta[np.asarray(regimes) == regime]
+                vals = (b - a)[np.asarray(regimes) == regime]
                 if len(vals) >= 30:
                     regime_results[regime] = float(np.mean(vals))
-                    stable &= float(np.mean(vals)) > -0.0005
-        prediction_ok = True
-        if champion_predictions is not None and challenger_predictions is not None:
-            prediction_ok = len(champion_predictions) == len(challenger_predictions) == len(delta)
-        promoted = bool(lo > 0 and float(np.mean(delta)) > 0 and stable and prediction_ok)
+                    stable &= regime_results[regime] > -0.0005
+        prediction_ok = (champion_predictions is None and challenger_predictions is None) or (len(champion_predictions) == len(challenger_predictions) == len(a))
+        promoted = bool(ci.get("valid") and lo > 0 and float(np.mean(b - a)) > 0 and stable and prediction_ok)
         candidate.status = "promotion_eligible" if promoted else "rejected"
-        candidate.evidence = {**candidate.evidence, "mean_delta": float(np.mean(delta)), "bootstrap_ci": [lo, hi], "regime_delta": regime_results, "stable": stable, "promoted": promoted}
+        candidate.evidence = {**candidate.evidence, "mean_delta": float(np.mean(b - a)), "bootstrap_ci": [lo, hi], "regime_delta": regime_results, "stable": stable, "promoted": promoted}
         return candidate
 
     def report(self) -> AdaptiveReport:
@@ -254,3 +261,6 @@ class AdaptiveIntelligence:
 
     def snapshot(self) -> dict[str, Any]:
         return {"status": self.status(), "report": asdict(self.report()), "candidates": [asdict(c) for c in self.candidates[-50:]]}
+
+
+adaptive_intelligence = AdaptiveIntelligence()
