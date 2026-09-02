@@ -15,6 +15,7 @@ from app.api.realtime import router as realtime_router
 from app.api.positions import router as positions_router
 from app.api.scenarios import router as scenarios_router
 from app.api.learning import router as learning_router, hydrate_learning
+from app.api.research import router as research_router, hydrate_research
 from app.api.simulation import router as simulation_router
 from app.api.paper import router as paper_router
 from app.api.stress import router as stress_router
@@ -42,6 +43,7 @@ install_stage6_hydration(trader)
 async def lifespan(app):
     await hydrate_learning()
     await hydrate_adaptive()
+    await hydrate_research()
     await hydrate_model()
     task = asyncio.create_task(monitor.run())
     if os.getenv("HHHAI_AUTOTRADING_ENABLED", "false").lower() == "true":
@@ -54,13 +56,13 @@ async def lifespan(app):
         if trader.running:
             await trader.stop()
 
-app = FastAPI(title=settings.app_name, version='1.0.0', description='HHHAI backend — cumulative Stage 6', lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version='1.0.0', description='HHHAI backend — cumulative Stage 7', lifespan=lifespan)
 allowed_origins = [x.strip() for x in (os.getenv('HHHAI_CORS_ORIGINS') or settings.cors_origins).split(',') if x.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
 app.include_router(adversarial_router); app.include_router(model_router); app.include_router(markets_router); app.include_router(trading_router); app.include_router(market_intelligence_router)
 app.include_router(simulation_router); app.include_router(paper_router); app.include_router(stress_router); app.include_router(capital_router); app.include_router(portfolio_router); app.include_router(control_center_router); app.include_router(trade_optimizer_router); app.include_router(performance_router)
-app.include_router(health_router); app.include_router(status_router); app.include_router(integration_router); app.include_router(admin_router); app.include_router(adaptive_router); app.include_router(council_router); app.include_router(realtime_router); app.include_router(positions_router); app.include_router(scenarios_router); app.include_router(learning_router); app.include_router(stage5_router); app.include_router(position_intelligence_router)
+app.include_router(health_router); app.include_router(status_router); app.include_router(integration_router); app.include_router(admin_router); app.include_router(adaptive_router); app.include_router(council_router); app.include_router(realtime_router); app.include_router(positions_router); app.include_router(scenarios_router); app.include_router(learning_router); app.include_router(research_router); app.include_router(stage5_router); app.include_router(position_intelligence_router)
 
 @app.get('/')
 def root():
-    return {'name': settings.app_name, 'version': settings.app_version if hasattr(settings, 'app_version') else '1.0.0', 'phase': 'Stage 6 - Autonomous Position Intelligence', 'live_trading_enabled': settings.live_trading_enabled, 'execution_authority': False, 'mode': settings.app_env}
+    return {'name': settings.app_name, 'version': settings.app_version if hasattr(settings, 'app_version') else '1.0.0', 'phase': 'Stage 7 - Self-Learning Research Loop', 'live_trading_enabled': settings.live_trading_enabled, 'execution_authority': False, 'mode': settings.app_env}
