@@ -2,8 +2,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from ai.adaptive_engine import AdaptivePositionEngine
 from ai.adaptive_models import MarketObservation, PositionSnapshot
-from app.ml.adaptive_intelligence import AdaptiveObservation, adaptive_intelligence as adaptive
-from app.persistence.repository import record_adaptive_candidate, record_adaptive_observation, load_adaptive_observations, update_adaptive_candidate
+from app.ml.adaptive_intelligence import AdaptiveObservation, AdaptiveCandidate, adaptive_intelligence as adaptive
+from app.persistence.repository import record_adaptive_candidate, record_adaptive_observation, load_adaptive_observations, load_adaptive_candidates, update_adaptive_candidate
 from app.persistence.supabase import store
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -41,18 +41,15 @@ class CandidateEvaluationRequest(BaseModel):
     regimes: list[str] | None = None
 
 async def hydrate_adaptive():
-    if not store.configured:
-        return
+    if not store.configured: return
     try:
         rows = await load_adaptive_observations()
         for row in rows:
-            adaptive.add_observation(AdaptiveObservation(
-                symbol=row['symbol'], model_version=row['model_version'], action=row['action'],
-                confidence=float(row['confidence']), realized_return=float(row['realized_return']),
-                observed_at=row['observed_at'], regime=row.get('regime', 'unknown'),
-                horizon=int(row.get('horizon', 6)), expected_probability=row.get('expected_probability'),
-                features=row.get('features') or {},
-            ))
+            adaptive.add_observation(AdaptiveObservation(symbol=row['symbol'], model_version=row['model_version'], action=row['action'], confidence=float(row['confidence']), realized_return=float(row['realized_return']), observed_at=row['observed_at'], regime=row.get('regime', 'unknown'), horizon=int(row.get('horizon', 6)), expected_probability=row.get('expected_probability'), features=row.get('features') or {}))
+        candidates = await load_adaptive_candidates()
+        for row in candidates:
+            if not any(c.candidate_id == str(row['id']) for c in adaptive.candidates):
+                adaptive.candidates.append(AdaptiveCandidate(str(row['id']), row['champion_version'], row['challenger_version'], row['status'], row['reason'], row['created_at'], row.get('evidence') or {}))
     except Exception:
         return
 
@@ -61,44 +58,34 @@ def adaptive_status():
     return {'engine':'Autonomous Adaptive Intelligence','mode':'decision_only','fixed_take_profit_required':False,'continuous_re_evaluation':True,'execution_authority':False,'risk_authority':'backend_risk_engine','learning':adaptive.status()}
 
 @router.get('/intelligence/report')
-def intelligence_report():
-    return asdict(adaptive.report())
+def intelligence_report(): return asdict(adaptive.report())
 
 @router.post('/intelligence/observations')
 async def add_intelligence_observation(request: ObservationRequest):
-    observation = AdaptiveObservation(**request.model_dump())
-    adaptive.add_observation(observation)
+    observation = AdaptiveObservation(**request.model_dump()); adaptive.add_observation(observation)
     if store.configured:
-        try:
-            await record_adaptive_observation({'id': str(uuid4()), **asdict(observation)})
-        except Exception:
-            pass
+        try: await record_adaptive_observation({'id': str(uuid4()), **asdict(observation)})
+        except Exception: pass
     return asdict(observation)
 
 @router.post('/intelligence/candidates')
 async def create_intelligence_candidate(request: CandidateRequest):
     candidate = adaptive.create_candidate(**request.model_dump())
     if store.configured:
-        try:
-            await record_adaptive_candidate({'id': candidate.candidate_id, 'champion_version':candidate.champion_version, 'challenger_version':candidate.challenger_version, 'status':candidate.status, 'reason':candidate.reason, 'evidence':candidate.evidence, 'created_at':candidate.created_at})
-        except Exception:
-            pass
+        try: await record_adaptive_candidate({'id': candidate.candidate_id, 'champion_version':candidate.champion_version, 'challenger_version':candidate.challenger_version, 'status':candidate.status, 'reason':candidate.reason, 'evidence':candidate.evidence, 'created_at':candidate.created_at})
+        except Exception: pass
     return asdict(candidate)
 
 @router.post('/intelligence/candidates/evaluate')
 async def evaluate_intelligence_candidate(request: CandidateEvaluationRequest):
     candidate = adaptive.evaluate_challenger(**request.model_dump())
     if store.configured:
-        try:
-            await update_adaptive_candidate(candidate.candidate_id, {'status':candidate.status, 'evidence':candidate.evidence, 'evaluated_at':datetime.now(timezone.utc).isoformat()})
-        except Exception:
-            pass
+        try: await update_adaptive_candidate(candidate.candidate_id, {'status':candidate.status, 'evidence':candidate.evidence, 'evaluated_at':datetime.now(timezone.utc).isoformat()})
+        except Exception: pass
     return asdict(candidate)
 
 @router.post('/positions/register')
-def register_position(request: RegisterPositionRequest):
-    return _engine.register_position(request.position, request.thesis).model_dump(mode='json')
+def register_position(request: RegisterPositionRequest): return _engine.register_position(request.position, request.thesis).model_dump(mode='json')
 
 @router.post('/positions/evaluate')
-def evaluate_position(request: EvaluatePositionRequest):
-    return _engine.evaluate(request.position, request.market).model_dump(mode='json')
+def evaluate_position(request: EvaluatePositionRequest): return _engine.evaluate(request.position, request.market).model_dump(mode='json')
