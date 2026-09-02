@@ -5,6 +5,8 @@ from app.persistence.repository import record_decision as persist_decision, reco
 from app.persistence.supabase import store
 from app.api.adaptive import adaptive
 from app.ml.adaptive_intelligence import AdaptiveObservation
+from app.api.research import research
+from ai.research_loop import ResearchSnapshot
 from dataclasses import asdict
 from uuid import uuid4
 
@@ -42,8 +44,7 @@ class CandidateRequest(BaseModel):
     reason: str
 
 @router.get("/status")
-def learning_status():
-    return _engine.status()
+def learning_status(): return _engine.status()
 
 @router.get("/journal")
 def learning_journal(limit: int = 20):
@@ -51,8 +52,7 @@ def learning_journal(limit: int = 20):
     return {"records": [r.__dict__ for r in reversed(rows)]}
 
 @router.get("/candidates")
-def learning_candidates():
-    return _engine.snapshot()
+def learning_candidates(): return _engine.snapshot()
 
 @router.post("/decisions")
 async def record_decision(request: DecisionRequest):
@@ -68,13 +68,16 @@ async def record_outcome(request: OutcomeRequest):
     features=row.features or {}
     observation=AdaptiveObservation(symbol=row.symbol, model_version=row.model_version, action=row.action.upper(), confidence=row.confidence, realized_return=request.realized_return, observed_at=row.created_at, regime=str(features.get("market_regime", features.get("regime", "unknown"))), horizon=int(features.get("horizon", 6) or 6), expected_probability=features.get("expected_probability"), features=features)
     adaptive.add_observation(observation)
+    if not any(x.record_id == row.record_id for x in research.snapshots):
+        research.add_snapshot(ResearchSnapshot(row.record_id, row.symbol, row.action.upper(), row.model_version, observation.regime, observation.horizon, row.confidence, observation.expected_probability, features, row.thesis, row.created_at, request.realized_return))
     if store.configured:
         try: await persist_outcome(request.record_id, row.__dict__)
         except Exception: pass
         try: await record_adaptive_observation({'id':str(uuid4()), **asdict(observation)})
         except Exception: pass
+        try: await store.upsert("research_snapshots", asdict(research.snapshots[-1]), "record_id")
+        except Exception: pass
     return row.__dict__
 
 @router.post("/candidates")
-def propose_candidate(request: CandidateRequest):
-    return _engine.propose_candidate(**request.model_dump()).__dict__
+def propose_candidate(request: CandidateRequest): return _engine.propose_candidate(**request.model_dump()).__dict__
