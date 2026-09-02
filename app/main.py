@@ -30,7 +30,10 @@ from app.api.market_intelligence import router as market_intelligence_router
 from app.api.stage5 import router as stage5_router
 from app.ml.model_persistence import hydrate_model
 from ai.autonomous_trader import trader
+from ai.position_intelligence import install_stage6_position_intelligence
 from app.core.config import settings
+
+install_stage6_position_intelligence(trader)
 
 @asynccontextmanager
 async def lifespan(app):
@@ -48,8 +51,7 @@ async def lifespan(app):
         if trader.running:
             await trader.stop()
 
-app = FastAPI(title=settings.app_name, version='1.0.0', description='HHHAI backend — cumulative Stage 5', lifespan=lifespan)
-
+app = FastAPI(title=settings.app_name, version='1.0.0', description='HHHAI backend — cumulative Stage 6', lifespan=lifespan)
 allowed_origins = [x.strip() for x in (os.getenv('HHHAI_CORS_ORIGINS') or settings.cors_origins).split(',') if x.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
 app.include_router(adversarial_router); app.include_router(model_router); app.include_router(markets_router); app.include_router(trading_router); app.include_router(market_intelligence_router)
@@ -58,4 +60,4 @@ app.include_router(health_router); app.include_router(status_router); app.includ
 
 @app.get('/')
 def root():
-    return {'name': settings.app_name, 'version': settings.app_version if hasattr(settings, 'app_version') else '1.0.0', 'phase': 'Stage 5 - Advanced Decision Engine', 'live_trading_enabled': settings.live_trading_enabled, 'execution_authority': False, 'mode': settings.app_env}
+    return {'name': settings.app_name, 'version': settings.app_version if hasattr(settings, 'app_version') else '1.0.0', 'phase': 'Stage 6 - Autonomous Position Intelligence', 'live_trading_enabled': settings.live_trading_enabled, 'execution_authority': False, 'mode': settings.app_env}
