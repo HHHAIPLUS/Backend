@@ -4,7 +4,7 @@ from dataclasses import asdict
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from ai.research_loop import ResearchLoop
+from ai.research_loop import ResearchLoop, ResearchSnapshot, ResearchCandidate
 from app.persistence.supabase import store
 from app.persistence.repository import record_event
 
@@ -36,6 +36,22 @@ class CandidateRequest(BaseModel):
     reason: str
 
 
+async def hydrate_research() -> None:
+    if not store.configured:
+        return
+    try:
+        rows = await store.select("research_snapshots", {"select": "*", "order": "created_at.asc", "limit": "20000"})
+        for row in rows:
+            payload = {k: row.get(k) for k in ResearchSnapshot.__dataclass_fields__}
+            payload["features"] = payload.get("features") or {}
+            research.add_snapshot(ResearchSnapshot(**payload))
+        candidates = await store.select("research_candidates", {"select": "*", "order": "created_at.asc", "limit": "1000"})
+        for row in candidates:
+            research.candidates.append(ResearchCandidate(str(row["id"]), row["base_model"], row["hypothesis"], row["status"], row["created_at"], row.get("lineage") or {}, row.get("evidence") or {}))
+    except Exception:
+        return
+
+
 @router.get("/status")
 def status():
     return research.snapshot()
@@ -58,7 +74,6 @@ def experiments():
 
 @router.post("/snapshots")
 async def add_snapshot(request: SnapshotRequest):
-    from ai.research_loop import ResearchSnapshot
     row = ResearchSnapshot(**request.model_dump())
     research.add_snapshot(row)
     if store.configured:
@@ -70,8 +85,14 @@ async def add_snapshot(request: SnapshotRequest):
 
 
 @router.post("/candidates")
-def create_candidate(request: CandidateRequest):
-    return asdict(research.propose(**request.model_dump()))
+async def create_candidate(request: CandidateRequest):
+    candidate = research.propose(**request.model_dump())
+    if store.configured:
+        try:
+            await store.insert("research_candidates", {"id": candidate.candidate_id, "base_model": candidate.base_model, "hypothesis": candidate.hypothesis, "status": candidate.status, "created_at": candidate.created_at, "lineage": candidate.lineage, "evidence": candidate.evidence})
+        except Exception:
+            pass
+    return asdict(candidate)
 
 
 @router.post("/run/{candidate_id}")
