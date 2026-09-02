@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 
 from ai.models import FeatureVector, MarketRegime, Prediction
 from app.ml.predictive import predictive_model
-from app.ml.ensemble import predictive_ensemble
 from app.ml.predictive_brain import PredictiveBrain
 
 
@@ -33,7 +32,7 @@ class BaselinePredictor:
 
 
 class ProductionPredictor:
-    """Production predictor: promoted predictive brain first, then validated conservative fallbacks."""
+    """Production predictor: promoted Stage 3 brain first, validated logistic baseline second."""
 
     def __init__(self) -> None:
         self.brain = PredictiveBrain()
@@ -62,23 +61,8 @@ class ProductionPredictor:
                 ],
             )
 
-        # Preserve the validated multi-head ensemble as the first fallback.
-        e = predictive_ensemble.predict(features.features)
-        if not e.abstain and predictive_ensemble.version != "untrained":
-            return Prediction(
-                symbol=features.symbol,
-                timestamp=datetime.now(timezone.utc),
-                long_probability=e.long,
-                short_probability=e.short,
-                no_trade_probability=e.flat,
-                confidence=max(e.long, e.short, e.flat),
-                regime=regime,
-                model_version=e.version,
-                rationale=["Validated multi-head ensemble fallback.", f"expected_return={e.expected_return:.6f}", f"uncertainty={e.uncertainty:.4f}"],
-            )
-
         r = predictive_model.predict(features.features)
         if r["abstain"]:
             return Prediction(symbol=features.symbol, timestamp=datetime.now(timezone.utc), long_probability=0, short_probability=0, no_trade_probability=1, confidence=1, regime=regime, model_version="untrained", rationale=[r["reason"]])
         p = r["probabilities"]
-        return Prediction(symbol=features.symbol, timestamp=datetime.now(timezone.utc), long_probability=p["long"], short_probability=p["short"], no_trade_probability=p["flat"], confidence=max(p.values()), regime=regime, model_version=r["version"], rationale=["Validated Logistic Regression baseline fallback."])
+        return Prediction(symbol=features.symbol, timestamp=datetime.now(timezone.utc), long_probability=p["long"], short_probability=p["short"], no_trade_probability=p["flat"], confidence=max(p.values()), regime=regime, model_version=r["version"], rationale=["Validated Logistic Regression baseline fallback; no promoted brain is available."])
