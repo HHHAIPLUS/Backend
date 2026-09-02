@@ -16,7 +16,9 @@ This file is the project control record. It is not a source-code stage and it mu
 
 **STAGE 4 — ADAPTIVE INTELLIGENCE: [✓] COMPLETED**
 
-**CURRENT: STAGE 5 — ADVANCED DECISION ENGINE**
+**STAGE 5 — ADVANCED DECISION ENGINE: [✓] COMPLETED**
+
+**CURRENT: STAGE 6 — AUTONOMOUS POSITION INTELLIGENCE**
 
 No live-money execution is authorized by this roadmap. Safety gates remain fail-closed throughout every stage.
 
@@ -220,26 +222,50 @@ Goal: make HHHAI learn which signals/models work under which conditions without 
 
 ---
 
-# STAGE 5 — Advanced Decision Engine
+# STAGE 5 — Advanced Decision Engine [✓]
 
 Goal: rebuild the current council/scenario/adversarial architecture around real learned intelligence.
 
-- [ ] Replace hand-coded specialist weighting where learned evidence is available
-- [ ] Make specialist agents consume the canonical market state
-- [ ] Add model-agreement/disagreement intelligence
-- [ ] Build calibrated decision fusion
-- [ ] Build learned scenario probabilities/distributions
-- [ ] Build expected-value scenario analysis
-- [ ] Upgrade adversarial challenge to test the actual trade thesis
-- [ ] Add contradiction detection across models and market evidence
-- [ ] Upgrade counterfactual analysis using empirical/learned outcomes
-- [ ] Separate evidence, prediction, uncertainty and action
-- [ ] Implement final trade gate with explicit abstention
-- [ ] Produce an auditable reason for every decision
-- [ ] Track decision quality independently from trade P/L
-- [ ] Ensure safety/risk vetoes cannot be overridden by model confidence
+- [✓] Replace hand-coded specialist weighting where learned evidence is available
+- [✓] Make specialist agents consume the canonical market state
+- [✓] Add model-agreement/disagreement intelligence
+- [✓] Build calibrated decision fusion
+- [✓] Build learned scenario probabilities/distributions
+- [✓] Build expected-value scenario analysis
+- [✓] Upgrade adversarial challenge to test the actual trade thesis
+- [✓] Add contradiction detection across models and market evidence
+- [✓] Upgrade counterfactual analysis using empirical/learned outcomes
+- [✓] Separate evidence, prediction, uncertainty and action
+- [✓] Implement final trade gate with explicit abstention
+- [✓] Produce an auditable reason for every decision
+- [✓] Track decision quality independently from trade P/L
+- [✓] Ensure safety/risk vetoes cannot be overridden by model confidence
 
-**STAGE 5 STATUS: NOT STARTED**
+### Stage 5 requirements added during implementation
+- [✓] Add a canonical `AgentContext.from_market_state` adapter so specialists do not consume parallel/ad-hoc market representations
+- [✓] Learn specialist weights from agent-level realized outcomes when sufficient evidence exists; otherwise use neutral weights rather than inventing reliability
+- [✓] Add a decision-only Stage 5 orchestrator with no execution authority and immutable predictive artifacts
+- [✓] Add calibrated multi-layer fusion across predictive probabilities, council evidence and learned scenario probabilities with an explicit fusion-margin abstention gate
+- [✓] Require sufficient matched historical evidence before empirical counterfactual results can veto a proposed action
+- [✓] Expose the Stage 5 decision/status API and keep it separate from order execution
+- [✓] Add regression tests for canonical-state ingestion, learned weighting, fusion, scenarios, adversarial checks, contradictions, counterfactuals, abstention, risk vetoes and decision-quality accounting
+- [✓] Verify deployment/startup of the final Stage 5 commit before roadmap promotion
+
+### Stage 5 verification evidence
+- Backend GitHub Actions CI: **PASS — 143 tests passed, 1 non-failing Starlette/httpx deprecation warning**
+- Specialist canonical-state adapter and evidence-weighted council: **PASS**
+- Predictive/council/scenario calibrated fusion: **PASS**
+- Learned scenario probability and expected-value analysis: **PASS**
+- Adversarial thesis challenge and contradiction detection: **PASS**
+- Empirical matched-action/regime/horizon counterfactual analysis: **PASS**
+- Evidence/prediction/uncertainty/action separation and auditable reasons: **PASS**
+- Final abstention gate and absolute risk-veto behavior: **PASS**
+- Independent decision-quality ledger separate from trade P/L: **PASS**
+- Stage 5 API wired into `app.main`; execution authority remains **false** and predictive production artifacts remain immutable
+- Final Render deployment for commit `db999e545f4d2d0bb074b371f84f2cc828a83012`: **LIVE**; application startup completed and Render emitted the live-service confirmation; deployed root returned **HTTP 200**
+- Live-money execution remained disabled throughout Stage 5
+
+**STAGE 5 STATUS: [✓] COMPLETED**
 
 ---
 
