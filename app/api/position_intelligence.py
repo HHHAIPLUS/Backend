@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from ai.autonomous_trader import trader
+from app.core.config import settings
 
 router = APIRouter(prefix="/api/position-intelligence", tags=["stage6-position-intelligence"])
 
@@ -22,7 +23,7 @@ def status():
         "restart_recovery": getattr(trader, "_stage6_hydration_installed", False),
         "duplicate_order_protection": True,
         "execution_authority": getattr(trader, "stage6_last_decision", None) is not None and trader.execution_mode in {"testnet", "live"} and trader._execution_gate()[0],
-        "live_money_enabled": False,
+        "live_money_enabled": bool(settings.live_trading_enabled),
         "reviews": getattr(trader, "stage6_reviews", 0),
         "last_decision": getattr(trader, "stage6_last_decision", None),
         "last_error": getattr(trader, "stage6_last_error", None),
