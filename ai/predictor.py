@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from ai.models import FeatureVector, MarketRegime, Prediction
 from app.ml.predictive import predictive_model
 from app.ml.predictive_brain import PredictiveBrain
-from app.ml.adaptive_intelligence import adaptive_intelligence
+from app.api.adaptive import adaptive as adaptive_intelligence
 
 
 class BaselinePredictor:
@@ -48,35 +48,12 @@ class ProductionPredictor:
             raw = max(p.values())
             adaptation = self._adaptive(raw, brain["version"], regime, features.features)
             adjusted = adaptation["adjusted_confidence"]
-            # Convert reduced confidence into explicit no-trade mass rather than
-            # altering the learned directional ranking.
             no_trade = max(p["flat"], 1.0 - adjusted)
             directional_scale = max(0.0, 1.0 - no_trade)
             side_total = p["long"] + p["short"]
             long_probability = p["long"] / side_total * directional_scale if side_total else 0.0
             short_probability = p["short"] / side_total * directional_scale if side_total else 0.0
-            return Prediction(
-                symbol=features.symbol,
-                timestamp=datetime.now(timezone.utc),
-                long_probability=long_probability,
-                short_probability=short_probability,
-                no_trade_probability=no_trade,
-                confidence=max(long_probability, short_probability, no_trade),
-                regime=regime,
-                model_version=brain["version"],
-                rationale=[
-                    "Promoted Stage 3 predictive brain with Stage 4 reliability adaptation.",
-                    f"decision={brain['decision']}",
-                    f"expected_return={brain.get('expected_return', 0.0):.6f}",
-                    f"expected_edge_after_cost={brain.get('expected_edge_after_cost', 0.0):.6f}",
-                    f"downside_risk={brain.get('downside', 0.0):.6f}",
-                    f"uncertainty={brain.get('uncertainty', 1.0):.4f}",
-                    f"abstention_probability={brain.get('abstention_probability', 1.0):.4f}",
-                    f"adaptive_confidence={adjusted:.4f}",
-                    f"adaptive_reliability_samples={adaptation['reliability_samples']}",
-                    f"unfamiliar_state={adaptation['unfamiliar'].get('unfamiliar', False)}",
-                ],
-            )
+            return Prediction(symbol=features.symbol, timestamp=datetime.now(timezone.utc), long_probability=long_probability, short_probability=short_probability, no_trade_probability=no_trade, confidence=max(long_probability, short_probability, no_trade), regime=regime, model_version=brain["version"], rationale=["Promoted Stage 3 predictive brain with Stage 4 reliability adaptation.", f"decision={brain['decision']}", f"expected_return={brain.get('expected_return', 0.0):.6f}", f"expected_edge_after_cost={brain.get('expected_edge_after_cost', 0.0):.6f}", f"downside_risk={brain.get('downside', 0.0):.6f}", f"uncertainty={brain.get('uncertainty', 1.0):.4f}", f"abstention_probability={brain.get('abstention_probability', 1.0):.4f}", f"adaptive_confidence={adjusted:.4f}", f"adaptive_reliability_samples={adaptation['reliability_samples']}", f"unfamiliar_state={adaptation['unfamiliar'].get('unfamiliar', False)}"])
 
         r = predictive_model.predict(features.features)
         if r["abstain"]:
