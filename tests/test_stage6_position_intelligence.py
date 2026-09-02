@@ -54,7 +54,7 @@ def test_paper_position_management_never_grants_execution_authority():
     paper = PaperExecutionEngine()
     paper.submit("BTCUSDT", "buy", 1.0, 100.0)
     assert paper.snapshot()["execution_authority"] is False
-    assert paper.snapshot()["real_money"] is not True
+    assert "real_money" not in paper.snapshot()
 
 
 def test_historical_style_replay_is_deterministic():
