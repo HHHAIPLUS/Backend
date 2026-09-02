@@ -32,3 +32,9 @@ async def load_adaptive_candidates(limit: int = 1000):
 
 async def update_adaptive_candidate(candidate_id: str, payload: dict[str, Any]):
     return await store.upsert('adaptive_candidates', {'id': candidate_id, **payload}, 'id')
+
+async def upsert_risk_control(scope: str, enabled: bool, reason: str = ''):
+    return await store.upsert('risk_controls', {'id': scope, 'scope': scope, 'enabled': enabled, 'reason': reason, 'updated_at': datetime.now(timezone.utc).isoformat()}, 'id')
+
+async def load_risk_controls():
+    return await store.select('risk_controls', {'select':'*'})
