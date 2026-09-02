@@ -28,12 +28,15 @@ from app.api.markets import router as markets_router
 from app.api.trading import router as trading_router
 from app.api.market_intelligence import router as market_intelligence_router
 from app.api.stage5 import router as stage5_router
+from app.api.position_intelligence import router as position_intelligence_router
 from app.ml.model_persistence import hydrate_model
 from ai.autonomous_trader import trader
 from ai.position_intelligence import install_stage6_position_intelligence
+from ai.stage6_hydration import install_stage6_hydration
 from app.core.config import settings
 
 install_stage6_position_intelligence(trader)
+install_stage6_hydration(trader)
 
 @asynccontextmanager
 async def lifespan(app):
@@ -56,7 +59,7 @@ allowed_origins = [x.strip() for x in (os.getenv('HHHAI_CORS_ORIGINS') or settin
 app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
 app.include_router(adversarial_router); app.include_router(model_router); app.include_router(markets_router); app.include_router(trading_router); app.include_router(market_intelligence_router)
 app.include_router(simulation_router); app.include_router(paper_router); app.include_router(stress_router); app.include_router(capital_router); app.include_router(portfolio_router); app.include_router(control_center_router); app.include_router(trade_optimizer_router); app.include_router(performance_router)
-app.include_router(health_router); app.include_router(status_router); app.include_router(integration_router); app.include_router(admin_router); app.include_router(adaptive_router); app.include_router(council_router); app.include_router(realtime_router); app.include_router(positions_router); app.include_router(scenarios_router); app.include_router(learning_router); app.include_router(stage5_router)
+app.include_router(health_router); app.include_router(status_router); app.include_router(integration_router); app.include_router(admin_router); app.include_router(adaptive_router); app.include_router(council_router); app.include_router(realtime_router); app.include_router(positions_router); app.include_router(scenarios_router); app.include_router(learning_router); app.include_router(stage5_router); app.include_router(position_intelligence_router)
 
 @app.get('/')
 def root():
