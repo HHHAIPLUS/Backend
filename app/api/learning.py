@@ -1,8 +1,12 @@
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from ai.self_learning import ControlledLearningEngine
-from app.persistence.repository import record_decision as persist_decision, record_outcome as persist_outcome
+from app.persistence.repository import record_decision as persist_decision, record_outcome as persist_outcome, record_adaptive_observation
 from app.persistence.supabase import store
+from app.api.adaptive import adaptive
+from app.ml.adaptive_intelligence import AdaptiveObservation
+from dataclasses import asdict
+from uuid import uuid4
 
 async def hydrate_learning():
     if not store.configured: return
@@ -61,8 +65,13 @@ async def record_decision(request: DecisionRequest):
 @router.post("/outcomes")
 async def record_outcome(request: OutcomeRequest):
     row=_engine.record_outcome(request.record_id, request.realized_return)
+    features=row.features or {}
+    observation=AdaptiveObservation(symbol=row.symbol, model_version=row.model_version, action=row.action.upper(), confidence=row.confidence, realized_return=request.realized_return, observed_at=row.created_at, regime=str(features.get("market_regime", features.get("regime", "unknown"))), horizon=int(features.get("horizon", 6) or 6), expected_probability=features.get("expected_probability"), features=features)
+    adaptive.add_observation(observation)
     if store.configured:
         try: await persist_outcome(request.record_id, row.__dict__)
+        except Exception: pass
+        try: await record_adaptive_observation({'id':str(uuid4()), **asdict(observation)})
         except Exception: pass
     return row.__dict__
 
