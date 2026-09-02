@@ -1,19 +1,18 @@
 """HHHAI non-negotiable release-gate runner.
 
-Runs unit/integration through the same CI command, then performs independent
-historical, walk-forward, OOS, stress, Monte-Carlo, paper and controlled
-exchange-simulator checks. Real-money execution is intentionally absent.
+Runs unit/integration through CI, then performs independent historical,
+walk-forward, OOS, stress, Monte-Carlo, paper and controlled-exchange checks.
+Real-money execution is intentionally absent.
 """
 from __future__ import annotations
 
 import json
-import math
 import os
-import random
-import statistics
+import time
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -25,7 +24,6 @@ COST = 0.0008
 LIMIT = int(os.getenv("HHHAI_TEST_HISTORY_LIMIT", "1000"))
 REPORT = Path(os.getenv("HHHAI_TEST_REPORT", "testing_ladder_report.json"))
 
-
 @dataclass
 class Gate:
     name: str
@@ -33,20 +31,41 @@ class Gate:
     evidence: dict
 
 
+def _request(url: str):
+    with urllib.request.urlopen(url, timeout=20) as r:
+        return json.loads(r.read().decode())
+
+
 def _get_klines(limit: int = LIMIT) -> np.ndarray:
+    # Binance is the preferred market source, but CI runners can be geo-blocked.
     q = urllib.parse.urlencode({"symbol": "BTCUSDT", "interval": "1h", "limit": min(limit, 1500)})
-    urls = [f"https://fapi.binance.com/fapi/v1/klines?{q}", f"https://api.binance.com/api/v3/klines?{q}"]
-    last = None
-    for url in urls:
+    for url in (f"https://fapi.binance.com/fapi/v1/klines?{q}", f"https://api.binance.com/api/v3/klines?{q}"):
         try:
-            with urllib.request.urlopen(url, timeout=20) as r:
-                raw = json.loads(r.read().decode())
+            raw = _request(url)
             a = np.asarray([[float(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4]), float(x[5])] for x in raw])
             if len(a) >= 800 and np.all(np.isfinite(a)):
                 return a
-        except Exception as exc:
-            last = exc
-    raise RuntimeError(f"Unable to retrieve public historical BTCUSDT candles: {last}")
+        except Exception:
+            pass
+    # Coinbase allows 300 hourly candles per request; fetch four chronological chunks.
+    end = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    chunks = []
+    cursor = end
+    while sum(len(x) for x in chunks) < limit:
+        start = cursor - timedelta(hours=299)
+        params = urllib.parse.urlencode({"granularity": 3600, "start": start.isoformat(), "end": cursor.isoformat()})
+        raw = _request(f"https://api.exchange.coinbase.com/products/BTC-USD/candles?{params}")
+        if not raw:
+            break
+        arr = np.asarray(sorted([[float(x[0]) * 1000, float(x[3]), float(x[2]), float(x[1]), float(x[4]), float(x[5])] for x in raw]))
+        chunks.insert(0, arr)
+        cursor = start - timedelta(hours=1)
+        time.sleep(0.15)
+    if not chunks:
+        raise RuntimeError("No public historical candles were retrieved")
+    a = np.vstack(chunks)
+    a = np.unique(a, axis=0)
+    return a[-limit:]
 
 
 def _dataset(c):
@@ -57,12 +76,10 @@ def _dataset(c):
     rng = (high - low) / np.maximum(close, 1e-12)
     volchg = np.r_[0.0, np.diff(vol) / np.maximum(vol[:-1], 1e-12)]
     volat = np.full(len(close), np.nan)
-    for i in range(24, len(close)):
-        volat[i] = np.std(r1[i-24:i])
     trend = np.full(len(close), np.nan)
     for i in range(24, len(close)):
-        x = np.arange(24, dtype=float)
-        trend[i] = np.polyfit(x, close[i-24:i], 1)[0] / max(close[i], 1e-12)
+        volat[i] = np.std(r1[i-24:i])
+        trend[i] = np.polyfit(np.arange(24, dtype=float), close[i-24:i], 1)[0] / max(close[i], 1e-12)
     yret = np.full(len(close), np.nan)
     yret[:-6] = close[6:] / close[:-6] - 1
     y = np.where(yret > COST, 1, np.where(yret < -COST, -1, 0))
@@ -81,28 +98,30 @@ def _metrics(pred, y, future):
     eq = np.cumsum(net)
     peak = np.maximum.accumulate(np.r_[0.0, eq])
     dd = float(np.max(peak[1:] - eq)) if len(eq) else 0.0
+    recalls = [float(np.mean(pred[y == k] == k)) if np.any(y == k) else 0.0 for k in (-1, 0, 1)]
     return {"samples": int(len(y)), "trades": int(traded.sum()), "trade_rate": float(traded.mean()),
-            "accuracy": float(np.mean(pred == y)), "balanced_accuracy": float(np.mean([np.mean(pred[y == k] == k) if np.any(y == k) else 0 for k in (-1, 0, 1)])),
+            "accuracy": float(np.mean(pred == y)), "balanced_accuracy": float(np.mean(recalls)),
             "avg_trade_net": float(net[traded].mean()) if traded.any() else 0.0,
             "total_net": float(net.sum()), "max_drawdown": dd}
+
+
+def _model():
+    return Pipeline([("scale", StandardScaler()), ("clf", LogisticRegression(max_iter=1500, class_weight="balanced", random_state=42))])
 
 
 def historical_and_walkforward(X, y, future):
     n = len(y)
     oos_start = int(n * 0.8)
-    model = Pipeline([("scale", StandardScaler()), ("clf", LogisticRegression(max_iter=1500, class_weight="balanced", random_state=42))])
-    model.fit(X[: int(n * 0.6)], y[: int(n * 0.6)])
+    model = _model(); model.fit(X[: int(n * 0.6)], y[: int(n * 0.6)])
     pred = model.predict(X[oos_start:])
     oos = _metrics(pred, y[oos_start:], future[oos_start:])
     baseline = _metrics(np.zeros(len(pred), dtype=int), y[oos_start:], future[oos_start:])
     folds = []
     for end in np.linspace(int(n * 0.5), int(n * 0.8), 4, dtype=int):
         test_end = min(end + max(40, int(n * 0.05)), n)
-        m = Pipeline([("scale", StandardScaler()), ("clf", LogisticRegression(max_iter=1500, class_weight="balanced", random_state=42))])
-        m.fit(X[:end], y[:end])
+        m = _model(); m.fit(X[:end], y[:end])
         folds.append(_metrics(m.predict(X[end:test_end]), y[end:test_end], future[end:test_end]))
-    walk_ok = len(folds) == 4 and all(f["samples"] >= 40 for f in folds)
-    return oos, baseline, folds, walk_ok
+    return oos, baseline, folds, len(folds) == 4 and all(f["samples"] >= 40 for f in folds)
 
 
 def stress(pred, future):
@@ -121,23 +140,17 @@ def monte_carlo(pred, future, seed=42, runs=500):
     rng = np.random.default_rng(seed)
     totals = np.asarray([rng.choice(base, size=len(base), replace=True).sum() for _ in range(runs)])
     ci = np.quantile(totals, [0.05, 0.5, 0.95])
-    return {"runs": runs, "samples": int(len(base)), "p05_total_net": float(ci[0]), "median_total_net": float(ci[1]), "p95_total_net": float(ci[2]), "positive_probability": float(np.mean(totals > 0))}
+    return {"runs": runs, "samples": int(len(base),), "p05_total_net": float(ci[0]), "median_total_net": float(ci[1]), "p95_total_net": float(ci[2]), "positive_probability": float(np.mean(totals > 0))}
 
 
 def paper_and_controlled_execution(pred, future):
-    cash = 0.0
-    position = 0
-    fills = 0
-    max_abs = 0.0
+    cash = 0.0; position = 0; fills = 0; max_abs = 0.0
     for p, r in zip(pred, future):
         if p != position:
-            if position:
-                cash += r * position - COST
-            position = int(p)
-            fills += int(p != 0)
+            if position: cash += r * position - COST
+            position = int(p); fills += int(p != 0)
         max_abs = max(max_abs, abs(position))
-    if position:
-        cash += future[-1] * position - COST
+    if position: cash += future[-1] * position - COST
     return {"paper_pnl": float(cash), "fills": fills, "max_position": max_abs, "reconciled": True, "duplicate_orders": 0, "execution_authority": False}
 
 
@@ -147,12 +160,8 @@ def main():
     if len(X) < 700 or len(set(y.tolist())) != 3:
         raise RuntimeError("Historical dataset is insufficient for three-class release evaluation")
     oos, baseline, folds, walk_ok = historical_and_walkforward(X, y, future)
-    model = Pipeline([("scale", StandardScaler()), ("clf", LogisticRegression(max_iter=1500, class_weight="balanced", random_state=42))])
-    model.fit(X[: int(len(X) * .8)], y[: int(len(y) * .8)])
-    all_pred = model.predict(X[int(len(X) * .8):])
-    stress_results = stress(all_pred, future[int(len(X) * .8):])
-    mc = monte_carlo(all_pred, future[int(len(X) * .8):])
-    paper = paper_and_controlled_execution(all_pred, future[int(len(X) * .8):])
+    model = _model(); split = int(len(X) * .8); model.fit(X[:split], y[:split]); all_pred = model.predict(X[split:])
+    stress_results = stress(all_pred, future[split:]); mc = monte_carlo(all_pred, future[split:]); paper = paper_and_controlled_execution(all_pred, future[split:])
     gates = [
         Gate("historical_backtesting", oos["samples"] >= 100 and oos["trades"] >= 20, oos),
         Gate("walk_forward", walk_ok, {"folds": folds}),
@@ -162,14 +171,10 @@ def main():
         Gate("paper_trading", paper["reconciled"] and paper["duplicate_orders"] == 0, paper),
         Gate("controlled_exchange_simulator", paper["execution_authority"] is False and paper["reconciled"], paper),
     ]
-    report = {"dataset": {"bars": int(len(c)), "samples": int(len(X)), "symbol": "BTCUSDT", "interval": "1h", "cost": COST},
+    report = {"dataset": {"bars": int(len(c)), "samples": int(len(X)), "source": "public BTC historical candles", "interval": "1h", "cost": COST},
               "gates": [asdict(g) for g in gates], "all_non_live_gates_passed": all(g.passed for g in gates),
               "live_money_execution": False, "real_money_order_placement": False}
-    REPORT.write_text(json.dumps(report, indent=2, sort_keys=True))
-    print(json.dumps(report, indent=2))
-    if not report["all_non_live_gates_passed"]:
-        raise SystemExit(1)
+    REPORT.write_text(json.dumps(report, indent=2, sort_keys=True)); print(json.dumps(report, indent=2))
+    if not report["all_non_live_gates_passed"]: raise SystemExit(1)
 
-
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
