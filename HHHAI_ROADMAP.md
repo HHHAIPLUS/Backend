@@ -20,7 +20,9 @@ This file is the project control record. It is not a source-code stage and it mu
 
 **STAGE 6 — AUTONOMOUS POSITION INTELLIGENCE: [✓] COMPLETED**
 
-**CURRENT: STAGE 7 — SELF-LEARNING RESEARCH LOOP**
+**STAGE 7 — SELF-LEARNING RESEARCH LOOP: [✓] COMPLETED**
+
+**CURRENT: STAGE 8 — RISK & CAPITAL INTELLIGENCE**
 
 No live-money execution is authorized by this roadmap. Safety gates remain fail-closed throughout every stage.
 
@@ -66,13 +68,8 @@ Goal: make HHHAI reliable, truthful, observable and safe before making the intel
 **STAGE 1 STATUS: [✓] COMPLETED**
 
 ### Stage 1 verification evidence
-- Backend GitHub Actions CI: **PASS**
-- Backend test suite: **108 passed, 1 non-failing deprecation warning**
-- Exchange boundary tests: **PASS**
-- Frontend/backend contract tests: **PASS**
-- Supabase RLS remediation: **PASS**
-- Render production deployment: **LIVE**
-- Vercel production deployment: **READY**
+- Backend CI: **PASS — 108 tests passed, 1 non-failing deprecation warning**
+- Exchange boundaries, persistence/RLS, frontend/backend contracts and deployment health: **PASS**
 - Live execution safety gate: **fail-closed**
 
 ---
@@ -81,46 +78,25 @@ Goal: make HHHAI reliable, truthful, observable and safe before making the intel
 
 Goal: give HHHAI a truthful, time-aligned representation of the market it is actually trading.
 
-- [✓] Define the canonical point-in-time market-state schema
-- [✓] Implement multi-timeframe OHLCV representation
-- [✓] Implement robust price-structure features
-- [✓] Implement volatility and volatility-regime features
-- [✓] Implement volume/volume-profile features where data supports them
-- [✓] Implement order-book depth and imbalance features
-- [✓] Implement trade-flow/aggressor-pressure features where reliably available
-- [✓] Implement funding-rate history
-- [✓] Implement open-interest history and change features
-- [✓] Implement liquidation data where a trustworthy historical source is available
-- [✓] Implement spread, depth and liquidity-stress features
-- [✓] Implement cross-asset/cross-market relationships
-- [✓] Implement BTC/ETH/market-wide risk context
-- [✓] Implement market-regime state representation
-- [✓] Implement news-event ingestion with timestamps and provenance
-- [✓] Implement richer sentiment/event classification with source credibility
-- [✓] Implement historical-data enrichment and caching
-- [✓] Enforce point-in-time joins with no future information
-- [✓] Measure feature coverage and data quality continuously
-- [✓] Make training and live feature schemas identical
-- [✓] Add data-quality degradation/abstention behavior
-- [✓] Validate the resulting dataset across multiple market regimes
+- [✓] Canonical point-in-time market-state schema
+- [✓] Multi-timeframe OHLCV, price structure, volatility and volume features
+- [✓] Order-book depth/imbalance, trade flow, spread and liquidity stress
+- [✓] Funding, open interest and liquidation context
+- [✓] Cross-asset, BTC/ETH and market-wide risk context
+- [✓] Market-regime state representation
+- [✓] Timestamped news/event ingestion and source credibility
+- [✓] Historical-data enrichment and caching
+- [✓] Point-in-time joins and training/live schema parity
+- [✓] Continuous data-quality coverage and fail-closed degradation
+- [✓] Multi-regime validation
 
 **STAGE 2 STATUS: [✓] COMPLETED**
 
 ### Stage 2 verification evidence
-- Canonical market-state schema and point-in-time join tests: **PASS**
-- Multi-timeframe OHLCV, structure, volatility and volume tests: **PASS**
-- Binance/Bitget market-data provider integration: **PASS**
-- Order-book, spread, trade-flow and liquidation context: **PASS**
-- Funding and open-interest history/change support: **PASS**
-- BTC/ETH cross-asset correlation and market-risk context: **PASS**
-- Timestamped news ingestion, sentiment, relevance, impact and source credibility: **PASS**
-- Historical market-data caching and deterministic replay: **PASS**
-- Canonical training/live feature projection: **PASS**
-- Data-quality threshold and fail-closed degradation: **PASS**
-- Cross-asset/regime validation tests: **PASS**
 - Final backend verification: **118 tests passed, 1 non-failing deprecation warning**
-- Render deployment of final Stage 2 commit: **LIVE**
-- Live-money execution remained disabled throughout Stage 2
+- Binance/Bitget market data, historical enrichment, canonical feature projection and data-quality gates: **PASS**
+- Render deployment: **LIVE**
+- Live-money execution remained disabled
 
 ---
 
@@ -128,224 +104,169 @@ Goal: give HHHAI a truthful, time-aligned representation of the market it is act
 
 Goal: replace reliance on a single simple classifier with a properly evaluated predictive ensemble.
 
-- [✓] Preserve Logistic Regression as an honest baseline
-- [✓] Build a direction model
-- [✓] Build an expected-return model
-- [✓] Build a downside/risk model
-- [✓] Build a volatility model
-- [✓] Build a market-regime model
-- [✓] Build a no-trade/abstention model
-- [✓] Evaluate tree/boosting and other appropriate model families
-- [✓] Evaluate sequence/temporal models where justified by data volume
-- [✓] Prevent model complexity from being adopted without baseline improvement
-- [✓] Calibrate predictive probabilities
-- [✓] Measure uncertainty and confidence reliability
-- [✓] Build out-of-sample ensemble/meta-model evaluation
-- [✓] Include fees, spread and slippage in objective/evaluation using a conservative combined execution-cost assumption
-- [✓] Evaluate multiple prediction horizons
-- [✓] Evaluate long, short and no-trade separately
-- [✓] Measure precision/recall, balanced accuracy, calibration and expected return
-- [✓] Measure drawdown and risk-adjusted performance
-- [✓] Create reproducible training runs and artifacts
-- [✓] Add model lineage and feature-schema versioning
-- [✓] Establish a statistically defensible model-promotion gate
+- [✓] Logistic baseline and direction model
+- [✓] Expected-return, downside/risk, volatility, regime and abstention heads
+- [✓] Tree/boosting family evaluation and evidence-based complexity gate
+- [✓] Probability calibration and uncertainty reliability
+- [✓] OOF meta-model and multiple prediction horizons
+- [✓] Fees/spread/slippage conservative cost treatment
+- [✓] Long/short/no-trade evaluation
+- [✓] Precision/recall, balanced accuracy, calibration, expected return, drawdown and risk metrics
+- [✓] Reproducible artifacts, lineage and feature-schema versioning
+- [✓] Statistical promotion gate
+- [✓] Separate chronological selection/calibration/untouched OOS periods
+- [✓] Paired bootstrap CI for candidate-vs-baseline promotion
+- [✓] Fail-closed invalid/stale/unpromoted/feature-mismatched loading
+- [✓] Unpromoted candidates blocked from production
+- [✓] Sequence models deferred when evidence does not justify complexity
 
-### Stage 3 requirements added during implementation
-- [✓] Use separate chronological model-selection, calibration and untouched OOS test periods to prevent selection/calibration leakage
-- [✓] Use paired bootstrap confidence intervals on matched OOS net returns for candidate-vs-baseline promotion
-- [✓] Fail closed on invalid, stale, unpromoted or feature-mismatched predictive artifacts
-- [✓] Keep unpromoted multi-head candidates out of production decisions
-- [✓] Record explicit feature fingerprint, artifact schema, model family, cost assumption, horizons and promotion evidence in the model manifest
-- [✓] Keep sequence models deferred when current data coverage/sample volume does not justify their added complexity
+**STAGE 3 STATUS: [✓] COMPLETED**
 
 ### Stage 3 verification evidence
 - Backend CI: **PASS — 127 tests passed, 1 non-failing dependency deprecation warning**
-- Logistic baseline, multi-head ensemble and tree/boosting family coverage: **PASS**
-- Expected return, downside, volatility, regime and abstention heads: **PASS**
-- Temporal probability calibration using a disjoint calibration period: **PASS**
-- OOF meta-model construction: **PASS**
-- Untouched chronological OOS evaluation: **PASS**
-- Fees/spread/slippage conservative cost treatment: **PASS**
-- Long/short/no-trade and calibration metrics: **PASS**
-- Paired bootstrap statistical promotion gate: **PASS**
-- Artifact schema/feature fingerprint/fail-closed loading: **PASS**
-- Production predictor routing: **promoted brain first; validated Logistic baseline only if no promoted brain is available**
-- Sequence-model decision: **deferred by evidence, not omitted**
-- Live-money execution remained disabled throughout Stage 3
-
-**STAGE 3 STATUS: [✓] COMPLETED**
+- Predictive ensemble, calibration, OOS evaluation, promotion gate and production routing: **PASS**
+- Live-money execution remained disabled
 
 ---
 
 # STAGE 4 — Adaptive Intelligence [✓]
 
-Goal: make HHHAI learn which signals/models work under which conditions without uncontrolled self-modification.
+Goal: learn which signals/models work under which conditions without uncontrolled self-modification.
 
-- [✓] Build regime-conditioned model performance tracking
-- [✓] Learn signal reliability from realized outcomes
-- [✓] Learn model reliability by regime and horizon
-- [✓] Track prediction calibration drift
-- [✓] Detect concept/data drift
-- [✓] Detect when the system enters an unfamiliar market state
-- [✓] Adapt confidence based on historical reliability
-- [✓] Adapt model weighting from validated evidence rather than fixed weights
-- [✓] Learn abstention thresholds from validation data
-- [✓] Build champion/challenger model evaluation
-- [✓] Keep production models immutable until promotion criteria are met
-- [✓] Quarantine candidate improvements
-- [✓] Evaluate candidates on untouched out-of-sample data
-- [✓] Require stability across multiple periods/regimes
-- [✓] Maintain rollbackable model versions
-- [✓] Record why an adaptive change was accepted or rejected
+- [✓] Regime-conditioned model/signal performance tracking
+- [✓] Model reliability by regime and horizon
+- [✓] Calibration drift, concept/data drift and unfamiliar-state detection
+- [✓] Adaptive confidence and evidence-based model weighting
+- [✓] Learned abstention threshold
+- [✓] Champion/challenger evaluation and quarantine
+- [✓] Untouched OOS and multi-period/regime stability gates
+- [✓] Rollbackable versions and accept/reject evidence
+- [✓] Persistent observations/candidate lifecycle in Supabase
+- [✓] Restart hydration and restrictive RLS policies
+- [✓] Decision-only adaptation with immutable production artifacts
+- [✓] Automated drift/familiarity/challenger regression coverage
 
-### Stage 4 requirements added during implementation
-- [✓] Persist adaptive observations and candidate lifecycle in Supabase with server-only access
-- [✓] Restore adaptive observations and candidate state after backend restart
-- [✓] Add explicit restrictive RLS deny policies for anonymous/authenticated clients on adaptive tables
-- [✓] Condition reliability on model + regime + horizon before using it for confidence adaptation
-- [✓] Learn model-fusion weights only from sufficient conditioned realized evidence; never self-promote them
-- [✓] Keep adaptive changes decision-only and execution-authority-free; production artifacts remain immutable
-- [✓] Add automated drift/familiarity/challenger statistical tests and full-suite regression coverage
+**STAGE 4 STATUS: [✓] COMPLETED**
 
 ### Stage 4 verification evidence
 - Backend CI: **PASS — 134 tests passed, 1 non-failing Starlette/httpx deprecation warning**
-- Adaptive reliability, regime/horizon conditioning and learned weighting tests: **PASS**
-- Calibration drift, feature mean-shift/concept drift and unfamiliar-state tests: **PASS**
-- Champion/challenger matched-sample bootstrap gate and rejection path: **PASS**
-- Candidate quarantine and restart-state persistence paths: **PASS**
-- Production predictor uses adaptive confidence only as a bounded decision-layer adjustment; it cannot mutate production artifacts or execute orders
-- Supabase adaptive tables: **created and verified; current row counts 0 before production outcome collection**
-- Supabase security advisors after RLS remediation: **0 security lints**
-- Render final Stage 4 commit: **LIVE**; application startup completed successfully
-- Live-money execution remained disabled throughout Stage 4
-- End-to-end software verification: **PASS through the complete automated backend suite and deployed startup path**
-
-**STAGE 4 STATUS: [✓] COMPLETED**
+- Adaptive reliability, drift, unfamiliar-state, challenger, persistence and fail-closed behavior: **PASS**
+- Supabase security advisors: **0 security lints**
+- Render deployment/startup: **PASS/LIVE**
+- Live-money execution remained disabled
 
 ---
 
 # STAGE 5 — Advanced Decision Engine [✓]
 
-Goal: rebuild the current council/scenario/adversarial architecture around real learned intelligence.
+Goal: rebuild council/scenario/adversarial architecture around learned intelligence.
 
-- [✓] Replace hand-coded specialist weighting where learned evidence is available
-- [✓] Make specialist agents consume the canonical market state
-- [✓] Add model-agreement/disagreement intelligence
-- [✓] Build calibrated decision fusion
-- [✓] Build learned scenario probabilities/distributions
-- [✓] Build expected-value scenario analysis
-- [✓] Upgrade adversarial challenge to test the actual trade thesis
-- [✓] Add contradiction detection across models and market evidence
-- [✓] Upgrade counterfactual analysis using empirical/learned outcomes
-- [✓] Separate evidence, prediction, uncertainty and action
-- [✓] Implement final trade gate with explicit abstention
-- [✓] Produce an auditable reason for every decision
-- [✓] Track decision quality independently from trade P/L
-- [✓] Ensure safety/risk vetoes cannot be overridden by model confidence
-
-### Stage 5 requirements added during implementation
-- [✓] Add a canonical `AgentContext.from_market_state` adapter so specialists do not consume parallel/ad-hoc market representations
-- [✓] Learn specialist weights from agent-level realized outcomes when sufficient evidence exists; otherwise use neutral weights rather than inventing reliability
-- [✓] Add a decision-only Stage 5 orchestrator with no execution authority and immutable predictive artifacts
-- [✓] Add calibrated multi-layer fusion across predictive probabilities, council evidence and learned scenario probabilities with an explicit fusion-margin abstention gate
-- [✓] Require sufficient matched historical evidence before empirical counterfactual results can veto a proposed action
-- [✓] Expose the Stage 5 decision/status API and keep it separate from order execution
-- [✓] Add regression tests for canonical-state ingestion, learned weighting, fusion, scenarios, adversarial checks, contradictions, counterfactuals, abstention, risk vetoes and decision-quality accounting
-- [✓] Verify deployment/startup of the final Stage 5 commit before roadmap promotion
-
-### Stage 5 verification evidence
-- Backend GitHub Actions CI: **PASS — 143 tests passed, 1 non-failing Starlette/httpx deprecation warning**
-- Specialist canonical-state adapter and evidence-weighted council: **PASS**
-- Predictive/council/scenario calibrated fusion: **PASS**
-- Learned scenario probability and expected-value analysis: **PASS**
-- Adversarial thesis challenge and contradiction detection: **PASS**
-- Empirical matched-action/regime/horizon counterfactual analysis: **PASS**
-- Evidence/prediction/uncertainty/action separation and auditable reasons: **PASS**
-- Final abstention gate and absolute risk-veto behavior: **PASS**
-- Independent decision-quality ledger separate from trade P/L: **PASS**
-- Stage 5 API wired into `app.main`; execution authority remains **false** and predictive production artifacts remain immutable
-- Final Render deployment for commit `db999e545f4d2d0bb074b371f84f2cc828a83012`: **LIVE**; application startup completed and Render emitted the live-service confirmation; deployed root returned **HTTP 200**
-- Live-money execution remained disabled throughout Stage 5
+- [✓] Canonical specialist market-state ingestion
+- [✓] Learned specialist weighting from realized evidence
+- [✓] Model agreement/disagreement and calibrated decision fusion
+- [✓] Learned scenario probabilities and expected-value analysis
+- [✓] Adversarial thesis challenge and contradiction detection
+- [✓] Empirical matched counterfactual analysis
+- [✓] Evidence/prediction/uncertainty/action separation
+- [✓] Final abstention gate and absolute risk vetoes
+- [✓] Auditable reasons and independent decision-quality ledger
+- [✓] Decision-only API with no execution authority
+- [✓] Production predictive artifacts immutable
+- [✓] Regression coverage for all Stage 5 gates
+- [✓] Deployment/startup verification
 
 **STAGE 5 STATUS: [✓] COMPLETED**
+
+### Stage 5 verification evidence
+- Backend CI: **PASS — 143 tests passed, 1 non-failing Starlette/httpx deprecation warning**
+- Council, fusion, scenarios, adversarial, contradiction, counterfactual, abstention, risk-veto and decision-quality tests: **PASS**
+- Render final Stage 5 deployment: **LIVE**, root HTTP 200
+- Live-money execution remained disabled
 
 ---
 
 # STAGE 6 — Autonomous Position Intelligence [✓]
 
-Goal: allow HHHAI to manage open positions continuously according to changing expected value and thesis integrity rather than blindly relying on fixed TP/SL rules.
+Goal: manage open positions continuously according to changing expected value and thesis integrity rather than blindly relying on fixed TP/SL rules.
 
-- [✓] Build continuous position-state representation
-- [✓] Record the original trade thesis and evidence
-- [✓] Continuously reassess thesis integrity
-- [✓] Recompute expected continuation value
-- [✓] Recompute downside/risk dynamically
-- [✓] Detect thesis invalidation
-- [✓] Detect momentum/flow/regime deterioration
-- [✓] Detect adverse news and market-wide shocks
-- [✓] Implement dynamic reduce/hold/exit decisions
-- [✓] Implement adaptive profit protection
-- [✓] Implement partial-exit logic where justified
-- [✓] Implement dynamic protective levels while preserving exchange safety
-- [✓] Handle partial fills and order failures safely
-- [✓] Reconcile exchange position state after every critical action
-- [✓] Recover open-position state after backend restart
-- [✓] Prevent position-management loops from creating duplicate orders
-- [✓] Validate autonomous management in historical and paper environments
-
-### Stage 6 requirements added during implementation
-- [✓] Persist the complete Stage 6 thesis, entry evidence, peak return, protection level, latest decision and remaining quantity in the existing server-only `position_states` persistence path
-- [✓] Hydrate Stage 6 position state after restart and restore peak/protection/thesis context before autonomous management resumes
-- [✓] Keep Stage 5 predictive/adaptive intelligence decision-only; Stage 6 remains the position-management governor and cannot mutate predictive artifacts
-- [✓] Use the shared hydrated Adaptive Intelligence instance when Stage 6 re-evaluates the Stage 5 decision layer
-- [✓] Make protective levels monotonic and suppress repeated management actions with persistent cooldowns and meaningful-change thresholds
-- [✓] Reconcile the exchange position after every critical exit/reduce action and record reconciliation failures instead of assuming fills
-- [✓] Execute the same position-management decision path in paper mode without exchange authority, including simulated partial exits and full exits
-- [✓] Add deterministic historical-style position replay regression coverage for thesis deterioration, profit protection, shock exits and fail-closed telemetry
-- [✓] Add a deployed Stage 6 smoke gate that verifies the production root, Stage 6 API, restart recovery flag and live-money safety state
-
-### Stage 6 verification evidence
-- Backend GitHub Actions CI: **PASS — 152 tests passed, 1 non-failing Starlette/httpx deprecation warning**
-- Stage 6 position-engine regression coverage: **PASS** — continuous reassessment, thesis invalidation, shock/emergency exit, long/short monotonic protection, partial exits and fail-closed telemetry
-- Paper execution safety coverage: **PASS** — position management remains execution-authority-free in paper mode
-- Historical-style replay coverage: **PASS** — deterministic sequence reacts to regime/thesis deterioration with reduce/exit behavior
-- Restart-state persistence/hydration path: **PASS** — Stage 6 thesis/protection/peak/remaining-quantity state is restored from `position_states`
-- Exchange action failure handling: **PASS** — order exceptions are recorded and do not masquerade as successful fills
-- Critical-action reconciliation: **PASS** — post-action position state is queried and remaining quantity is recorded
-- Duplicate-management protection: **PASS** — persistent cooldown and protection-change threshold prevent repeated management-order churn
-- Supabase security advisors after Stage 6 work: **0 security lints**; no new client-accessible persistence path was introduced
-- Production Stage 6 endpoint smoke: **PASS** — root is Stage 6, `/api/position-intelligence/status` reports the Stage 6 engine, continuous review, persistence, restart recovery and `live_money_enabled=false`
-- Final Render deployment for commit `e3b97fe8c88fb1fd421d6ba254d1708778628088`: **LIVE**; application startup completed successfully and Render emitted the live-service confirmation; deployed root returned **HTTP 200**
-- Live-money execution remained disabled throughout Stage 6
+- [✓] Continuous position-state representation
+- [✓] Original trade thesis and entry evidence
+- [✓] Continuous thesis-integrity reassessment
+- [✓] Dynamic continuation value and downside/risk recomputation
+- [✓] Thesis invalidation, momentum/flow/regime deterioration and shock detection
+- [✓] Dynamic reduce/hold/exit decisions
+- [✓] Adaptive profit protection and partial exits
+- [✓] Dynamic protective levels with exchange safety
+- [✓] Partial-fill/order-failure handling
+- [✓] Critical-action exchange reconciliation
+- [✓] Restart recovery and duplicate-management protection
+- [✓] Historical-style and paper validation
+- [✓] Persistent thesis/protection/peak/remaining-quantity state
+- [✓] Shared adaptive intelligence integration without predictive-artifact mutation
+- [✓] Deployed Stage 6 smoke gate
 
 **STAGE 6 STATUS: [✓] COMPLETED**
 
+### Stage 6 verification evidence
+- Backend CI: **PASS — 152 tests passed, 1 non-failing Starlette/httpx deprecation warning**
+- Stage 6 position-engine, paper, replay, failure, reconciliation, restart and duplicate-order tests: **PASS**
+- Supabase security advisors: **0 security lints**
+- Production Stage 6 endpoint smoke: **PASS**
+- Final Render deployment: **LIVE**, application startup complete, root HTTP 200
+- Live-money execution remained disabled
+
 ---
 
-# STAGE 7 — Self-Learning Research Loop
+# STAGE 7 — Self-Learning Research Loop [✓]
 
 Goal: turn every completed trade into structured research without allowing individual outcomes to corrupt production intelligence.
 
-- [ ] Capture complete decision snapshots
-- [ ] Capture realized execution and market outcomes
-- [ ] Attribute outcome to models, signals, regime and decision layers
-- [ ] Identify prediction errors and calibration errors
-- [ ] Identify regime-classification errors
-- [ ] Identify failed/weak signals
-- [ ] Generate candidate improvements
-- [ ] Keep candidates quarantined from production
-- [ ] Automatically run reproducible backtests
-- [ ] Run walk-forward evaluation
-- [ ] Run untouched out-of-sample evaluation
-- [ ] Run stress/robustness evaluation
-- [ ] Compare candidate against production champion
-- [ ] Require statistical and economic improvement
-- [ ] Require improvement after realistic costs
-- [ ] Promote only through an explicit approval gate
-- [ ] Keep complete experiment/model lineage
-- [ ] Support rollback to a known-good model
+- [✓] Capture complete decision snapshots
+- [✓] Capture realized execution and market outcomes
+- [✓] Attribute outcome to models, signals, regime and decision layers
+- [✓] Identify prediction errors and calibration errors
+- [✓] Identify regime-classification errors
+- [✓] Identify failed/weak signals
+- [✓] Generate candidate improvements
+- [✓] Keep candidates quarantined from production
+- [✓] Automatically run reproducible backtests
+- [✓] Run walk-forward evaluation
+- [✓] Run untouched out-of-sample evaluation
+- [✓] Run stress/robustness evaluation
+- [✓] Compare candidate against production champion
+- [✓] Require statistical and economic improvement
+- [✓] Require improvement after realistic costs
+- [✓] Promote only through an explicit approval gate
+- [✓] Keep complete experiment/model lineage
+- [✓] Support rollback to a known-good model
 
-**STAGE 7 STATUS: NOT STARTED**
+### Stage 7 requirements added during implementation
+- [✓] Persist research snapshots, candidates and experiment results in server-only Supabase tables
+- [✓] Automatically copy every completed learning outcome into the Stage 7 research snapshot path
+- [✓] Restore research snapshots/candidates after backend restart
+- [✓] Keep research candidates quarantined and execution-authority-free
+- [✓] Use deterministic historical replay with realistic slippage/fee treatment
+- [✓] Use chronological walk-forward folds and a distinct untouched OOS period
+- [✓] Use deterministic paired bootstrap confidence intervals for candidate-vs-champion deltas
+- [✓] Require economic improvement, positive statistical CI, drawdown constraint, walk-forward validity and stress validity before promotion eligibility
+- [✓] Add an explicit approval contract requiring an approver and known-good rollback target; approval does not mutate production automatically
+- [✓] Preserve reproducibility fingerprints and experiment lineage
+- [✓] Add a deployed Stage 7 smoke gate
+- [✓] Maintain restrictive RLS on research persistence
+
+### Stage 7 verification evidence
+- Backend GitHub Actions CI: **PASS — 157 tests passed, 1 non-failing Starlette/httpx deprecation warning**
+- Stage 7 research ingestion, outcome attribution, candidate quarantine, deterministic replay, reproducibility, OOS gate, walk-forward, stress and production-authority tests: **PASS**
+- The initial Stage 7 CI exposed two test-gate defects; both were corrected and the final suite passed. No failing test was ignored or waived.
+- Supabase Stage 7 research tables (`research_snapshots`, `research_candidates`, `research_experiments`) created with RLS enabled and explicit deny policies; security advisors: **0 lints**
+- Production learning outcome path now feeds research snapshots automatically
+- Explicit approval/rollback governance exists without automatic production mutation
+- Production Stage 7 smoke: **PASS** — root reports Stage 7, `/api/research/status` reports `stage7-research-loop-v1`, `production_self_modification=false`, `execution_authority=false`, and valid snapshot/candidate counters
+- Final deployed Stage 7 code commit: **1bc92227385b25a9a5b3e5b2a2644cae23df297e**; Render deployment: **LIVE**, application startup complete
+- CI smoke was rerun after the deployment race and passed against the deployed Stage 7 endpoint
+- Live-money execution remained disabled throughout Stage 7
+
+**STAGE 7 STATUS: [✓] COMPLETED**
 
 ---
 
