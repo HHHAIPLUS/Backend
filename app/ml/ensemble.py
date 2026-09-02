@@ -9,6 +9,7 @@ import joblib
 import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
+from sklearn.frozen import FrozenEstimator
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, log_loss
 from sklearn.pipeline import Pipeline
@@ -69,7 +70,7 @@ class PredictiveEnsemble:
             return
         try:
             payload = joblib.load(self.artifact_path)
-            if payload.get("schema_version") != 1:
+            if payload.get("schema_version") != 2:
                 raise ValueError("Unsupported ensemble artifact schema.")
             for name in ("baseline", "direction", "return_model", "risk_model", "vol_model", "regime_model", "abstention_model"):
                 setattr(self, name, payload[name])
@@ -96,10 +97,16 @@ class PredictiveEnsemble:
         self.version = version
 
         self.baseline = Pipeline([("scale", StandardScaler()), ("clf", LogisticRegression(max_iter=1500, class_weight="balanced", random_state=42))]).fit(x, y)
-        split = max(100, int(len(train_rows) * 0.8))
-        split = min(split, len(train_rows) - 1)
+
+        # Fit the nonlinear direction estimator on the earlier portion and
+        # calibrate it on a strictly later holdout. FrozenEstimator is the
+        # supported replacement for the removed cv="prefit" API in sklearn 1.9.
+        split = int(len(train_rows) * 0.80)
+        split = max(300, min(split, len(train_rows) - 100))
         nonlinear = HistGradientBoostingClassifier(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42).fit(x[:split], y[:split])
-        self.direction = CalibratedClassifierCV(nonlinear, method="sigmoid", cv="prefit").fit(x[split:], y[split:])
+        calibration = FrozenEstimator(nonlinear)
+        self.direction = CalibratedClassifierCV(calibration, method="sigmoid").fit(x[split:], y[split:])
+
         self.return_model = HistGradientBoostingRegressor(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42).fit(x, returns)
         self.risk_model = HistGradientBoostingRegressor(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=43).fit(x, np.maximum(0.0, -returns))
         self.vol_model = HistGradientBoostingRegressor(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=44).fit(x, np.abs(returns))
@@ -113,12 +120,12 @@ class PredictiveEnsemble:
             raise ValueError("Cannot save an untrained ensemble.")
         self.validation_metrics = dict(validation_metrics)
         self.artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump({"schema_version": 1, "version": self.version, "feature_names": self.feature_names, "baseline": self.baseline, "direction": self.direction, "return_model": self.return_model, "risk_model": self.risk_model, "vol_model": self.vol_model, "regime_model": self.regime_model, "abstention_model": self.abstention_model, "validation_metrics": self.validation_metrics}, self.artifact_path)
+        joblib.dump({"schema_version": 2, "version": self.version, "feature_names": self.feature_names, "baseline": self.baseline, "direction": self.direction, "return_model": self.return_model, "risk_model": self.risk_model, "vol_model": self.vol_model, "regime_model": self.regime_model, "abstention_model": self.abstention_model, "validation_metrics": self.validation_metrics}, self.artifact_path)
 
     def predict(self, features: dict[str, Any]) -> EnsemblePrediction:
         models = (self.baseline, self.direction, self.return_model, self.risk_model, self.vol_model, self.regime_model, self.abstention_model)
         if any(model is None for model in models):
-            return EnsemblePrediction(0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, True)
+            return EnsemblePrediction(0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, True)
         x = np.asarray([[float(features.get(k, 0.0) or 0.0) for k in self.feature_names]], dtype=float)
         if not np.isfinite(x).all():
             return EnsemblePrediction(0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, True)
