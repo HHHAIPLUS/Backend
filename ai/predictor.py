@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from ai.models import FeatureVector, MarketRegime, Prediction
 from app.ml.predictive import predictive_model
 from app.ml.ensemble import predictive_ensemble
+from app.ml.predictive_brain import PredictiveBrain
 
 
 class BaselinePredictor:
@@ -32,9 +33,36 @@ class BaselinePredictor:
 
 
 class ProductionPredictor:
-    """Production predictor: validated multi-head ensemble first, safe baseline fallback second."""
+    """Production predictor: promoted predictive brain first, then validated conservative fallbacks."""
+
+    def __init__(self) -> None:
+        self.brain = PredictiveBrain()
 
     def predict(self, features: FeatureVector, regime: MarketRegime) -> Prediction:
+        brain = self.brain.predict(features.features)
+        if brain.get("trained"):
+            p = brain["probabilities"]
+            return Prediction(
+                symbol=features.symbol,
+                timestamp=datetime.now(timezone.utc),
+                long_probability=p["long"],
+                short_probability=p["short"],
+                no_trade_probability=p["flat"],
+                confidence=max(p.values()),
+                regime=regime,
+                model_version=brain["version"],
+                rationale=[
+                    "Promoted Stage 3 predictive brain.",
+                    f"decision={brain['decision']}",
+                    f"expected_return={brain.get('expected_return', 0.0):.6f}",
+                    f"expected_edge_after_cost={brain.get('expected_edge_after_cost', 0.0):.6f}",
+                    f"downside_risk={brain.get('downside', 0.0):.6f}",
+                    f"uncertainty={brain.get('uncertainty', 1.0):.4f}",
+                    f"abstention_probability={brain.get('abstention_probability', 1.0):.4f}",
+                ],
+            )
+
+        # Preserve the validated multi-head ensemble as the first fallback.
         e = predictive_ensemble.predict(features.features)
         if not e.abstain and predictive_ensemble.version != "untrained":
             return Prediction(
@@ -46,18 +74,11 @@ class ProductionPredictor:
                 confidence=max(e.long, e.short, e.flat),
                 regime=regime,
                 model_version=e.version,
-                rationale=[
-                    "Validated multi-head ensemble.",
-                    f"expected_return={e.expected_return:.6f}",
-                    f"downside_risk={e.downside_risk:.6f}",
-                    f"uncertainty={e.uncertainty:.4f}",
-                    f"model_agreement={e.model_agreement:.4f}",
-                ],
+                rationale=["Validated multi-head ensemble fallback.", f"expected_return={e.expected_return:.6f}", f"uncertainty={e.uncertainty:.4f}"],
             )
 
-        # Preserve the validated logistic model as a conservative fallback.
         r = predictive_model.predict(features.features)
         if r["abstain"]:
             return Prediction(symbol=features.symbol, timestamp=datetime.now(timezone.utc), long_probability=0, short_probability=0, no_trade_probability=1, confidence=1, regime=regime, model_version="untrained", rationale=[r["reason"]])
         p = r["probabilities"]
-        return Prediction(symbol=features.symbol, timestamp=datetime.now(timezone.utc), long_probability=p["long"], short_probability=p["short"], no_trade_probability=p["flat"], confidence=max(p.values()), regime=regime, model_version=r["version"], rationale=["Validated Logistic Regression baseline; ensemble abstained."])
+        return Prediction(symbol=features.symbol, timestamp=datetime.now(timezone.utc), long_probability=p["long"], short_probability=p["short"], no_trade_probability=p["flat"], confidence=max(p.values()), regime=regime, model_version=r["version"], rationale=["Validated Logistic Regression baseline fallback."])
