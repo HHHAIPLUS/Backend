@@ -31,28 +31,28 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - name: Verify deployed root and Stage 6 status endpoint
+      - name: Verify deployed root and Stage 7 research status endpoint
         shell: bash
         run: |
           set -euo pipefail
           for i in {1..24}; do
             if curl --fail --silent --show-error --max-time 15 https://hhhai.onrender.com/ > /tmp/root.json && \
-               curl --fail --silent --show-error --max-time 15 https://hhhai.onrender.com/api/position-intelligence/status > /tmp/stage6.json; then
+               curl --fail --silent --show-error --max-time 15 https://hhhai.onrender.com/api/research/status > /tmp/stage7.json; then
               python - <<'PY'
           import json
           root=json.load(open('/tmp/root.json'))
-          status=json.load(open('/tmp/stage6.json'))
-          assert root['phase'].startswith('Stage 6'), root
-          assert status['engine'] == 'stage6-position-intelligence-v1', status
-          assert status['continuous_review'] is True
-          assert status['position_state_persistence'] is True
-          assert status['restart_recovery'] is True
-          assert status['live_money_enabled'] is False
-          print('deployed Stage 6 smoke: PASS')
+          status=json.load(open('/tmp/stage7.json'))
+          assert root['phase'].startswith('Stage 7'), root
+          assert status['engine'] == 'stage7-research-loop-v1', status
+          assert status['production_self_modification'] is False
+          assert status['execution_authority'] is False
+          assert isinstance(status['snapshots'], int)
+          assert isinstance(status['candidates'], int)
+          print('deployed Stage 7 smoke: PASS')
           PY
               exit 0
             fi
             sleep 5
           done
-          echo 'deployed Stage 6 smoke: FAILED'
+          echo 'deployed Stage 7 smoke: FAILED'
           exit 1
