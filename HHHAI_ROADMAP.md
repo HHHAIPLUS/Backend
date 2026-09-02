@@ -18,7 +18,9 @@ This file is the project control record. It is not a source-code stage and it mu
 
 **STAGE 5 — ADVANCED DECISION ENGINE: [✓] COMPLETED**
 
-**CURRENT: STAGE 6 — AUTONOMOUS POSITION INTELLIGENCE**
+**STAGE 6 — AUTONOMOUS POSITION INTELLIGENCE: [✓] COMPLETED**
+
+**CURRENT: STAGE 7 — SELF-LEARNING RESEARCH LOOP**
 
 No live-money execution is authorized by this roadmap. Safety gates remain fail-closed throughout every stage.
 
@@ -269,29 +271,54 @@ Goal: rebuild the current council/scenario/adversarial architecture around real 
 
 ---
 
-# STAGE 6 — Autonomous Position Intelligence
+# STAGE 6 — Autonomous Position Intelligence [✓]
 
 Goal: allow HHHAI to manage open positions continuously according to changing expected value and thesis integrity rather than blindly relying on fixed TP/SL rules.
 
-- [ ] Build continuous position-state representation
-- [ ] Record the original trade thesis and evidence
-- [ ] Continuously reassess thesis integrity
-- [ ] Recompute expected continuation value
-- [ ] Recompute downside/risk dynamically
-- [ ] Detect thesis invalidation
-- [ ] Detect momentum/flow/regime deterioration
-- [ ] Detect adverse news and market-wide shocks
-- [ ] Implement dynamic reduce/hold/exit decisions
-- [ ] Implement adaptive profit protection
-- [ ] Implement partial-exit logic where justified
-- [ ] Implement dynamic protective levels while preserving exchange safety
-- [ ] Handle partial fills and order failures safely
-- [ ] Reconcile exchange position state after every critical action
-- [ ] Recover open-position state after backend restart
-- [ ] Prevent position-management loops from creating duplicate orders
-- [ ] Validate autonomous management in historical and paper environments
+- [✓] Build continuous position-state representation
+- [✓] Record the original trade thesis and evidence
+- [✓] Continuously reassess thesis integrity
+- [✓] Recompute expected continuation value
+- [✓] Recompute downside/risk dynamically
+- [✓] Detect thesis invalidation
+- [✓] Detect momentum/flow/regime deterioration
+- [✓] Detect adverse news and market-wide shocks
+- [✓] Implement dynamic reduce/hold/exit decisions
+- [✓] Implement adaptive profit protection
+- [✓] Implement partial-exit logic where justified
+- [✓] Implement dynamic protective levels while preserving exchange safety
+- [✓] Handle partial fills and order failures safely
+- [✓] Reconcile exchange position state after every critical action
+- [✓] Recover open-position state after backend restart
+- [✓] Prevent position-management loops from creating duplicate orders
+- [✓] Validate autonomous management in historical and paper environments
 
-**STAGE 6 STATUS: NOT STARTED**
+### Stage 6 requirements added during implementation
+- [✓] Persist the complete Stage 6 thesis, entry evidence, peak return, protection level, latest decision and remaining quantity in the existing server-only `position_states` persistence path
+- [✓] Hydrate Stage 6 position state after restart and restore peak/protection/thesis context before autonomous management resumes
+- [✓] Keep Stage 5 predictive/adaptive intelligence decision-only; Stage 6 remains the position-management governor and cannot mutate predictive artifacts
+- [✓] Use the shared hydrated Adaptive Intelligence instance when Stage 6 re-evaluates the Stage 5 decision layer
+- [✓] Make protective levels monotonic and suppress repeated management actions with persistent cooldowns and meaningful-change thresholds
+- [✓] Reconcile the exchange position after every critical exit/reduce action and record reconciliation failures instead of assuming fills
+- [✓] Execute the same position-management decision path in paper mode without exchange authority, including simulated partial exits and full exits
+- [✓] Add deterministic historical-style position replay regression coverage for thesis deterioration, profit protection, shock exits and fail-closed telemetry
+- [✓] Add a deployed Stage 6 smoke gate that verifies the production root, Stage 6 API, restart recovery flag and live-money safety state
+
+### Stage 6 verification evidence
+- Backend GitHub Actions CI: **PASS — 152 tests passed, 1 non-failing Starlette/httpx deprecation warning**
+- Stage 6 position-engine regression coverage: **PASS** — continuous reassessment, thesis invalidation, shock/emergency exit, long/short monotonic protection, partial exits and fail-closed telemetry
+- Paper execution safety coverage: **PASS** — position management remains execution-authority-free in paper mode
+- Historical-style replay coverage: **PASS** — deterministic sequence reacts to regime/thesis deterioration with reduce/exit behavior
+- Restart-state persistence/hydration path: **PASS** — Stage 6 thesis/protection/peak/remaining-quantity state is restored from `position_states`
+- Exchange action failure handling: **PASS** — order exceptions are recorded and do not masquerade as successful fills
+- Critical-action reconciliation: **PASS** — post-action position state is queried and remaining quantity is recorded
+- Duplicate-management protection: **PASS** — persistent cooldown and protection-change threshold prevent repeated management-order churn
+- Supabase security advisors after Stage 6 work: **0 security lints**; no new client-accessible persistence path was introduced
+- Production Stage 6 endpoint smoke: **PASS** — root is Stage 6, `/api/position-intelligence/status` reports the Stage 6 engine, continuous review, persistence, restart recovery and `live_money_enabled=false`
+- Final Render deployment for commit `e3b97fe8c88fb1fd421d6ba254d1708778628088`: **LIVE**; application startup completed successfully and Render emitted the live-service confirmation; deployed root returned **HTTP 200**
+- Live-money execution remained disabled throughout Stage 6
+
+**STAGE 6 STATUS: [✓] COMPLETED**
 
 ---
 
