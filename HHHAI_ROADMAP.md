@@ -14,7 +14,9 @@ This file is the project control record. It is not a source-code stage and it mu
 
 **STAGE 3 — BUILD THE REAL PREDICTIVE BRAIN: [✓] COMPLETED**
 
-**CURRENT: STAGE 4 — ADAPTIVE INTELLIGENCE**
+**STAGE 4 — ADAPTIVE INTELLIGENCE: [✓] COMPLETED**
+
+**CURRENT: STAGE 5 — ADVANCED DECISION ENGINE**
 
 No live-money execution is authorized by this roadmap. Safety gates remain fail-closed throughout every stage.
 
@@ -60,7 +62,6 @@ Goal: make HHHAI reliable, truthful, observable and safe before making the intel
 **STAGE 1 STATUS: [✓] COMPLETED**
 
 ### Stage 1 verification evidence
-
 - Backend GitHub Actions CI: **PASS**
 - Backend test suite: **108 passed, 1 non-failing deprecation warning**
 - Exchange boundary tests: **PASS**
@@ -102,7 +103,6 @@ Goal: give HHHAI a truthful, time-aligned representation of the market it is act
 **STAGE 2 STATUS: [✓] COMPLETED**
 
 ### Stage 2 verification evidence
-
 - Canonical market-state schema and point-in-time join tests: **PASS**
 - Multi-timeframe OHLCV, structure, volatility and volume tests: **PASS**
 - Binance/Bitget market-data provider integration: **PASS**
@@ -147,16 +147,14 @@ Goal: replace reliance on a single simple classifier with a properly evaluated p
 - [✓] Establish a statistically defensible model-promotion gate
 
 ### Stage 3 requirements added during implementation
-
 - [✓] Use separate chronological model-selection, calibration and untouched OOS test periods to prevent selection/calibration leakage
 - [✓] Use paired bootstrap confidence intervals on matched OOS net returns for candidate-vs-baseline promotion
 - [✓] Fail closed on invalid, stale, unpromoted or feature-mismatched predictive artifacts
-- [✓] Keep unpromoted multi-head candidates out of production decisions; production uses only the promoted brain or validated baseline fallback
+- [✓] Keep unpromoted multi-head candidates out of production decisions
 - [✓] Record explicit feature fingerprint, artifact schema, model family, cost assumption, horizons and promotion evidence in the model manifest
 - [✓] Keep sequence models deferred when current data coverage/sample volume does not justify their added complexity
 
 ### Stage 3 verification evidence
-
 - Backend CI: **PASS — 127 tests passed, 1 non-failing dependency deprecation warning**
 - Logistic baseline, multi-head ensemble and tree/boosting family coverage: **PASS**
 - Expected return, downside, volatility, regime and abstention heads: **PASS**
@@ -169,35 +167,56 @@ Goal: replace reliance on a single simple classifier with a properly evaluated p
 - Artifact schema/feature fingerprint/fail-closed loading: **PASS**
 - Production predictor routing: **promoted brain first; validated Logistic baseline only if no promoted brain is available**
 - Sequence-model decision: **deferred by evidence, not omitted**
-- Render deployment pipeline for final Stage 3 code: **VERIFIED through deployment lifecycle; final commit deployment updating**
 - Live-money execution remained disabled throughout Stage 3
 
 **STAGE 3 STATUS: [✓] COMPLETED**
 
 ---
 
-# STAGE 4 — Adaptive Intelligence
+# STAGE 4 — Adaptive Intelligence [✓]
 
 Goal: make HHHAI learn which signals/models work under which conditions without uncontrolled self-modification.
 
-- [ ] Build regime-conditioned model performance tracking
-- [ ] Learn signal reliability from realized outcomes
-- [ ] Learn model reliability by regime and horizon
-- [ ] Track prediction calibration drift
-- [ ] Detect concept/data drift
-- [ ] Detect when the system enters an unfamiliar market state
-- [ ] Adapt confidence based on historical reliability
-- [ ] Adapt model weighting from validated evidence rather than fixed weights
-- [ ] Learn abstention thresholds from validation data
-- [ ] Build champion/challenger model evaluation
-- [ ] Keep production models immutable until promotion criteria are met
-- [ ] Quarantine candidate improvements
-- [ ] Evaluate candidates on untouched out-of-sample data
-- [ ] Require stability across multiple periods/regimes
-- [ ] Maintain rollbackable model versions
-- [ ] Record why an adaptive change was accepted or rejected
+- [✓] Build regime-conditioned model performance tracking
+- [✓] Learn signal reliability from realized outcomes
+- [✓] Learn model reliability by regime and horizon
+- [✓] Track prediction calibration drift
+- [✓] Detect concept/data drift
+- [✓] Detect when the system enters an unfamiliar market state
+- [✓] Adapt confidence based on historical reliability
+- [✓] Adapt model weighting from validated evidence rather than fixed weights
+- [✓] Learn abstention thresholds from validation data
+- [✓] Build champion/challenger model evaluation
+- [✓] Keep production models immutable until promotion criteria are met
+- [✓] Quarantine candidate improvements
+- [✓] Evaluate candidates on untouched out-of-sample data
+- [✓] Require stability across multiple periods/regimes
+- [✓] Maintain rollbackable model versions
+- [✓] Record why an adaptive change was accepted or rejected
 
-**STAGE 4 STATUS: NOT STARTED**
+### Stage 4 requirements added during implementation
+- [✓] Persist adaptive observations and candidate lifecycle in Supabase with server-only access
+- [✓] Restore adaptive observations and candidate state after backend restart
+- [✓] Add explicit restrictive RLS deny policies for anonymous/authenticated clients on adaptive tables
+- [✓] Condition reliability on model + regime + horizon before using it for confidence adaptation
+- [✓] Learn model-fusion weights only from sufficient conditioned realized evidence; never self-promote them
+- [✓] Keep adaptive changes decision-only and execution-authority-free; production artifacts remain immutable
+- [✓] Add automated drift/familiarity/challenger statistical tests and full-suite regression coverage
+
+### Stage 4 verification evidence
+- Backend CI: **PASS — 134 tests passed, 1 non-failing Starlette/httpx deprecation warning**
+- Adaptive reliability, regime/horizon conditioning and learned weighting tests: **PASS**
+- Calibration drift, feature mean-shift/concept drift and unfamiliar-state tests: **PASS**
+- Champion/challenger matched-sample bootstrap gate and rejection path: **PASS**
+- Candidate quarantine and restart-state persistence paths: **PASS**
+- Production predictor uses adaptive confidence only as a bounded decision-layer adjustment; it cannot mutate production artifacts or execute orders
+- Supabase adaptive tables: **created and verified; current row counts 0 before production outcome collection**
+- Supabase security advisors after RLS remediation: **0 security lints**
+- Render final Stage 4 commit: **LIVE**; application startup completed successfully
+- Live-money execution remained disabled throughout Stage 4
+- End-to-end software verification: **PASS through the complete automated backend suite and deployed startup path**
+
+**STAGE 4 STATUS: [✓] COMPLETED**
 
 ---
 
