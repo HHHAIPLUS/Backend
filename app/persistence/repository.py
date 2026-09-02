@@ -12,7 +12,6 @@ async def record_outcome(decision_id: str, payload: dict[str, Any]):
 async def record_event(event_type: str, payload: dict[str, Any]):
     return await store.insert('system_events', {'event_type': event_type, 'payload': payload, 'created_at': datetime.now(timezone.utc).isoformat()})
 
-
 async def upsert_position_state(exchange: str, symbol: str, side: str, payload: dict[str, Any]):
     return await store.upsert('position_states', {
         'exchange': exchange, 'symbol': symbol, 'side': side, 'payload': payload,
@@ -21,3 +20,15 @@ async def upsert_position_state(exchange: str, symbol: str, side: str, payload: 
 
 async def load_position_states():
     return await store.select('position_states', {'select':'*'})
+
+async def record_adaptive_observation(payload: dict[str, Any]):
+    return await store.insert('adaptive_observations', payload)
+
+async def load_adaptive_observations(limit: int = 10000):
+    return await store.select('adaptive_observations', {'select':'*', 'order':'observed_at.asc', 'limit':str(max(1, min(limit, 10000)))})
+
+async def record_adaptive_candidate(payload: dict[str, Any]):
+    return await store.insert('adaptive_candidates', payload)
+
+async def update_adaptive_candidate(candidate_id: str, payload: dict[str, Any]):
+    return await store.upsert('adaptive_candidates', {'id': candidate_id, **payload}, 'id')
