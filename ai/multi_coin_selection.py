@@ -9,18 +9,14 @@ from typing import Any
 
 from app.persistence.supabase import store
 from app.persistence.repository import record_event
+from app.ml.predictive import predictive_model
+from app.ml.live_features import enrich_missing_features
 
 log = logging.getLogger("hhhai.multi_coin_selection")
 
 
 def install_multi_coin_selection(trader: Any) -> None:
-    """Install portfolio-level opportunity selection without enabling execution.
-
-    The existing per-symbol analysis pipeline is preserved. During each decision
-    cycle every configured symbol is analyzed first, execution is deferred, and
-    only the strongest qualified opportunity is allowed to reach the exchange.
-    The patch is deliberately fail-closed: if selection fails, nothing executes.
-    """
+    """Install portfolio-level opportunity selection without enabling execution."""
     cls = trader.__class__
     if getattr(cls, "_hhhai_multi_coin_installed", False):
         return
@@ -28,6 +24,19 @@ def install_multi_coin_selection(trader: Any) -> None:
     original_run = cls._run
     original_execute = cls._execute
     original_risk_check = cls._risk_check
+    original_predict = predictive_model.predict
+
+    def enriched_predict(features):
+        try:
+            symbol = os.getenv("HHHAI_LIVE_FEATURE_SYMBOL", "BTCUSDT")
+            enriched = enrich_missing_features(symbol, dict(features or {}))
+            return original_predict(enriched)
+        except Exception as exc:
+            # Never invent features or bypass the predictive abstention gate.
+            log.warning("Live predictive feature enrichment failed: %s", exc)
+            return original_predict(features)
+
+    predictive_model.predict = enriched_predict
 
     async def guarded_risk(self, world, decision, candidate):
         result = await original_risk_check(self, world, decision, candidate)
@@ -71,14 +80,8 @@ def install_multi_coin_selection(trader: Any) -> None:
 
                 async def defer_execute(this, symbol, world, decision, candidate, risk):
                     pending[symbol] = (symbol, world, decision.copy(), candidate, dict(risk))
-                    return {
-                        "status": "selection_pending",
-                        "reason": "portfolio selector is ranking all symbols before execution",
-                        "live_exchange_order": False,
-                    }
+                    return {"status": "selection_pending", "reason": "portfolio selector is ranking all symbols before execution", "live_exchange_order": False}
 
-                # Temporarily replace execution only for this scan. No exchange
-                # order can be sent while the portfolio is being ranked.
                 self._execute = MethodType(defer_execute, self)
                 try:
                     for symbol in self.config.symbols:
@@ -124,11 +127,7 @@ def install_multi_coin_selection(trader: Any) -> None:
 
                 qualified.sort(key=lambda x: x[0], reverse=True)
                 winner = qualified[0] if qualified else None
-                actual_execution = {
-                    "status": "not_executed",
-                    "reason": "no qualified portfolio-level opportunity",
-                    "live_exchange_order": False,
-                }
+                actual_execution = {"status": "not_executed", "reason": "no qualified portfolio-level opportunity", "live_exchange_order": False}
 
                 if winner:
                     _, winner_symbol, winner_result = winner
@@ -136,36 +135,18 @@ def install_multi_coin_selection(trader: Any) -> None:
                     try:
                         actual_execution = await original_execute(self, *args)
                         winner_result["execution"] = actual_execution
-                        winner_result["portfolio_selection"] = {
-                            "selected": winner_symbol,
-                            "score": winner[0],
-                            "candidates_considered": len(scan_results),
-                            "qualified_candidates": len(qualified),
-                        }
+                        winner_result["portfolio_selection"] = {"selected": winner_symbol, "score": winner[0], "candidates_considered": len(scan_results), "qualified_candidates": len(qualified)}
                         self.last_cycle = winner_result
                         if store.configured:
                             try:
-                                await record_event("portfolio_execution", {
-                                    "selected_symbol": winner_symbol,
-                                    "score": winner[0],
-                                    "candidates_considered": len(scan_results),
-                                    "qualified_candidates": len(qualified),
-                                    "execution": actual_execution,
-                                    "created_at": datetime.now(timezone.utc).isoformat(),
-                                })
+                                await record_event("portfolio_execution", {"selected_symbol": winner_symbol, "score": winner[0], "candidates_considered": len(scan_results), "qualified_candidates": len(qualified), "execution": actual_execution, "created_at": datetime.now(timezone.utc).isoformat()})
                             except Exception:
                                 log.exception("Failed to persist portfolio execution event")
                     except Exception as exc:
                         self.last_error = f"{type(exc).__name__}: {exc}"
                         log.exception("Selected opportunity execution failed for %s", winner_symbol)
                 else:
-                    self.last_cycle = {
-                        "status": "no_trade",
-                        "symbols_scanned": list(self.config.symbols),
-                        "candidates_considered": len(scan_results),
-                        "qualified_candidates": 0,
-                        "results": scan_results,
-                    }
+                    self.last_cycle = {"status": "no_trade", "symbols_scanned": list(self.config.symbols), "candidates_considered": len(scan_results), "qualified_candidates": 0, "results": scan_results}
 
                 self.last_cycle_at = datetime.now(timezone.utc)
                 next_decision = now + self.config.interval_seconds
@@ -180,4 +161,4 @@ def install_multi_coin_selection(trader: Any) -> None:
     cls._risk_check = guarded_risk
     cls._run = portfolio_run
     cls._hhhai_multi_coin_installed = True
-    log.info("Installed HHHAI multi-coin portfolio selection and true-leverage guard")
+    log.info("Installed HHHAI multi-coin portfolio selection, true-leverage guard, and predictive candle enrichment")
