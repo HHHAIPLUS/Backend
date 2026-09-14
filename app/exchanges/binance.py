@@ -1,5 +1,5 @@
 from __future__ import annotations
-import hashlib,hmac,time,uuid
+import hashlib,hmac,time,uuid,math
 from urllib.parse import urlencode
 import httpx
 from app.exchanges.base import ExchangeAdapter
@@ -30,6 +30,39 @@ class BinanceAdapter(ExchangeAdapter):
     async def get_position_mode(self):
         data = await self._request('GET','/fapi/v1/positionSide/dual',signed=True)
         return 'HEDGE' if bool(data.get('dualSidePosition')) else 'ONE_WAY'
+    async def get_symbol_rules(self, symbol):
+        data = await self._request('GET','/fapi/v1/exchangeInfo')
+        wanted = symbol.upper()
+        for item in data.get('symbols', []):
+            if item.get('symbol') != wanted:
+                continue
+            filters = {f.get('filterType'): f for f in item.get('filters', [])}
+            lot = filters.get('MARKET_LOT_SIZE') or filters.get('LOT_SIZE') or {}
+            notional = filters.get('NOTIONAL') or filters.get('MIN_NOTIONAL') or {}
+            return {
+                'symbol': wanted,
+                'status': item.get('status'),
+                'quantity_min': float(lot.get('minQty', 0) or 0),
+                'quantity_max': float(lot.get('maxQty', 0) or 0),
+                'quantity_step': float(lot.get('stepSize', 0) or 0),
+                'min_notional': float(notional.get('minNotional', 0) or 0),
+            }
+        raise RuntimeError(f'Binance Futures symbol not found: {wanted}')
+    @staticmethod
+    def normalize_quantity(quantity, rules):
+        step = float(rules.get('quantity_step') or 0)
+        minimum = float(rules.get('quantity_min') or 0)
+        maximum = float(rules.get('quantity_max') or 0)
+        if step <= 0 or minimum <= 0:
+            raise RuntimeError('Binance returned invalid quantity filters')
+        value = math.floor(float(quantity) / step) * step
+        if maximum > 0: value = min(value, maximum)
+        if value < minimum: return 0.0
+        decimals = max(0, min(12, int(round(-math.log10(step))) if step < 1 else 0))
+        return float(f'{value:.{decimals}f}')
+    async def set_leverage(self, symbol, leverage):
+        leverage = max(1, min(5, int(leverage)))
+        return await self._request('POST','/fapi/v1/leverage',{'symbol':symbol.upper(),'leverage':leverage},signed=True)
     async def place_protection(self, symbol, side, quantity, stop_price, take_profit, position_mode='ONE_WAY'):
         close_side = 'SELL' if side == 'long' else 'BUY'
         common = {'symbol': symbol.upper(), 'side': close_side, 'workingType': 'MARK_PRICE', 'priceProtect': 'TRUE'}
@@ -63,7 +96,6 @@ class BinanceAdapter(ExchangeAdapter):
                     pass
             raise
         return {'stop_loss': stop_result, 'take_profit': take_result, 'attached': True}
-
     async def close_position(self, symbol, side, quantity, position_mode="ONE_WAY"):
         close_side = "SELL" if side.lower() == "long" else "BUY"
         order = {"symbol": symbol.upper(), "side": close_side, "type": "MARKET", "quantity": self._fmt_qty(quantity)}
@@ -72,22 +104,15 @@ class BinanceAdapter(ExchangeAdapter):
         else:
             order["reduceOnly"] = "true"
         return await self._request("POST", "/fapi/v1/order", order, signed=True)
-
     async def cancel_protection_orders(self, symbol):
         orders = await self.get_open_orders(symbol)
         for order in orders or []:
             if order.get('type') in {'STOP_MARKET','TAKE_PROFIT_MARKET','TRAILING_STOP_MARKET','STOP','TAKE_PROFIT'} and str(order.get('clientOrderId') or '').startswith('HHHAI-'):
-                try:
-                    await self.cancel_order(symbol, order.get('orderId'))
-                except Exception:
-                    pass
-
+                try: await self.cancel_order(symbol, order.get('orderId'))
+                except Exception: pass
     async def update_dynamic_protection(self, symbol, side, quantity, stop_price, position_mode="ONE_WAY"):
-        # Replace only HHHAI-style protective orders; unrelated/manual orders are left alone.
-        try:
-            await self.cancel_protection_orders(symbol)
-        except Exception:
-            pass
+        try: await self.cancel_protection_orders(symbol)
+        except Exception: pass
         return await self.place_protection(symbol, side, quantity, stop_price, None, position_mode=position_mode)
     @staticmethod
     def _fmt_price(value): return f'{float(value):.8f}'.rstrip('0').rstrip('.')
@@ -95,6 +120,5 @@ class BinanceAdapter(ExchangeAdapter):
     def _fmt_qty(value): return f'{float(value):.8f}'.rstrip('0').rstrip('.')
     async def get_open_orders(self,symbol=None): return await self._request('GET','/fapi/v1/openOrders',({'symbol':symbol} if symbol else {}),True)
     async def get_ticker(self,symbol): return await self._request('GET','/fapi/v1/ticker/price',{'symbol':symbol.upper()})
-    async def place_order(self,order):
-        return await self._request('POST','/fapi/v1/order',order,True)
+    async def place_order(self,order): return await self._request('POST','/fapi/v1/order',order,True)
     async def cancel_order(self,symbol,order_id): return await self._request('DELETE','/fapi/v1/order',{'symbol':symbol,'orderId':order_id},True)
