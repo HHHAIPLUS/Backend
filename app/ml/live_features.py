@@ -16,21 +16,33 @@ _LOCK = Lock()
 
 
 def _fetch(symbol: str, limit: int = 30) -> dict[str, float]:
-    response = httpx.get(
-        _BINANCE_URL,
-        params={"symbol": symbol.upper(), "interval": "5m", "limit": limit},
-        timeout=httpx.Timeout(6.0, connect=3.0),
-        follow_redirects=True,
-        trust_env=False,
-        headers={"User-Agent": "HHHAI/1.0", "Accept": "application/json"},
-    )
-    response.raise_for_status()
-    raw: Any = response.json()
-    if not isinstance(raw, list) or len(raw) < 3:
-        raise RuntimeError("Binance returned insufficient 5m candles")
-    candles = [row for row in raw if isinstance(row, list) and len(row) >= 6]
-    features = build_model_features(candles)
-    return {key: float(value) for key, value in features.items()}
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            response = httpx.get(
+                _BINANCE_URL,
+                params={"symbol": symbol.upper(), "interval": "5m", "limit": limit},
+                timeout=httpx.Timeout(8.0, connect=4.0),
+                follow_redirects=True,
+                trust_env=False,
+                headers={"User-Agent": "HHHAI/1.0", "Accept": "application/json"},
+            )
+            response.raise_for_status()
+            raw: Any = response.json()
+            if not isinstance(raw, list) or len(raw) < 3:
+                raise RuntimeError("Binance returned insufficient 5m candles")
+            candles = [row for row in raw if isinstance(row, list) and len(row) >= 6]
+            features = build_model_features(candles)
+            required = ("return_1", "range_pct", "volume_change", "volatility_proxy", "trend_strength", "momentum")
+            missing = [name for name in required if name not in features]
+            if missing:
+                raise RuntimeError(f"Candle feature builder missing: {', '.join(missing)}")
+            return {key: float(value) for key, value in features.items()}
+        except Exception as exc:
+            last_error = exc
+            if attempt < 2:
+                time.sleep(0.35 * (attempt + 1))
+    raise RuntimeError(f"Binance 5m candle fetch failed after retries: {last_error}") from last_error
 
 
 def get_live_candle_features(symbol: str) -> dict[str, float]:
