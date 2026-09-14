@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import math
 import os
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from types import MethodType
 from typing import Any
@@ -15,13 +19,79 @@ from app.ml.live_features import enrich_missing_features
 log = logging.getLogger("hhhai.multi_coin_selection")
 
 
+DEFAULT_MAX_ACTIVE_SYMBOLS = 5
+DEFAULT_UNIVERSE_REFRESH_SECONDS = 300
+BINANCE_FUTURES_BASE_URL = "https://fapi.binance.com"
+
+
+def _binance_get(path: str, params: dict[str, str] | None = None) -> Any:
+    query = urllib.parse.urlencode(params or {})
+    url = f"{BINANCE_FUTURES_BASE_URL}{path}"
+    if query:
+        url = f"{url}?{query}"
+    request = urllib.request.Request(url, headers={"User-Agent": "HHHAI/1.0"})
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _rank_binance_symbols(limit: int) -> list[str]:
+    """Select a small liquid Binance USD-M perpetual universe before full AI analysis."""
+    exchange_info = _binance_get("/fapi/v1/exchangeInfo")
+    eligible = {
+        item.get("symbol")
+        for item in exchange_info.get("symbols", [])
+        if item.get("status") == "TRADING"
+        and item.get("contractType") == "PERPETUAL"
+        and item.get("quoteAsset") == "USDT"
+    }
+    eligible.discard(None)
+
+    tickers = _binance_get("/fapi/v1/ticker/24hr")
+    ranked: list[tuple[float, str]] = []
+    for ticker in tickers:
+        symbol = ticker.get("symbol")
+        if symbol not in eligible:
+            continue
+        try:
+            quote_volume = float(ticker.get("quoteVolume") or 0.0)
+            trade_count = float(ticker.get("count") or 0.0)
+            high = float(ticker.get("highPrice") or 0.0)
+            low = float(ticker.get("lowPrice") or 0.0)
+            last = float(ticker.get("lastPrice") or 0.0)
+            if quote_volume <= 0 or last <= 0:
+                continue
+            range_pct = max(0.0, (high - low) / last)
+            # Liquidity is primary; trade activity and usable volatility break ties.
+            score = math.log1p(quote_volume) * 0.70 + math.log1p(trade_count) * 0.20 + min(range_pct, 1.0) * 10.0 * 0.10
+            ranked.append((score, symbol))
+        except (TypeError, ValueError):
+            continue
+
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    return [symbol for _, symbol in ranked[:limit]]
+
+
+def _dynamic_symbols(limit: int) -> list[str]:
+    """Return dynamic symbols, with an explicit env override available for controlled tests."""
+    explicit = os.getenv("HHHAI_TRADE_SYMBOLS", "").strip()
+    if explicit:
+        symbols = [x.strip().upper() for x in explicit.split(",") if x.strip()]
+        return symbols[:limit]
+    try:
+        symbols = _rank_binance_symbols(limit)
+        if symbols:
+            return symbols
+    except Exception as exc:
+        log.warning("Dynamic Binance universe selection failed: %s", exc)
+    return ["BTCUSDT"]
+
+
 def install_multi_coin_selection(trader: Any) -> None:
-    """Install portfolio-level opportunity selection without enabling execution."""
+    """Install dynamic portfolio selection without enabling execution."""
     cls = trader.__class__
     if getattr(cls, "_hhhai_multi_coin_installed", False):
         return
 
-    original_run = cls._run
     original_execute = cls._execute
     original_risk_check = cls._risk_check
     original_predict = predictive_model.predict
@@ -32,7 +102,6 @@ def install_multi_coin_selection(trader: Any) -> None:
             enriched = enrich_missing_features(symbol, dict(features or {}))
             return original_predict(enriched)
         except Exception as exc:
-            # Never invent features or bypass the predictive abstention gate.
             log.warning("Live predictive feature enrichment failed: %s", exc)
             return original_predict(features)
 
@@ -54,11 +123,20 @@ def install_multi_coin_selection(trader: Any) -> None:
         return result
 
     async def portfolio_run(self):
-        log.info("HHHAI portfolio selector active for %s", self.config.symbols)
+        max_active_symbols = max(1, int(os.getenv("HHHAI_MAX_ACTIVE_SYMBOLS", str(DEFAULT_MAX_ACTIVE_SYMBOLS))))
+        refresh_seconds = max(60, int(os.getenv("HHHAI_UNIVERSE_REFRESH_SECONDS", str(DEFAULT_UNIVERSE_REFRESH_SECONDS))))
+        last_universe_refresh = 0.0
         next_decision = 0.0
         next_management = 0.0
+
         while self.running:
             now = asyncio.get_running_loop().time()
+
+            if now >= last_universe_refresh:
+                selected = await asyncio.to_thread(_dynamic_symbols, max_active_symbols)
+                self.config.symbols = tuple(selected[:max_active_symbols]) or ("BTCUSDT",)
+                last_universe_refresh = now + refresh_seconds
+                log.info("HHHAI dynamic universe selected: %s", self.config.symbols)
 
             if self.execution_mode in {"testnet", "live"} and now >= next_management:
                 reviews = 0
@@ -80,7 +158,7 @@ def install_multi_coin_selection(trader: Any) -> None:
 
                 async def defer_execute(this, symbol, world, decision, candidate, risk):
                     pending[symbol] = (symbol, world, decision.copy(), candidate, dict(risk))
-                    return {"status": "selection_pending", "reason": "portfolio selector is ranking all symbols before execution", "live_exchange_order": False}
+                    return {"status": "selection_pending", "reason": "portfolio selector is ranking selected symbols before execution", "live_exchange_order": False}
 
                 self._execute = MethodType(defer_execute, self)
                 try:
@@ -161,4 +239,4 @@ def install_multi_coin_selection(trader: Any) -> None:
     cls._risk_check = guarded_risk
     cls._run = portfolio_run
     cls._hhhai_multi_coin_installed = True
-    log.info("Installed HHHAI multi-coin portfolio selection, true-leverage guard, and predictive candle enrichment")
+    log.info("Installed HHHAI dynamic top-5 portfolio selection, true-leverage guard, and predictive candle enrichment")
