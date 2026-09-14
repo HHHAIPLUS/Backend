@@ -36,11 +36,13 @@ from ai.autonomous_trader import trader
 from ai.position_intelligence import install_stage6_position_intelligence
 from ai.stage6_hydration import install_stage6_hydration
 from ai.stage8_integration import install_stage8_risk, hydrate_stage8_risk
+from ai.multi_coin_selection import install_multi_coin_selection
 from app.core.config import settings
 
 install_stage6_position_intelligence(trader)
 install_stage6_hydration(trader)
 stage8_risk = install_stage8_risk(trader)
+install_multi_coin_selection(trader)
 
 @asynccontextmanager
 async def lifespan(app):
