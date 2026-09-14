@@ -61,7 +61,20 @@ class PredictiveModel:
         return [float(features.get(key, 0.0) or 0.0) for key in FEATURES]
 
     def predict(self, features: dict) -> dict:
+        # The live realtime snapshot historically contained market/context
+        # values but not the six OHLCV-derived fields used by the model.
+        # Enrich only those missing fields from fresh Binance 5m candles so
+        # inference uses the same canonical feature construction as training.
+        features = dict(features or {})
         required = ("return_1", "range_pct", "volume_change", "volatility_proxy", "trend_strength", "momentum")
+        missing = [key for key in required if key not in features]
+        if missing:
+            try:
+                from app.ml.live_features import enrich_missing_features
+                features = enrich_missing_features(str(features.get("symbol") or "BTCUSDT"), features)
+            except Exception:
+                # Preserve fail-closed behavior if candle data cannot be obtained.
+                pass
         missing = [key for key in required if key not in features]
         if missing:
             return {"trained": self.model is not None, "abstain": True, "version": self.version, "probabilities": {"short": 0.0, "flat": 1.0, "long": 0.0}, "reason": "Predictive model requires candle-derived features; missing: " + ", ".join(missing)}
@@ -120,9 +133,6 @@ class PredictiveModel:
             return ModelReport(False, self.version, {}, "Failed to create model artifact.")
         self.model_path.write_text(json.dumps(artifact, indent=2))
         try:
-            # bootstrap calls train only after its independent chronological
-            # promotion gate has passed. Persist the richer candidate beside
-            # the baseline so production can use the same validated version.
             predictive_ensemble.fit(rows, FEATURES, version)
             predictive_ensemble.save({"promotion_gate": "independent_walk_forward", "baseline": "logistic_regression"})
         except Exception as exc:
