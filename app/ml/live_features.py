@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from threading import Lock
 from typing import Any
@@ -52,7 +53,8 @@ def enrich_missing_features(symbol: str, features: dict[str, float]) -> dict[str
     missing = [name for name in required if name not in features]
     if not missing:
         return features
-    live = get_live_candle_features(symbol)
+    selected_symbol = str(symbol or os.getenv("HHHAI_LIVE_FEATURE_SYMBOL", "BTCUSDT")).upper()
+    live = get_live_candle_features(selected_symbol)
     merged = dict(features)
     for name in missing:
         if name in live:
