@@ -82,6 +82,8 @@ def install_multi_coin_selection(trader: Any) -> None:
                 self._execute = MethodType(defer_execute, self)
                 try:
                     for symbol in self.config.symbols:
+                        previous_feature_symbol = os.environ.get("HHHAI_LIVE_FEATURE_SYMBOL")
+                        os.environ["HHHAI_LIVE_FEATURE_SYMBOL"] = symbol
                         try:
                             result = await self.run_cycle(symbol)
                             scan_results.append(result)
@@ -89,6 +91,11 @@ def install_multi_coin_selection(trader: Any) -> None:
                         except Exception as exc:
                             self.last_error = f"{type(exc).__name__}: {exc}"
                             log.exception("Autonomous decision cycle failed for %s", symbol)
+                        finally:
+                            if previous_feature_symbol is None:
+                                os.environ.pop("HHHAI_LIVE_FEATURE_SYMBOL", None)
+                            else:
+                                os.environ["HHHAI_LIVE_FEATURE_SYMBOL"] = previous_feature_symbol
                 finally:
                     self._execute = MethodType(original_execute, self)
 
