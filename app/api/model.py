@@ -15,7 +15,7 @@ class BootstrapRequest(BaseModel):
     symbol: str = Field(default="BTCUSDT", min_length=5, max_length=30)
     interval: str = "5m"
     limit: int = Field(default=5000, ge=500, le=10000)
-    horizon: int = Field(default=12, ge=1, le=24)
+    horizon: int = Field(default=6, ge=1, le=24)
     threshold: float = Field(default=0.0025, gt=0, lt=0.1)
 
 
@@ -47,7 +47,7 @@ def bootstrap(
     symbol: str = Query(default="BTCUSDT", min_length=5, max_length=30),
     interval: str = Query(default="5m"),
     limit: int = Query(default=5000, ge=500, le=10000),
-    horizon: int = Query(default=12, ge=1, le=24),
+    horizon: int = Query(default=6, ge=1, le=24),
     threshold: float = Query(default=0.0025, gt=0, lt=0.1),
     x_hhhai_admin_token: str | None = Header(default=None),
 ):
@@ -64,8 +64,8 @@ def bootstrap(
         if len(rows) < 500:
             raise HTTPException(status_code=422, detail=f"Historical dataset contains only {len(rows)} usable rows; at least 500 are required.")
 
-        result = validate_and_promote(rows, version=f"bootstrap-{request.symbol.upper()}-{request.interval}-h{request.horizon}")
-        brain_report = brain.train(rows, version=f"brain-{request.symbol.upper()}-{request.interval}-h{request.horizon}")
+        result = validate_and_promote(rows, version=f"bootstrap-{request.symbol.upper()}-{request.interval}")
+        brain_report = brain.train(rows, version=f"brain-{request.symbol.upper()}-{request.interval}")
         result["predictive_brain"] = {
             "status": brain_report.status,
             "version": brain_report.version,
@@ -82,7 +82,7 @@ def bootstrap(
             result["status"] = "PROMOTED"
             result["version"] = brain_report.version
 
-        result.update({"data_provider": "binance", "symbol": request.symbol.upper(), "interval": request.interval, "requested_candles": request.limit, "effective_candles": effective_limit, "training_rows": len(rows), "prediction_horizon_candles": request.horizon})
+        result.update({"data_provider": "binance", "symbol": request.symbol.upper(), "interval": request.interval, "requested_candles": request.limit, "effective_candles": effective_limit, "training_rows": len(rows)})
         if result.get("status") == "PROMOTED":
             import asyncio
             asyncio.run(persist_model(result.get("metrics")))
