@@ -4,7 +4,8 @@ from pydantic import BaseModel, Field
 from app.api.admin import require_admin
 from app.ml.predictive import predictive_model
 from app.ml.predictive_brain import PredictiveBrain
-from app.ml.bootstrap import fetch_binance_klines, build_dataset, validate_and_promote
+from app.ml.bootstrap import build_dataset, validate_and_promote
+from app.ml.binance_historical import fetch_binance_klines
 from app.ml.model_persistence import persist_model
 from app.core.config import settings
 
