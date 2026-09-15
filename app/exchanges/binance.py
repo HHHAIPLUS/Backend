@@ -8,26 +8,65 @@ from app.core.config import settings
 class BinanceAdapter(ExchangeAdapter):
     name='binance'
     _live_canary_trade_count=0
+    _private_blocked_until=0.0
+    _private_block_reason=''
+    _private_block_retry_after=0.0
     def __init__(self, testnet: bool|None=None):
         self.api_key=settings.binance_api_key
         self.secret=settings.binance_api_secret
         self.testnet=settings.binance_testnet if testnet is None else testnet
         self.base=settings.binance_testnet_url if self.testnet else settings.binance_url
+        self._positions_cache=None
+        self._positions_cache_at=0.0
+        self._positions_cache_ttl=4.0
     def _signed(self, method, path, params=None):
         if not self.api_key or not self.secret: raise RuntimeError('Binance credentials are not configured')
         params=dict(params or {}); params['timestamp']=int(time.time()*1000); params.setdefault('recvWindow',5000)
         query=urlencode(params,doseq=True); sig=hmac.new(self.secret.encode(),query.encode(),hashlib.sha256).hexdigest(); params['signature']=sig
         return method,path,params,{'X-MBX-APIKEY':self.api_key}
+    @classmethod
+    def _private_health_error(cls):
+        remaining=max(0.0,cls._private_blocked_until-time.time())
+        if remaining>0: return f'Binance private API temporarily blocked for {int(math.ceil(remaining))}s: {cls._private_block_reason}'
+        return None
+    @classmethod
+    def private_execution_healthy(cls):
+        return cls._private_health_error() is None
+    @classmethod
+    def _block_private(cls, response):
+        retry_after=response.headers.get('Retry-After')
+        try: wait=float(retry_after) if retry_after is not None else 900.0
+        except Exception: wait=900.0
+        wait=max(60.0,min(wait,259200.0))
+        cls._private_blocked_until=max(cls._private_blocked_until,time.time()+wait)
+        cls._private_block_retry_after=wait
+        cls._private_block_reason=f'HTTP {response.status_code}; Binance requires backoff before private requests'
+    def _invalidate_private_cache(self):
+        self._positions_cache=None
+        self._positions_cache_at=0.0
     async def _request(self, method,path,params=None,signed=False):
+        if signed:
+            health=self._private_health_error()
+            if health: raise RuntimeError(health)
         headers={}
         if signed: method,path,params,headers=self._signed(method,path,params)
         async with httpx.AsyncClient(timeout=10) as c:
             r=await c.request(method,self.base+path,params=params,headers=headers)
+            if r.status_code in (418,429) and signed:
+                self._block_private(r)
+                raise RuntimeError(f'Binance private API rate-limit/banned response HTTP {r.status_code}; execution blocked until backoff expires')
             r.raise_for_status(); return r.json()
     async def get_account_status(self):
         data=await self._request('GET','/fapi/v2/account',signed=True)
         return {'exchange':self.name,'testnet':self.testnet,'available_balance':float(data.get('availableBalance',0)),'total_wallet_balance':float(data.get('totalWalletBalance',0)),'raw':data}
-    async def get_positions(self): return await self._request('GET','/fapi/v2/positionRisk',signed=True)
+    async def get_positions(self):
+        now=time.time()
+        if self._positions_cache is not None and now-self._positions_cache_at < self._positions_cache_ttl:
+            return self._positions_cache
+        data=await self._request('GET','/fapi/v2/positionRisk',signed=True)
+        self._positions_cache=data
+        self._positions_cache_at=now
+        return data
     async def get_position_mode(self):
         data = await self._request('GET','/fapi/v1/positionSide/dual',signed=True)
         return 'HEDGE' if bool(data.get('dualSidePosition')) else 'ONE_WAY'
@@ -76,7 +115,9 @@ class BinanceAdapter(ExchangeAdapter):
         close_side='SELL' if side.lower()=='long' else 'BUY'; order={'symbol':symbol.upper(),'side':close_side,'type':'MARKET','quantity':self._fmt_qty(quantity)}
         if position_mode=='HEDGE': order['positionSide']='LONG' if side.lower()=='long' else 'SHORT'
         else: order['reduceOnly']='true'
-        return await self._request('POST','/fapi/v1/order',order,signed=True)
+        result=await self._request('POST','/fapi/v1/order',order,signed=True)
+        self._invalidate_private_cache()
+        return result
     async def cancel_protection_orders(self,symbol):
         orders=await self.get_open_orders(symbol)
         for order in orders or []:
@@ -128,6 +169,7 @@ class BinanceAdapter(ExchangeAdapter):
 
             order=dict(order); order['quantity']=self._fmt_qty(quantity)
         result = await self._request('POST','/fapi/v1/order',order,True)
+        self._invalidate_private_cache()
         if str(order.get('type','')).upper()=='MARKET' and not self.testnet and settings.live_trading_enabled and os.getenv('HHHAI_LIVE_CANARY_ENABLED','false').lower()=='true':
             self.__class__._live_canary_trade_count += 1
         return result
