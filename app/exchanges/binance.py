@@ -1,5 +1,5 @@
 from __future__ import annotations
-import hashlib,hmac,time,uuid,math
+import hashlib,hmac,time,uuid,math,os
 from urllib.parse import urlencode
 import httpx
 from app.exchanges.base import ExchangeAdapter
@@ -7,6 +7,7 @@ from app.core.config import settings
 
 class BinanceAdapter(ExchangeAdapter):
     name='binance'
+    _live_canary_trade_count=0
     def __init__(self, testnet: bool|None=None):
         self.api_key=settings.binance_api_key
         self.secret=settings.binance_api_secret
@@ -98,7 +99,7 @@ class BinanceAdapter(ExchangeAdapter):
             rules=await self.get_symbol_rules(symbol)
             if rules.get('status')!='TRADING': raise RuntimeError(f'Binance Futures symbol is not trading: {symbol}')
             account=await self.get_account_status()
-            available=max(0.0,float(account.get('available_balance') or 0.0))
+            available=max(0.0,float(account.get('available_balance') or 0))
             ticker=await self.get_ticker(symbol)
             price=float(ticker.get('price') or 0)
             if available<=0 or price<=0: raise RuntimeError('Binance available margin or market price is unavailable')
@@ -111,6 +112,23 @@ class BinanceAdapter(ExchangeAdapter):
             notional=quantity*price
             minimum_notional=float(rules.get('min_notional') or 0)
             if minimum_notional>0 and notional<minimum_notional: raise RuntimeError(f'Order notional {notional:.8f} USDT is below Binance minimum {minimum_notional:.8f} USDT for {symbol}')
+
+            # Temporary Test 10 safety gate. It exists only when explicitly
+            # enabled for the live canary and does not affect normal trading.
+            live_canary = (not self.testnet and settings.live_trading_enabled and os.getenv('HHHAI_LIVE_CANARY_ENABLED','false').lower()=='true')
+            if live_canary:
+                max_notional=float(os.getenv('HHHAI_LIVE_CANARY_MAX_NOTIONAL_USD','2.00'))
+                max_trades=max(1,int(os.getenv('HHHAI_LIVE_CANARY_MAX_TRADES','1')))
+                if self.__class__._live_canary_trade_count >= max_trades:
+                    raise RuntimeError(f'Live canary trade limit reached ({max_trades})')
+                if not math.isfinite(max_notional) or max_notional<=0:
+                    raise RuntimeError('Invalid live canary maximum notional')
+                if notional > max_notional + 1e-9:
+                    raise RuntimeError(f'Live canary blocked order: notional {notional:.8f} USDT exceeds maximum {max_notional:.8f} USDT')
+
             order=dict(order); order['quantity']=self._fmt_qty(quantity)
-        return await self._request('POST','/fapi/v1/order',order,True)
+        result = await self._request('POST','/fapi/v1/order',order,True)
+        if str(order.get('type','')).upper()=='MARKET' and not self.testnet and settings.live_trading_enabled and os.getenv('HHHAI_LIVE_CANARY_ENABLED','false').lower()=='true':
+            self.__class__._live_canary_trade_count += 1
+        return result
     async def cancel_order(self,symbol,order_id): return await self._request('DELETE','/fapi/v1/order',{'symbol':symbol,'orderId':order_id},True)
