@@ -38,9 +38,12 @@ from ai.stage6_hydration import install_stage6_hydration
 from ai.stage8_integration import install_stage8_risk, hydrate_stage8_risk
 from ai.multi_coin_selection import install_multi_coin_selection
 from app.market_data.binance_central import CentralBinanceMarketData
+from app.services.binance_execution_guard import install_binance_execution_guard
 from app.core.config import settings
 
 CentralBinanceMarketData.install()
+install_binance_execution_guard(trader)
+trader.position_review_interval = max(15, trader.position_review_interval)
 install_stage6_position_intelligence(trader)
 install_stage6_hydration(trader)
 stage8_risk = install_stage8_risk(trader)
