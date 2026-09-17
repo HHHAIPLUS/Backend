@@ -37,8 +37,10 @@ from ai.position_intelligence import install_stage6_position_intelligence
 from ai.stage6_hydration import install_stage6_hydration
 from ai.stage8_integration import install_stage8_risk, hydrate_stage8_risk
 from ai.multi_coin_selection import install_multi_coin_selection
+from app.market_data.binance_central import CentralBinanceMarketData
 from app.core.config import settings
 
+CentralBinanceMarketData.install()
 install_stage6_position_intelligence(trader)
 install_stage6_hydration(trader)
 stage8_risk = install_stage8_risk(trader)
@@ -51,6 +53,7 @@ async def lifespan(app):
     await hydrate_research()
     await hydrate_model()
     await hydrate_stage8_risk(stage8_risk)
+    CentralBinanceMarketData._start_universe()
     task = asyncio.create_task(monitor.run())
     if os.getenv("HHHAI_AUTOTRADING_ENABLED", "false").lower() == "true":
         await trader.start()
