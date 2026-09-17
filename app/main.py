@@ -38,12 +38,13 @@ from ai.stage6_hydration import install_stage6_hydration
 from ai.stage8_integration import install_stage8_risk, hydrate_stage8_risk
 from ai.multi_coin_selection import install_multi_coin_selection
 from app.market_data.binance_central import CentralBinanceMarketData
+from app.market_data.binance_user_stream import binance_user_stream
 from app.services.binance_execution_guard import install_binance_execution_guard
 from app.core.config import settings
 
 CentralBinanceMarketData.install()
 install_binance_execution_guard(trader)
-trader.position_review_interval = max(15, trader.position_review_interval)
+trader.position_review_interval = max(2, trader.position_review_interval)
 install_stage6_position_intelligence(trader)
 install_stage6_hydration(trader)
 stage8_risk = install_stage8_risk(trader)
@@ -57,6 +58,8 @@ async def lifespan(app):
     await hydrate_model()
     await hydrate_stage8_risk(stage8_risk)
     CentralBinanceMarketData._start_universe()
+    if trader.execution_mode in {"live", "testnet"}:
+        binance_user_stream.start()
     task = asyncio.create_task(monitor.run())
     if os.getenv("HHHAI_AUTOTRADING_ENABLED", "false").lower() == "true":
         await trader.start()
@@ -67,6 +70,7 @@ async def lifespan(app):
         await task
         if trader.running:
             await trader.stop()
+        binance_user_stream.stop()
 
 app = FastAPI(title=settings.app_name, version='1.0.0', description='HHHAI backend — cumulative Stage 8', lifespan=lifespan)
 allowed_origins = [x.strip() for x in (os.getenv('HHHAI_CORS_ORIGINS') or settings.cors_origins).split(',') if x.strip()]
