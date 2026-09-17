@@ -37,22 +37,17 @@ class BinanceAdapter(ExchangeAdapter):
         if remaining>0: return f'Binance private API temporarily blocked for {int(math.ceil(remaining))}s: {cls._private_block_reason}'
         return None
     @classmethod
-    def private_execution_healthy(cls):
-        return cls._private_health_error() is None
+    def private_execution_healthy(cls): return cls._private_health_error() is None
     @classmethod
     def _block_private(cls, response):
         retry_after=response.headers.get('Retry-After')
         try: wait=float(retry_after) if retry_after is not None else 900.0
         except Exception: wait=900.0
-        wait=max(60.0,min(wait,259200.0))
-        cls._private_blocked_until=max(cls._private_blocked_until,time.time()+wait)
-        cls._private_block_retry_after=wait
+        wait=max(60.0,min(wait,259200.0)); cls._private_blocked_until=max(cls._private_blocked_until,time.time()+wait); cls._private_block_retry_after=wait
         cls._private_block_reason=f'HTTP {response.status_code}; Binance requires backoff before private requests'
     @classmethod
     def _clear_shared_cache(cls):
-        cls._account_cache.clear(); cls._account_cache_at.clear()
-        cls._positions_cache.clear(); cls._positions_cache_at.clear()
-        cls._position_mode_cache.clear(); cls._position_mode_cache_at.clear()
+        cls._account_cache.clear(); cls._account_cache_at.clear(); cls._positions_cache.clear(); cls._positions_cache_at.clear(); cls._position_mode_cache.clear(); cls._position_mode_cache_at.clear()
     async def _request(self, method,path,params=None,signed=False):
         if signed:
             health=self._private_health_error()
@@ -62,47 +57,29 @@ class BinanceAdapter(ExchangeAdapter):
         async with httpx.AsyncClient(timeout=10) as c:
             r=await c.request(method,self.base+path,params=params,headers=headers)
             if r.status_code in (418,429) and signed:
-                self._block_private(r)
-                raise RuntimeError(f'Binance private API rate-limit/banned response HTTP {r.status_code}; execution blocked until backoff expires')
+                self._block_private(r); raise RuntimeError(f'Binance private API rate-limit/banned response HTTP {r.status_code}; execution blocked until backoff expires')
             r.raise_for_status(); return r.json()
     async def get_account_status(self):
-        key=self.testnet
-        now=time.time()
-        if key in self.__class__._account_cache and now-self.__class__._account_cache_at.get(key,0)<10:
-            return self.__class__._account_cache[key]
+        key=self.testnet; now=time.time()
+        if key in self.__class__._account_cache and now-self.__class__._account_cache_at.get(key,0)<10: return self.__class__._account_cache[key]
         data=await self._request('GET','/fapi/v2/account',signed=True)
-        result={'exchange':self.name,'testnet':self.testnet,'available_balance':float(data.get('availableBalance',0)),'total_wallet_balance':float(data.get('totalWalletBalance',0)),'raw':data}
-        self.__class__._account_cache[key]=result; self.__class__._account_cache_at[key]=now
-        return result
+        result={'exchange':self.name,'testnet':self.testnet,'available_balance':float(data.get('availableBalance',0)),'total_wallet_balance':float(data.get('totalWalletBalance',0)),'raw':data}; self.__class__._account_cache[key]=result; self.__class__._account_cache_at[key]=now; return result
     async def get_positions(self):
-        key=self.testnet
-        now=time.time()
-        if key in self.__class__._positions_cache and now-self.__class__._positions_cache_at.get(key,0)<10:
-            return self.__class__._positions_cache[key]
-        data=await self._request('GET','/fapi/v2/positionRisk',signed=True)
-        self.__class__._positions_cache[key]=data; self.__class__._positions_cache_at[key]=now
-        return data
+        key=self.testnet; now=time.time()
+        if key in self.__class__._positions_cache and now-self.__class__._positions_cache_at.get(key,0)<10: return self.__class__._positions_cache[key]
+        data=await self._request('GET','/fapi/v2/positionRisk',signed=True); self.__class__._positions_cache[key]=data; self.__class__._positions_cache_at[key]=now; return data
     async def get_position_mode(self):
-        key=self.testnet
-        now=time.time()
-        if key in self.__class__._position_mode_cache and now-self.__class__._position_mode_cache_at.get(key,0)<60:
-            return self.__class__._position_mode_cache[key]
-        data=await self._request('GET','/fapi/v1/positionSide/dual',signed=True)
-        result='HEDGE' if bool(data.get('dualSidePosition')) else 'ONE_WAY'
-        self.__class__._position_mode_cache[key]=result; self.__class__._position_mode_cache_at[key]=now
-        return result
+        key=self.testnet; now=time.time()
+        if key in self.__class__._position_mode_cache and now-self.__class__._position_mode_cache_at.get(key,0)<60: return self.__class__._position_mode_cache[key]
+        data=await self._request('GET','/fapi/v1/positionSide/dual',signed=True); result='HEDGE' if bool(data.get('dualSidePosition')) else 'ONE_WAY'; self.__class__._position_mode_cache[key]=result; self.__class__._position_mode_cache_at[key]=now; return result
     async def get_symbol_rules(self, symbol):
         key=(self.testnet,symbol.upper()); now=time.time()
-        if key in self.__class__._symbol_rules_cache and now-self.__class__._symbol_rules_cache_at.get(key,0)<3600:
-            return self.__class__._symbol_rules_cache[key]
-        data = await self._request('GET','/fapi/v1/exchangeInfo')
-        wanted=symbol.upper()
+        if key in self.__class__._symbol_rules_cache and now-self.__class__._symbol_rules_cache_at.get(key,0)<3600: return self.__class__._symbol_rules_cache[key]
+        data=await self._request('GET','/fapi/v1/exchangeInfo'); wanted=symbol.upper()
         for item in data.get('symbols', []):
             if item.get('symbol') != wanted: continue
             filters={f.get('filterType'):f for f in item.get('filters',[])}; lot=filters.get('MARKET_LOT_SIZE') or filters.get('LOT_SIZE') or {}; notional=filters.get('NOTIONAL') or filters.get('MIN_NOTIONAL') or {}
-            result={'symbol':wanted,'status':item.get('status'),'quantity_min':float(lot.get('minQty',0) or 0),'quantity_max':float(lot.get('maxQty',0) or 0),'quantity_step':float(lot.get('stepSize',0) or 0),'min_notional':float(notional.get('minNotional',0) or 0)}
-            self.__class__._symbol_rules_cache[key]=result; self.__class__._symbol_rules_cache_at[key]=now
-            return result
+            result={'symbol':wanted,'status':item.get('status'),'quantity_min':float(lot.get('minQty',0) or 0),'quantity_max':float(lot.get('maxQty',0) or 0),'quantity_step':float(lot.get('stepSize',0) or 0),'min_notional':float(notional.get('minNotional',0) or 0)}; self.__class__._symbol_rules_cache[key]=result; self.__class__._symbol_rules_cache_at[key]=now; return result
         raise RuntimeError(f'Binance Futures symbol not found: {wanted}')
     @staticmethod
     def normalize_quantity(quantity,rules):
@@ -112,8 +89,7 @@ class BinanceAdapter(ExchangeAdapter):
         if maximum>0: value=min(value,maximum)
         if value<minimum: return 0.0
         return float(f'{value:.8f}')
-    async def set_leverage(self,symbol,leverage):
-        leverage=max(1,min(5,int(leverage))); return await self._request('POST','/fapi/v1/leverage',{'symbol':symbol.upper(),'leverage':leverage},signed=True)
+    async def set_leverage(self,symbol,leverage): return await self._request('POST','/fapi/v1/leverage',{'symbol':symbol.upper(),'leverage':max(1,min(5,int(leverage)))},signed=True)
     async def place_protection(self,symbol,side,quantity,stop_price,take_profit,position_mode='ONE_WAY'):
         close_side='SELL' if side=='long' else 'BUY'; common={'symbol':symbol.upper(),'side':close_side,'workingType':'MARK_PRICE','priceProtect':'TRUE'}
         if position_mode=='HEDGE': common['positionSide']='LONG' if side=='long' else 'SHORT'; common['quantity']=self._fmt_qty(quantity)
@@ -144,10 +120,10 @@ class BinanceAdapter(ExchangeAdapter):
             if order.get('type') in {'STOP_MARKET','TAKE_PROFIT_MARKET','TRAILING_STOP_MARKET','STOP','TAKE_PROFIT'} and str(order.get('clientOrderId') or '').startswith('HHHAI-'):
                 try: await self.cancel_order(symbol,order.get('orderId'))
                 except Exception: pass
-    async def update_dynamic_protection(self,symbol,side,quantity,stop_price,position_mode='ONE_WAY'):
+    async def update_dynamic_protection(self,symbol,side,quantity,stop_price,position_mode='ONE_WAY',take_profit=None):
         try: await self.cancel_protection_orders(symbol)
         except Exception: pass
-        return await self.place_protection(symbol,side,quantity,stop_price,None,position_mode=position_mode)
+        return await self.place_protection(symbol,side,quantity,stop_price,take_profit,position_mode=position_mode)
     @staticmethod
     def _fmt_price(value): return f'{float(value):.8f}'.rstrip('0').rstrip('.')
     @staticmethod
@@ -155,11 +131,8 @@ class BinanceAdapter(ExchangeAdapter):
     async def get_open_orders(self,symbol=None): return await self._request('GET','/fapi/v1/openOrders',({'symbol':symbol} if symbol else {}),True)
     async def get_ticker(self,symbol):
         key=(self.testnet,symbol.upper()); now=time.time()
-        if key in self.__class__._ticker_cache and now-self.__class__._ticker_cache_at.get(key,0)<1:
-            return self.__class__._ticker_cache[key]
-        result=await self._request('GET','/fapi/v1/ticker/price',{'symbol':symbol.upper()})
-        self.__class__._ticker_cache[key]=result; self.__class__._ticker_cache_at[key]=now
-        return result
+        if key in self.__class__._ticker_cache and now-self.__class__._ticker_cache_at.get(key,0)<1: return self.__class__._ticker_cache[key]
+        result=await self._request('GET','/fapi/v1/ticker/price',{'symbol':symbol.upper()}); self.__class__._ticker_cache[key]=result; self.__class__._ticker_cache_at[key]=now; return result
     async def place_order(self,order):
         if str(order.get('type','')).upper()=='MARKET' and order.get('quantity') is not None:
             symbol=str(order.get('symbol','')).upper(); rules=await self.get_symbol_rules(symbol)
