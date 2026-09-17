@@ -6,49 +6,26 @@ from app.exchanges.base import ExchangeAdapter
 from app.core.config import settings
 
 class BinanceAdapter(ExchangeAdapter):
-    name='binance'
-    _live_canary_trade_count=0
-    _private_blocked_until=0.0
-    _private_block_reason=''
-    _private_block_retry_after=0.0
-    _account_cache={}
-    _account_cache_at={}
-    _positions_cache={}
-    _positions_cache_at={}
-    _position_mode_cache={}
-    _position_mode_cache_at={}
-    _symbol_rules_cache={}
-    _symbol_rules_cache_at={}
-    _ticker_cache={}
-    _ticker_cache_at={}
-    def __init__(self, testnet: bool|None=None):
-        self.api_key=settings.binance_api_key
-        self.secret=settings.binance_api_secret
-        self.testnet=settings.binance_testnet if testnet is None else testnet
-        self.base=settings.binance_testnet_url if self.testnet else settings.binance_url
-    def _signed(self, method, path, params=None):
+    name='binance'; _live_canary_trade_count=0; _private_blocked_until=0.0; _private_block_reason=''; _private_block_retry_after=0.0
+    _account_cache={}; _account_cache_at={}; _positions_cache={}; _positions_cache_at={}; _position_mode_cache={}; _position_mode_cache_at={}; _symbol_rules_cache={}; _symbol_rules_cache_at={}; _ticker_cache={}; _ticker_cache_at={}
+    def __init__(self,testnet:bool|None=None): self.api_key=settings.binance_api_key; self.secret=settings.binance_api_secret; self.testnet=settings.binance_testnet if testnet is None else testnet; self.base=settings.binance_testnet_url if self.testnet else settings.binance_url
+    def _signed(self,method,path,params=None):
         if not self.api_key or not self.secret: raise RuntimeError('Binance credentials are not configured')
-        params=dict(params or {}); params['timestamp']=int(time.time()*1000); params.setdefault('recvWindow',5000)
-        query=urlencode(params,doseq=True); sig=hmac.new(self.secret.encode(),query.encode(),hashlib.sha256).hexdigest(); params['signature']=sig
-        return method,path,params,{'X-MBX-APIKEY':self.api_key}
+        params=dict(params or {}); params['timestamp']=int(time.time()*1000); params.setdefault('recvWindow',5000); query=urlencode(params,doseq=True); params['signature']=hmac.new(self.secret.encode(),query.encode(),hashlib.sha256).hexdigest(); return method,path,params,{'X-MBX-APIKEY':self.api_key}
     @classmethod
     def _private_health_error(cls):
-        remaining=max(0.0,cls._private_blocked_until-time.time())
-        if remaining>0: return f'Binance private API temporarily blocked for {int(math.ceil(remaining))}s: {cls._private_block_reason}'
-        return None
+        remaining=max(0.0,cls._private_blocked_until-time.time()); return f'Binance private API temporarily blocked for {int(math.ceil(remaining))}s: {cls._private_block_reason}' if remaining>0 else None
     @classmethod
     def private_execution_healthy(cls): return cls._private_health_error() is None
     @classmethod
-    def _block_private(cls, response):
-        retry_after=response.headers.get('Retry-After')
-        try: wait=float(retry_after) if retry_after is not None else 900.0
+    def _block_private(cls,response):
+        retry=response.headers.get('Retry-After')
+        try: wait=float(retry) if retry is not None else 900.0
         except Exception: wait=900.0
-        wait=max(60.0,min(wait,259200.0)); cls._private_blocked_until=max(cls._private_blocked_until,time.time()+wait); cls._private_block_retry_after=wait
-        cls._private_block_reason=f'HTTP {response.status_code}; Binance requires backoff before private requests'
+        wait=max(60.0,min(wait,259200.0)); cls._private_blocked_until=max(cls._private_blocked_until,time.time()+wait); cls._private_block_retry_after=wait; cls._private_block_reason=f'HTTP {response.status_code}; Binance requires backoff before private requests'
     @classmethod
-    def _clear_shared_cache(cls):
-        cls._account_cache.clear(); cls._account_cache_at.clear(); cls._positions_cache.clear(); cls._positions_cache_at.clear(); cls._position_mode_cache.clear(); cls._position_mode_cache_at.clear()
-    async def _request(self, method,path,params=None,signed=False):
+    def _clear_shared_cache(cls): cls._account_cache.clear(); cls._account_cache_at.clear(); cls._positions_cache.clear(); cls._positions_cache_at.clear(); cls._position_mode_cache.clear(); cls._position_mode_cache_at.clear()
+    async def _request(self,method,path,params=None,signed=False):
         if signed:
             health=self._private_health_error()
             if health: raise RuntimeError(health)
@@ -56,14 +33,12 @@ class BinanceAdapter(ExchangeAdapter):
         if signed: method,path,params,headers=self._signed(method,path,params)
         async with httpx.AsyncClient(timeout=10) as c:
             r=await c.request(method,self.base+path,params=params,headers=headers)
-            if r.status_code in (418,429) and signed:
-                self._block_private(r); raise RuntimeError(f'Binance private API rate-limit/banned response HTTP {r.status_code}; execution blocked until backoff expires')
+            if r.status_code in (418,429) and signed: self._block_private(r); raise RuntimeError(f'Binance private API rate-limit/banned response HTTP {r.status_code}; execution blocked until backoff expires')
             r.raise_for_status(); return r.json()
     async def get_account_status(self):
         key=self.testnet; now=time.time()
         if key in self.__class__._account_cache and now-self.__class__._account_cache_at.get(key,0)<10: return self.__class__._account_cache[key]
-        data=await self._request('GET','/fapi/v2/account',signed=True)
-        result={'exchange':self.name,'testnet':self.testnet,'available_balance':float(data.get('availableBalance',0)),'total_wallet_balance':float(data.get('totalWalletBalance',0)),'raw':data}; self.__class__._account_cache[key]=result; self.__class__._account_cache_at[key]=now; return result
+        data=await self._request('GET','/fapi/v2/account',signed=True); result={'exchange':self.name,'testnet':self.testnet,'available_balance':float(data.get('availableBalance',0)),'total_wallet_balance':float(data.get('totalWalletBalance',0)),'raw':data}; self.__class__._account_cache[key]=result; self.__class__._account_cache_at[key]=now; return result
     async def get_positions(self):
         key=self.testnet; now=time.time()
         if key in self.__class__._positions_cache and now-self.__class__._positions_cache_at.get(key,0)<10: return self.__class__._positions_cache[key]
@@ -72,14 +47,13 @@ class BinanceAdapter(ExchangeAdapter):
         key=self.testnet; now=time.time()
         if key in self.__class__._position_mode_cache and now-self.__class__._position_mode_cache_at.get(key,0)<60: return self.__class__._position_mode_cache[key]
         data=await self._request('GET','/fapi/v1/positionSide/dual',signed=True); result='HEDGE' if bool(data.get('dualSidePosition')) else 'ONE_WAY'; self.__class__._position_mode_cache[key]=result; self.__class__._position_mode_cache_at[key]=now; return result
-    async def get_symbol_rules(self, symbol):
+    async def get_symbol_rules(self,symbol):
         key=(self.testnet,symbol.upper()); now=time.time()
         if key in self.__class__._symbol_rules_cache and now-self.__class__._symbol_rules_cache_at.get(key,0)<3600: return self.__class__._symbol_rules_cache[key]
         data=await self._request('GET','/fapi/v1/exchangeInfo'); wanted=symbol.upper()
-        for item in data.get('symbols', []):
-            if item.get('symbol') != wanted: continue
-            filters={f.get('filterType'):f for f in item.get('filters',[])}; lot=filters.get('MARKET_LOT_SIZE') or filters.get('LOT_SIZE') or {}; notional=filters.get('NOTIONAL') or filters.get('MIN_NOTIONAL') or {}
-            result={'symbol':wanted,'status':item.get('status'),'quantity_min':float(lot.get('minQty',0) or 0),'quantity_max':float(lot.get('maxQty',0) or 0),'quantity_step':float(lot.get('stepSize',0) or 0),'min_notional':float(notional.get('minNotional',0) or 0)}; self.__class__._symbol_rules_cache[key]=result; self.__class__._symbol_rules_cache_at[key]=now; return result
+        for item in data.get('symbols',[]):
+            if item.get('symbol')!=wanted: continue
+            filters={f.get('filterType'):f for f in item.get('filters',[])}; lot=filters.get('MARKET_LOT_SIZE') or filters.get('LOT_SIZE') or {}; notional=filters.get('NOTIONAL') or filters.get('MIN_NOTIONAL') or {}; result={'symbol':wanted,'status':item.get('status'),'quantity_min':float(lot.get('minQty',0) or 0),'quantity_max':float(lot.get('maxQty',0) or 0),'quantity_step':float(lot.get('stepSize',0) or 0),'min_notional':float(notional.get('minNotional',0) or 0)}; self.__class__._symbol_rules_cache[key]=result; self.__class__._symbol_rules_cache_at[key]=now; return result
         raise RuntimeError(f'Binance Futures symbol not found: {wanted}')
     @staticmethod
     def normalize_quantity(quantity,rules):
@@ -90,22 +64,19 @@ class BinanceAdapter(ExchangeAdapter):
         if value<minimum: return 0.0
         return float(f'{value:.8f}')
     async def set_leverage(self,symbol,leverage): return await self._request('POST','/fapi/v1/leverage',{'symbol':symbol.upper(),'leverage':max(1,min(5,int(leverage)))},signed=True)
+    async def place_algo_protection(self,symbol,side,quantity,trigger_price,order_type,position_mode='ONE_WAY'):
+        close_side='SELL' if side.lower()=='long' else 'BUY'; params={'algoType':'CONDITIONAL','symbol':symbol.upper(),'side':close_side,'type':order_type,'triggerPrice':self._fmt_price(trigger_price),'workingType':'MARK_PRICE','priceProtect':'TRUE','newOrderRespType':'RESULT','clientAlgoId':f'HHHAI-{uuid.uuid4().hex[:20]}' }
+        if position_mode=='HEDGE': params['positionSide']='LONG' if side.lower()=='long' else 'SHORT'; params['quantity']=self._fmt_qty(quantity)
+        else: params['positionSide']='BOTH'; params['closePosition']='true'
+        return await self._request('POST','/fapi/v1/algoOrder',params,signed=True)
     async def place_protection(self,symbol,side,quantity,stop_price,take_profit,position_mode='ONE_WAY'):
-        close_side='SELL' if side=='long' else 'BUY'; common={'symbol':symbol.upper(),'side':close_side,'workingType':'MARK_PRICE','priceProtect':'TRUE'}
-        if position_mode=='HEDGE': common['positionSide']='LONG' if side=='long' else 'SHORT'; common['quantity']=self._fmt_qty(quantity)
-        else: common['closePosition']='true'
-        stop=dict(common,type='STOP_MARKET',stopPrice=self._fmt_price(stop_price),newClientOrderId=f'HHHAI-{uuid.uuid4().hex[:20]}'); stop_result=await self._request('POST','/fapi/v1/order',stop,signed=True)
+        stop_result=await self.place_algo_protection(symbol,side,quantity,stop_price,'STOP_MARKET',position_mode)
         if take_profit is None: return {'stop_loss':stop_result,'take_profit':None,'attached':True}
-        take=dict(common,type='TAKE_PROFIT_MARKET',stopPrice=self._fmt_price(take_profit),newClientOrderId=f'HHHAI-{uuid.uuid4().hex[:20]}')
-        try: take_result=await self._request('POST','/fapi/v1/order',take,signed=True)
+        try: take_result=await self.place_algo_protection(symbol,side,quantity,take_profit,'TAKE_PROFIT_MARKET',position_mode)
         except Exception:
-            try:
-                if isinstance(stop_result,dict) and stop_result.get('orderId') is not None: await self.cancel_order(symbol,stop_result['orderId'])
+            try: await self.cancel_algo_order(symbol,stop_result.get('algoId') if isinstance(stop_result,dict) else None)
             finally:
-                close={'symbol':symbol.upper(),'side':close_side,'type':'MARKET','quantity':self._fmt_qty(quantity)}
-                if position_mode=='HEDGE': close['positionSide']='LONG' if side=='long' else 'SHORT'
-                else: close['reduceOnly']='true'
-                try: await self._request('POST','/fapi/v1/order',close,signed=True)
+                try: await self.close_position(symbol,side,quantity,position_mode)
                 except Exception: pass
             raise
         return {'stop_loss':stop_result,'take_profit':take_result,'attached':True}
@@ -114,15 +85,21 @@ class BinanceAdapter(ExchangeAdapter):
         if position_mode=='HEDGE': order['positionSide']='LONG' if side.lower()=='long' else 'SHORT'
         else: order['reduceOnly']='true'
         result=await self._request('POST','/fapi/v1/order',order,True); self.__class__._clear_shared_cache(); return result
+    async def get_open_algo_orders(self,symbol=None): return await self._request('GET','/fapi/v1/openAlgoOrders',({'symbol':symbol.upper()} if symbol else {}),True)
+    async def cancel_algo_order(self,symbol,algo_id=None,client_algo_id=None):
+        params={'symbol':symbol.upper()};
+        if algo_id is not None: params['algoId']=algo_id
+        elif client_algo_id: params['clientAlgoId']=client_algo_id
+        else: raise ValueError('algo_id or client_algo_id is required')
+        return await self._request('DELETE','/fapi/v1/algoOrder',params,True)
     async def cancel_protection_orders(self,symbol):
-        orders=await self.get_open_orders(symbol)
+        orders=await self.get_open_algo_orders(symbol)
         for order in orders or []:
-            if order.get('type') in {'STOP_MARKET','TAKE_PROFIT_MARKET','TRAILING_STOP_MARKET','STOP','TAKE_PROFIT'} and str(order.get('clientOrderId') or '').startswith('HHHAI-'):
-                try: await self.cancel_order(symbol,order.get('orderId'))
+            if str(order.get('clientAlgoId') or '').startswith('HHHAI-') and str(order.get('orderType') or order.get('type') or '').upper() in {'STOP_MARKET','TAKE_PROFIT_MARKET','STOP','TAKE_PROFIT','TRAILING_STOP_MARKET'}:
+                try: await self.cancel_algo_order(symbol,order.get('algoId'),order.get('clientAlgoId'))
                 except Exception: pass
     async def update_dynamic_protection(self,symbol,side,quantity,stop_price,position_mode='ONE_WAY',take_profit=None):
-        try: await self.cancel_protection_orders(symbol)
-        except Exception: pass
+        await self.cancel_protection_orders(symbol)
         return await self.place_protection(symbol,side,quantity,stop_price,take_profit,position_mode=position_mode)
     @staticmethod
     def _fmt_price(value): return f'{float(value):.8f}'.rstrip('0').rstrip('.')
