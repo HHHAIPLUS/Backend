@@ -11,7 +11,7 @@ async def test_binance_protection_payload_is_fail_closed(monkeypatch):
 
     async def fake_request(method, path, params=None, signed=False):
         calls.append((method, path, params, signed))
-        return {"orderId": len(calls)}
+        return {"algoId": len(calls)}
 
     monkeypatch.setattr(adapter, "_request", fake_request)
     result = await adapter.place_protection("BTCUSDT", "long", 0.01, 100.0, None)
@@ -20,8 +20,9 @@ async def test_binance_protection_payload_is_fail_closed(monkeypatch):
     assert len(calls) == 1
     method, path, params, signed = calls[0]
     assert method == "POST"
-    assert path == "/fapi/v1/order"
+    assert path == "/fapi/v1/algoOrder"
     assert signed is True
+    assert params["algoType"] == "CONDITIONAL"
     assert params["type"] == "STOP_MARKET"
     assert params["side"] == "SELL"
     assert params["closePosition"] == "true"
