@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 import httpx
 import numpy as np
+import io
+import zipfile
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -169,9 +171,46 @@ def fetch_bitget_klines(symbol: str, interval: str = "5m", limit: int = 1500) ->
     return result
 
 
+
+def fetch_binance_archive_klines(symbol: str, interval: str = "5m", limit: int = 8000) -> list[list[Any]]:
+    """Fallback to Binance public USD-M futures historical archives."""
+    if interval != "5m":
+        raise ValueError("Archive bootstrap currently supports 5m candles only.")
+    target = max(500, min(10000, int(limit)))
+    now = datetime.now(timezone.utc)
+    month_cursor = (now.replace(day=1) - timedelta(days=1)).replace(day=1)
+    collected: list[list[Any]] = []
+    with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0), follow_redirects=True, trust_env=False,
+                      headers={"User-Agent": "HHHAI/1.0", "Accept": "application/zip"}) as client:
+        for _ in range(3):
+            month = month_cursor.strftime("%Y-%m")
+            url = f"https://data.binance.vision/data/futures/um/monthly/klines/{symbol.upper()}/{interval}/{symbol.upper()}-{interval}-{month}.zip"
+            response = client.get(url)
+            if response.status_code == 200:
+                with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+                    for name in archive.namelist():
+                        if name.lower().endswith(".csv"):
+                            with archive.open(name) as fh:
+                                for line in io.TextIOWrapper(fh, encoding="utf-8", newline=""):
+                                    parts = line.strip().split(",")
+                                    if len(parts) >= 6:
+                                        try:
+                                            row = [int(float(parts[0])), float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4]), float(parts[5])]
+                                            if _validate_candle_row(row):
+                                                collected.append(row)
+                                        except (TypeError, ValueError):
+                                            pass
+            month_cursor = (month_cursor - timedelta(days=1)).replace(day=1)
+            if len(collected) >= target:
+                break
+    result = _deduplicate_klines(collected)[-target:]
+    if len(result) < target:
+        raise RuntimeError(f"Binance historical archive returned only {len(result)} usable candles out of {target} requested")
+    return result
+
 def fetch_historical_klines(symbol: str, interval: str = "5m", limit: int = 1500) -> tuple[list[list[Any]], str]:
     errors: list[str] = []
-    for provider, fetcher in (("binance", fetch_binance_klines), ("bitget", fetch_bitget_klines)):
+    for provider, fetcher in (("binance", fetch_binance_klines), ("binance_archive", fetch_binance_archive_klines), ("bitget", fetch_bitget_klines)):
         try:
             return fetcher(symbol=symbol, interval=interval, limit=limit), provider
         except Exception as exc:
