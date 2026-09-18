@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 from app.api.admin import require_admin
 from app.ml.predictive import predictive_model
-from app.ml.predictive_brain import PredictiveBrain
+from app.ml.predictive_brain import predictive_brain
 from app.ml.bootstrap import build_dataset, validate_and_promote
 from app.ml.binance_historical import fetch_binance_klines
 from app.ml.model_persistence import persist_model
@@ -20,7 +20,7 @@ class BootstrapRequest(BaseModel):
     threshold: float = Field(default=0.0025, gt=0, lt=0.1)
 
 
-brain = PredictiveBrain()
+brain = predictive_brain
 
 
 @router.get("/status")
