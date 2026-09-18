@@ -65,21 +65,26 @@ install_multi_coin_selection(trader)
 async def lifespan(app):
     if os.getenv("HHHAI_AUTO_BOOTSTRAP_BRAIN", "false").lower() == "true" and predictive_brain.bundle is None:
         try:
-            symbol = os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOL", "BTCUSDT").upper()
-            limit = max(5000, min(10000, int(os.getenv("HHHAI_BRAIN_BOOTSTRAP_CANDLES", "8000"))))
-            intervals = [x.strip() for x in os.getenv("HHHAI_BRAIN_BOOTSTRAP_INTERVALS", "15m,30m,1h").split(",") if x.strip()]
-            threshold = float(os.getenv("HHHAI_BRAIN_LABEL_THRESHOLD", "0.0008"))
-            for interval in intervals:
+            symbols = [x.strip().upper() for x in os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOLS", os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOL", "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT")).split(",") if x.strip()]
+            limit = max(5000, min(10000, int(os.getenv("HHHAI_BRAIN_BOOTSTRAP_CANDLES", "6000"))))
+            interval = os.getenv("HHHAI_BRAIN_BOOTSTRAP_INTERVAL", "15m").strip()
+            threshold = float(os.getenv("HHHAI_BRAIN_LABEL_THRESHOLD", "0.0015"))
+            combined_rows = []
+            for symbol in symbols:
                 try:
                     raw, provider = await asyncio.to_thread(fetch_historical_klines, symbol, interval, limit)
-                    log.warning("PREDICTIVE_BRAIN_DATA_PROVIDER interval=%s provider=%s candles=%s", interval, provider, len(raw))
+                    log.warning("PREDICTIVE_BRAIN_DATA_PROVIDER symbol=%s interval=%s provider=%s candles=%s", symbol, interval, provider, len(raw))
                     rows = build_dataset(raw, horizon=6, threshold=threshold)
-                    report = await asyncio.to_thread(predictive_brain.train, rows, f"brain-{symbol}-{interval}")
-                    log.warning("PREDICTIVE_BRAIN_BOOTSTRAP status=%s version=%s reason=%s metrics=%s", report.status, report.version, report.reason, report.metrics)
-                    if report.status == "PROMOTED":
-                        break
-                except Exception as interval_exc:
-                    log.warning("PREDICTIVE_BRAIN_INTERVAL_FAILED interval=%s error=%s", interval, interval_exc)
+                    for row in rows:
+                        row["symbol"] = symbol
+                    combined_rows.extend(rows)
+                except Exception as symbol_exc:
+                    log.warning("PREDICTIVE_BRAIN_SYMBOL_FAILED symbol=%s interval=%s error=%s", symbol, interval, symbol_exc)
+            if combined_rows:
+                combined_rows.sort(key=lambda r: (str(r.get("observed_at","")), str(r.get("symbol",""))))
+                log.warning("PREDICTIVE_BRAIN_DATASET rows=%s symbols=%s interval=%s", len(combined_rows), sorted({r.get("symbol") for r in combined_rows}), interval)
+                report = await asyncio.to_thread(predictive_brain.train, combined_rows, f"brain-multi-{interval}")
+                log.warning("PREDICTIVE_BRAIN_BOOTSTRAP status=%s version=%s reason=%s metrics=%s", report.status, report.version, report.reason, report.metrics)
         except Exception as exc:
             log.error("PREDICTIVE_BRAIN_BOOTSTRAP_FAILED %s", exc)
     await hydrate_learning()
