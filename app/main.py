@@ -32,7 +32,7 @@ from app.api.market_intelligence import router as market_intelligence_router
 from app.api.stage5 import router as stage5_router
 from app.api.position_intelligence import router as position_intelligence_router
 from app.api.risk_capital import router as risk_capital_router
-from app.ml.model_persistence import hydrate_model
+from app.ml.model_persistence import hydrate_model, persist_brain
 from app.ml.predictive_brain import predictive_brain
 from app.ml.bootstrap import fetch_historical_klines
 from app.ml.bootstrap import build_dataset
@@ -63,6 +63,7 @@ install_multi_coin_selection(trader)
 
 @asynccontextmanager
 async def lifespan(app):
+    await hydrate_model()
     if os.getenv("HHHAI_AUTO_BOOTSTRAP_BRAIN", "false").lower() == "true" and predictive_brain.bundle is None:
         try:
             symbols = [x.strip().upper() for x in os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOLS", os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOL", "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT")).split(",") if x.strip()]
@@ -85,12 +86,17 @@ async def lifespan(app):
                 log.warning("PREDICTIVE_BRAIN_DATASET rows=%s symbols=%s interval=%s", len(combined_rows), sorted({r.get("symbol") for r in combined_rows}), interval)
                 report = await asyncio.to_thread(predictive_brain.train, combined_rows, f"brain-multi-{interval}")
                 log.warning("PREDICTIVE_BRAIN_BOOTSTRAP status=%s version=%s reason=%s metrics=%s", report.status, report.version, report.reason, report.metrics)
+                if report.status == "PROMOTED":
+                    try:
+                        await persist_brain(report.metrics)
+                        log.warning("PREDICTIVE_BRAIN_PERSISTED version=%s", predictive_brain.version)
+                    except Exception as persist_exc:
+                        log.error("PREDICTIVE_BRAIN_PERSIST_FAILED error=%s", persist_exc)
         except Exception as exc:
             log.error("PREDICTIVE_BRAIN_BOOTSTRAP_FAILED %s", exc)
     await hydrate_learning()
     await hydrate_adaptive()
     await hydrate_research()
-    await hydrate_model()
     await hydrate_stage8_risk(stage8_risk)
     exchange = os.getenv("HHHAI_EXECUTION_EXCHANGE", os.getenv("HHHAI_MARKET_EXCHANGE", "binance")).lower()
     log.warning("HHHAI_RUNTIME exchange=%s bitget_testnet=%s trading_mode=%s live_enabled=%s autotrading=%s", exchange, settings.bitget_testnet, settings.hhhai_trading_mode, settings.live_trading_enabled, settings.hhhai_autotrading_enabled)
