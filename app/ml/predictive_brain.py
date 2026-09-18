@@ -150,3 +150,6 @@ class PredictiveBrain:
         if not self.manifest_path.exists(): return None
         try: return json.loads(self.manifest_path.read_text())
         except Exception: return None
+
+
+predictive_brain = PredictiveBrain()
