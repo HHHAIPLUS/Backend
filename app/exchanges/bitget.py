@@ -237,28 +237,28 @@ class BitgetAdapter(ExchangeAdapter):
         )
 
     async def close_position(self, symbol, side, quantity, position_mode="ONE_WAY"):
-        close_side = "buy" if side.lower() == "short" else "sell"
+        # Use Bitget's dedicated flash-close endpoint for position exits.
+        # This avoids treating a close as a new opening order and avoids the
+        # live-canary opening-order gate.
         payload = {
+            "productType": "USDT-FUTURES",
             "symbol": symbol.upper(),
-            "marginCoin": "USDT",
-            "size": str(quantity),
-            "side": close_side,
-            "orderType": "market",
-            "marginMode": "crossed",
-            "reduceOnly": "YES",
         }
-        # Bitget hedge mode requires an explicit close trade side. Sending it
-        # consistently also avoids ambiguity during the controlled canary cleanup.
-        payload["tradeSide"] = "close"
-        return await self.place_order(payload)
+        if str(side or "").lower() in {"long", "short"}:
+            payload["holdSide"] = str(side).lower()
+        return await self._request(
+            "POST",
+            "/api/v2/mix/order/close-positions",
+            body=payload,
+            private=True,
+        )
 
     async def get_position_mode(self, symbol="BTCUSDT"):
         account = await self._request(
             "GET",
             "/api/v2/mix/account/account",
             {"symbol": symbol.upper(), "productType": "USDT-FUTURES", "marginCoin": "USDT"},
-            private=True,
-        )
+            private=True,        )
         mode = str((account or {}).get("posMode") or "").lower()
         if mode == "one_way_mode":
             return "ONE_WAY"
