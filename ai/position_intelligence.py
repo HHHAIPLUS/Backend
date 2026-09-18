@@ -193,7 +193,7 @@ def install_stage6_position_intelligence(trader: Any) -> None:
     trader.stage6_last_error = None
     trader._stage6_state = {}
 
-    async def manage(self, symbol):
+    async def manage(self, symbol, rows=None):
         mode = self.execution_mode
         if mode in {"testnet", "live"} and not self._execution_gate()[0]:
             return []
@@ -201,13 +201,24 @@ def install_stage6_position_intelligence(trader: Any) -> None:
         exchange = "paper" if mode == "paper" else self._exchange_for_market()
         adapter = None
         if mode != "paper":
-            if exchange != "binance":
-                return await _manage_non_binance(self, symbol, exchange)
-            if not binance_user_stream.is_healthy():
-                self.stage6_last_error = "Binance user-data stream is not healthy; position management is fail-closed."
-                return []
-            adapter = self._adapters()[exchange]
-            raw_rows = binance_user_stream.positions(symbol)
+            if exchange == "binance":
+                if not binance_user_stream.is_healthy():
+                    self.stage6_last_error = "Binance user-data stream is not healthy; position management is fail-closed."
+                    return []
+                adapter = self._adapters()[exchange]
+                raw_rows = binance_user_stream.positions(symbol)
+            else:
+                adapter = self._adapters()[exchange]
+                if rows is not None:
+                    raw_rows = rows
+                else:
+                    try:
+                        raw_rows = await adapter.get_positions(symbol if exchange == "bitget" else None)
+                    except TypeError:
+                        raw_rows = await adapter.get_positions()
+                    except Exception as exc:
+                        self.stage6_last_error = f"Position sync failed: {type(exc).__name__}: {exc}"
+                        return []
         else:
             raw_rows = [
                 {"symbol": p.symbol, "holdSide": p.side, "positionAmt": p.quantity, "entryPrice": p.entry_price, "markPrice": p.mark_price}
