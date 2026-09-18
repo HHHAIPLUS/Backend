@@ -52,8 +52,6 @@ async def hydrate_model():
             return False
         data=base64.b64decode(str(artifact['data']))
         bundle=joblib.load(io.BytesIO(data))
-        if bundle.get('feature_hash') is None or bundle.get('features') != predictive_brain.bundle.get('features') if predictive_brain.bundle else False:
-            pass
         predictive_brain.bundle=bundle
         predictive_brain.version=str(row.get('version') or bundle.get('version') or 'persisted')
         return True
