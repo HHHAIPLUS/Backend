@@ -107,10 +107,22 @@ class PredictiveBrain:
     def train(self,rows,version="brain-v1",test_fraction=.2):
         if len(rows)<800: return BrainReport("REJECTED",version,{"rows":len(rows)},"At least 800 point-in-time rows are required for independent selection, calibration and OOS testing.")
         rows=sorted(rows,key=lambda r:str(r.get("observed_at",""))); x=_x(rows); returns=_future_return(rows,6); d=_direction_target(returns); n=len(rows)
-        test_start=int(n*(1-test_fraction)); pre=x[:test_start]; pre_y=d[:test_start]; pre_r=returns[:test_start]; xte=x[test_start:]; dte=d[test_start:]; rte=returns[test_start:]
+        # Split by unique timestamps, never by arbitrary rows. This is required for
+        # multi-symbol datasets so candles from the same market time cannot straddle
+        # train and OOS partitions.
+        timestamps=[str(r.get("observed_at","")) for r in rows]
+        unique_times=sorted(set(timestamps))
+        if len(unique_times)<20: return BrainReport("REJECTED",version,{},"Not enough unique timestamps for chronological evaluation.")
+        cutoff_pos=max(1,min(len(unique_times)-1,int(len(unique_times)*(1-test_fraction))))
+        cutoff_time=unique_times[cutoff_pos]
+        test_start=next(i for i,t in enumerate(timestamps) if t>=cutoff_time)
+        pre=x[:test_start]; pre_y=d[:test_start]; pre_r=returns[:test_start]; xte=x[test_start:]; dte=d[test_start:]; rte=returns[test_start:]
         if len(xte)<100 or len(pre)<600: return BrainReport("REJECTED",version,{},"Chronological train/validation/calibration/test partitions are too small.")
         if len(set(dte.tolist()))<3: return BrainReport("REJECTED",version,{},"Untouched OOS test period must contain all three direction classes.")
-        select_end=int(len(pre)*.75); xfit,xval=pre[:select_end],pre[select_end:]; yfit,yval=pre_y[:select_end],pre_y[select_end:]
+        pre_times=sorted(set(timestamps[:test_start]))
+        select_cutoff=pre_times[max(1,min(len(pre_times)-1,int(len(pre_times)*.75)))]
+        select_end=next(i for i,t in enumerate(timestamps[:test_start]) if t>=select_cutoff)
+        xfit,xval=pre[:select_end],pre[select_end:]; yfit,yval=pre_y[:select_end],pre_y[select_end:]
         if len(xval)<100 or len(set(yfit.tolist()))<3 or len(set(yval.tolist()))<3: return BrainReport("REJECTED",version,{},"Model-selection validation partition is insufficient.")
         validation_scores={}; candidates=[]
         for family in MODEL_FAMILIES:
