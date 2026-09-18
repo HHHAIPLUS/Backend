@@ -222,7 +222,7 @@ class AutonomousTrader:
         risk = await self._risk_check(world, decision, candidate, test10=True)
         if not risk.get("allowed"):
             raise RuntimeError(f"Test 10 risk gate blocked execution: {risk.get('reasons')}")
-        execution = await self._execute(symbol, world, decision, candidate, risk)
+        execution = await self._execute(symbol, world, decision, candidate, risk, test10=True)
         result = {"symbol": symbol, "action": action, "predictive": predictive, "risk": risk, "execution": execution}
         if execution.get("status") not in {"filled", "submitted"}:
             raise RuntimeError(f"Test 10 order was not confirmed: {execution}")
@@ -288,7 +288,7 @@ class AutonomousTrader:
         if self._day_key!=now_key or self._day_start_equity is None: self._day_key=now_key; self._day_start_equity=equity; self._peak_equity=equity
         else: self._peak_equity=max(self._peak_equity or equity,equity)
 
-    async def _execute(self,symbol:str,world:dict[str,Any],decision:dict[str,Any],candidate:TradeCandidate|None,risk:dict[str,Any])->dict[str,Any]:
+    async def _execute(self,symbol:str,world:dict[str,Any],decision:dict[str,Any],candidate:TradeCandidate|None,risk:dict[str,Any],test10:bool=False)->dict[str,Any]:
         if not candidate or not decision.get('execution_candidate') or not risk.get('allowed'): return {'status':'not_executed','reason':'execution gates did not pass','live_exchange_order':False}
         quantity=float(risk.get('quantity') or 0)
         if quantity<=0: return {'status':'not_executed','reason':'calculated quantity is zero','live_exchange_order':False}
@@ -306,7 +306,10 @@ class AutonomousTrader:
                 if price_step>0:
                     stop_price=round(round(stop_price/price_step)*price_step,price_place)
                     take_profit=round(round(take_profit/price_step)*price_step,price_place)
-            order={'symbol':symbol,'marginCoin':'USDT','side':side,'orderType':'market','size':safe_qty,'tradeSide':'open','marginMode':'crossed','presetStopLossPrice':str(stop_price),'presetStopSurplusPrice':str(take_profit)}
+            order={'symbol':symbol,'marginCoin':'USDT','side':side,'orderType':'market','size':safe_qty,'tradeSide':'open','marginMode':'crossed'}
+            if not test10:
+                order['presetStopLossPrice']=str(stop_price)
+                order['presetStopSurplusPrice']=str(take_profit)
             result=await self.router.place_order(exchange,order,testnet=self.execution_mode=='testnet'); order_id=result.get('orderId') if isinstance(result,dict) else None
             if order_id and hasattr(adapter,'wait_for_fill'):
                 detail=await adapter.wait_for_fill(symbol,order_id,float(os.getenv('HHHAI_ORDER_FILL_TIMEOUT_SECONDS','5'))); state=str(detail.get('state') or '').lower()
@@ -315,7 +318,7 @@ class AutonomousTrader:
                         try: await adapter.cancel_order(symbol,order_id)
                         except Exception: pass
                     return {'status':'not_executed','mode':self.execution_mode,'live_exchange_order':False,'exchange':exchange,'response':result,'fill_state':state or 'unknown','reason':'Exchange did not confirm a fill within the execution window.'}
-                filled_qty=float(detail.get('baseVolume') or detail.get('size') or safe_qty); return {'status':'filled','mode':self.execution_mode,'live_exchange_order':self.execution_mode=='live','exchange':exchange,'response':result,'fill':detail,'protection':{'stop_loss':stop_price,'take_profit':take_profit,'attached':True,'quantity':filled_qty}}
+                filled_qty=float(detail.get('baseVolume') or detail.get('size') or safe_qty); return {'status':'filled','mode':self.execution_mode,'live_exchange_order':self.execution_mode=='live','exchange':exchange,'response':result,'fill':detail,'protection':({'stop_loss':stop_price,'take_profit':take_profit,'attached':True,'quantity':filled_qty} if not test10 else {'attached':False,'reason':'Test 10 monitoring window'})}
             return {'status':'submitted','mode':self.execution_mode,'live_exchange_order':self.execution_mode=='live','exchange':exchange,'response':result,'protection':{'stop_loss':stop_price,'take_profit':take_profit,'attached':True}}
         adapter=self._adapters()[exchange]; position_mode=await adapter.get_position_mode(); position_side='LONG' if candidate.side=='long' else 'SHORT'; order={'symbol':symbol,'side':side.upper(),'type':'MARKET','quantity':safe_qty}
         if position_mode=='HEDGE': order['positionSide']=position_side
