@@ -24,8 +24,8 @@ class BitgetAdapter(ExchangeAdapter):
     # overall, plus endpoint-specific limits. HHHAI stays far below those ceilings.
     _rate_lock = threading.Lock()
     _request_times = deque()
-    _max_requests_per_second = 2
-    _max_requests_per_minute = 120
+    _max_requests_per_second = 1
+    _max_requests_per_minute = 60
     _blocked_until = 0.0
 
     def __init__(self, testnet: bool | None = None):
@@ -112,7 +112,19 @@ class BitgetAdapter(ExchangeAdapter):
 
     async def get_account_status(self):
         accounts = await self._request("GET", "/api/v2/mix/account/accounts", {"productType": "USDT-FUTURES"}, private=True)
-        return {"exchange": self.name, "testnet": self.testnet, "accounts": accounts}
+        rows = accounts if isinstance(accounts, list) else [accounts]
+        usdt = next((row for row in rows if str(row.get("marginCoin") or "").upper() == "USDT"), None)
+        if not usdt:
+            raise RuntimeError("Bitget USDT-FUTURES account balance is unavailable")
+        available = float(usdt.get("available") or 0)
+        total = float(usdt.get("accountEquity") or usdt.get("usdtEquity") or usdt.get("equity") or available or 0)
+        return {
+            "exchange": self.name,
+            "testnet": self.testnet,
+            "available_balance": available,
+            "total_wallet_balance": total,
+            "accounts": accounts,
+        }
 
     async def get_positions(self, symbol=None):
         p = {"productType": "USDT-FUTURES"}
