@@ -11,6 +11,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from app.ml.predictive import FEATURES, predictive_model
+from app.ml.predictive_brain import HORIZONS
 from app.ml.validation import walk_forward, evaluate_predictions
 from app.ml.features import build_model_features
 from app.ml.dataset_integrity import require_production_ready, DatasetAudit
@@ -196,10 +197,11 @@ def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 
         window = candles[i - lookback:i + 1]
         last = window[-1]
         future_return = candles[i + horizon]["close"] / last["close"] - 1.0
+        horizon_returns = {str(h): candles[i + h]["close"] / last["close"] - 1.0 for h in HORIZONS if i + h < len(candles)}
         label = 1 if future_return > threshold else -1 if future_return < -threshold else 0
         candle_rows = [[int(datetime.fromisoformat(c["observed_at"]).timestamp() * 1000), c["open"], c["high"], c["low"], c["close"], c["volume"]] for c in window]
         model_features = build_model_features(candle_rows)
-        rows.append({"observed_at": last["observed_at"], "features": model_features, "label": label, "outcome_return": future_return, "context_available": {name: False for name in CONTEXT_FEATURES}, "feature_provenance": {}, "data_source": "ohlcv_only"})
+        rows.append({"observed_at": last["observed_at"], "features": model_features, "label": label, "outcome_return": future_return, "outcome_horizon": horizon, "outcome_return_by_horizon": horizon_returns, "context_available": {name: False for name in CONTEXT_FEATURES}, "feature_provenance": {}, "data_source": "ohlcv_only"})
     return rows
 
 
