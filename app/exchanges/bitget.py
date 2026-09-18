@@ -191,6 +191,7 @@ class BitgetAdapter(ExchangeAdapter):
             "GET",
             "/api/v2/mix/order/orders-plan-pending",
             params={"productType": "USDT-FUTURES", "symbol": symbol.upper()},
+            private=True,
         )
 
     async def cancel_plan_order(self, symbol, order_id=None, client_oid=None, plan_type=None):
