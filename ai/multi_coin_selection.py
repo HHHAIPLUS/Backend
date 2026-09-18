@@ -10,6 +10,7 @@ from typing import Any
 from app.persistence.supabase import store
 from app.persistence.repository import record_event
 from app.market_data.binance_central import CentralBinanceMarketData
+from app.market_data.bitget_central import CentralBitgetMarketData
 
 log = logging.getLogger("hhhai.multi_coin_selection")
 
@@ -18,22 +19,21 @@ DEFAULT_UNIVERSE_REFRESH_SECONDS = 300
 
 
 def _dynamic_symbols(limit: int) -> list[str]:
-    """Return dynamic symbols from the centralized Binance WebSocket universe."""
+    exchange = os.getenv("HHHAI_EXECUTION_EXCHANGE", os.getenv("HHHAI_MARKET_EXCHANGE", "binance")).lower()
     explicit = os.getenv("HHHAI_TRADE_SYMBOLS", "").strip()
     if explicit:
         symbols = [x.strip().upper() for x in explicit.split(",") if x.strip()]
         return symbols[:limit]
     try:
-        symbols = CentralBinanceMarketData.rank_symbols(limit)
+        symbols = (CentralBitgetMarketData if exchange == "bitget" else CentralBinanceMarketData).rank_symbols(limit)
         if symbols:
             return symbols
     except Exception as exc:
-        log.warning("Dynamic Binance WebSocket universe selection failed: %s", exc)
+        log.warning("Dynamic %s WebSocket universe selection failed: %s", exchange, exc)
     return ["BTCUSDT"]
 
 
 def install_multi_coin_selection(trader: Any) -> None:
-    """Install dynamic portfolio selection without adding Binance REST polling."""
     cls = trader.__class__
     if getattr(cls, "_hhhai_multi_coin_installed", False):
         return
@@ -62,10 +62,10 @@ def install_multi_coin_selection(trader: Any) -> None:
         last_universe_refresh = 0.0
         next_decision = 0.0
         next_management = 0.0
+        exchange = os.getenv("HHHAI_EXECUTION_EXCHANGE", os.getenv("HHHAI_MARKET_EXCHANGE", "binance")).lower()
+        central = CentralBitgetMarketData if exchange == "bitget" else CentralBinanceMarketData
 
-        # Start the central all-market WebSocket immediately.  The same cache is
-        # then consumed by ranking, world intelligence and predictive features.
-        CentralBinanceMarketData._start_universe()
+        central._start_universe() if hasattr(central, "_start_universe") else None
 
         while self.running:
             now = asyncio.get_running_loop().time()
@@ -74,7 +74,7 @@ def install_multi_coin_selection(trader: Any) -> None:
                 selected = await asyncio.to_thread(_dynamic_symbols, max_active_symbols)
                 self.config.symbols = tuple(selected[:max_active_symbols]) or ("BTCUSDT",)
                 last_universe_refresh = now + refresh_seconds
-                log.info("HHHAI dynamic universe selected from WebSocket cache: %s", self.config.symbols)
+                log.info("HHHAI dynamic universe selected from %s WebSocket cache: %s", exchange, self.config.symbols)
 
             if self.execution_mode in {"testnet", "live"} and now >= next_management:
                 reviews = 0
@@ -170,4 +170,4 @@ def install_multi_coin_selection(trader: Any) -> None:
     cls._risk_check = guarded_risk
     cls._run = portfolio_run
     cls._hhhai_multi_coin_installed = True
-    log.info("Installed HHHAI dynamic top-5 portfolio selection using centralized Binance WebSocket market data")
+    log.info("Installed dynamic portfolio selection using centralized %s WebSocket market data", exchange if (exchange := os.getenv("HHHAI_EXECUTION_EXCHANGE", "binance").lower()) else "binance")
