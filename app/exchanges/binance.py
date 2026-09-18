@@ -116,7 +116,7 @@ class BinanceAdapter(ExchangeAdapter):
             if rules.get('status')!='TRADING': raise RuntimeError(f'Binance Futures symbol is not trading: {symbol}')
             account=await self.get_account_status(); available=max(0.0,float(account.get('available_balance') or 0)); ticker=await self.get_ticker(symbol); price=float(ticker.get('price') or 0)
             if available<=0 or price<=0: raise RuntimeError('Binance available margin or market price is unavailable')
-            await self.set_leverage(symbol,5); max_quantity_by_margin=(available*5.0)/price; quantity=self.normalize_quantity(min(float(order['quantity']),max_quantity_by_margin),rules)
+            max_leverage=max(1,min(3,int(os.getenv('HHHAI_MAX_LEVERAGE','3')))); await self.set_leverage(symbol,max_leverage); max_quantity_by_margin=(available*max_leverage)/price; quantity=self.normalize_quantity(min(float(order['quantity']),max_quantity_by_margin),rules)
             if quantity<=0: raise RuntimeError(f'Order quantity is below Binance minimum for {symbol} with current available margin')
             notional=quantity*price; minimum_notional=float(rules.get('min_notional') or 0)
             if minimum_notional>0 and notional<minimum_notional: raise RuntimeError(f'Order notional {notional:.8f} USDT is below Binance minimum {minimum_notional:.8f} USDT for {symbol}')
