@@ -146,17 +146,19 @@ class AutonomousTrader:
         side=hold_side if hold_side in {'long','short'} else ('long' if amount>0 else 'short'); qty=abs(amount); entry=float(row.get('entryPrice') or row.get('openPriceAvg') or row.get('avgOpenPrice') or 0); current=float(row.get('markPrice') or row.get('currentPrice') or row.get('mark_price') or 0)
         return symbol,side,qty,entry,current
 
-    async def _manage_open_positions(self,symbol: str) -> list[dict[str,Any]]:
+    async def _manage_open_positions(self,symbol: str, rows: list[dict[str,Any]] | None = None) -> list[dict[str,Any]]:
         exchange=self._exchange_for_market(); adapter=self._adapters()[exchange]
         if exchange=='binance':
             from app.market_data.binance_user_stream import binance_user_stream
             if not binance_user_stream.is_healthy(): return []
             rows=binance_user_stream.positions(symbol)
-        else:
+        elif rows is None:
             try: raw=await adapter.get_positions(symbol if exchange=='bitget' else None)
             except TypeError: raw=await adapter.get_positions()
             except Exception as exc: log.warning('Position sync failed for %s: %s',symbol,exc); return []
             rows=self._position_rows(raw)
+        else:
+            rows = self._position_rows(rows)
         managed=[]
         for row in rows:
             psymbol,side,qty,entry,current=self._position_fields(row)
@@ -236,8 +238,9 @@ class AutonomousTrader:
                 rows = self._position_rows(raw_positions)
                 log.warning("TEST10_POSITION_OBSERVATION attempt=%s rows=%s", attempt + 1, rows)
             except Exception as exc:
+                rows = []
                 log.warning("TEST10_POSITION_OBSERVATION_FAILED attempt=%s error=%s", attempt + 1, exc)
-            managed_now = await self._manage_open_positions(symbol)
+            managed_now = await self._manage_open_positions(symbol, rows=rows)
             if managed_now:
                 management_observed.extend(managed_now)
                 log.warning("TEST10_MANAGEMENT_OBSERVED attempt=%s count=%s", attempt + 1, len(managed_now))
