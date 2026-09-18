@@ -327,6 +327,8 @@ class AutonomousTrader:
             try:
                 exchange=self._exchange_for_market()
                 if exchange=='binance':
+                    if not binance_user_stream.is_healthy():
+                        raise RuntimeError('Binance authenticated user-data stream is not healthy')
                     equity=float(binance_user_stream.cross_wallet_balance() or 0); open_positions=len(binance_user_stream.positions())
                     if equity<=0: raise RuntimeError('Binance user-data balance is not ready')
                 else:
