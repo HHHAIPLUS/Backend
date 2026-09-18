@@ -30,8 +30,8 @@ def install_stage8_risk(trader) -> RiskCapitalEngine:
     engine = RiskCapitalEngine()
     original = trader._risk_check
 
-    async def guarded_risk_check(self, world, decision, candidate):
-        base = await original(world, decision, candidate)
+    async def guarded_risk_check(self, world, decision, candidate, test10=False):
+        base = await original(world, decision, candidate, test10=test10)
         if not base.get("allowed") or not candidate or not decision.get("execution_candidate"):
             return base
 
