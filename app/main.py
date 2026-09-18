@@ -83,8 +83,8 @@ async def lifespan(app):
         log.warning("AUTOTRADER_START_OK mode=%s", trader.execution_mode)
         if exchange == "bitget" and trader.execution_mode == "live" and os.getenv("HHHAI_TEST10_RUN_ON_START", "false").lower() == "true":
             try:
-                canary_cycle = await trader.run_cycle("DOGEUSDT")
-                log.warning("TEST10_CANARY_CYCLE action=%s risk=%s execution=%s", canary_cycle.get("decision", {}).get("action"), canary_cycle.get("risk", {}).get("decision"), canary_cycle.get("execution", {}).get("status"))
+                canary_cycle = await trader.run_test10_canary("DOGEUSDT")
+                log.warning("TEST10_CANARY_COMPLETE action=%s execution=%s management=%s remaining_open=%s", canary_cycle.get("action"), canary_cycle.get("execution", {}).get("status"), bool(canary_cycle.get("management_observed")), len(canary_cycle.get("remaining_open", [])))
             except Exception as exc:
                 log.error("TEST10_CANARY_CYCLE_FAILED %s", exc)
     try:
