@@ -56,12 +56,12 @@ def _direction_target(values,threshold=COST_RATE):
 
 def _classifier(family):
     if family=="logistic_regression": return Pipeline([("scale",StandardScaler()),("model",LogisticRegression(max_iter=1500,class_weight="balanced",random_state=42))])
-    if family=="extra_trees": return ExtraTreesClassifier(n_estimators=300,min_samples_leaf=5,class_weight="balanced",random_state=42,n_jobs=-1)
-    if family=="hist_gradient_boosting": return HistGradientBoostingClassifier(max_iter=250,learning_rate=.05,max_leaf_nodes=15,l2_regularization=1.0,random_state=42)
+    if family=="extra_trees": return ExtraTreesClassifier(n_estimators=120,min_samples_leaf=10,class_weight="balanced",random_state=42,n_jobs=-1)
+    if family=="hist_gradient_boosting": return HistGradientBoostingClassifier(max_iter=180,learning_rate=.05,max_leaf_nodes=15,l2_regularization=1.0,random_state=42)
     raise ValueError(f"Unknown model family: {family}")
 
 def _regressor(family):
-    if family in ("logistic_regression","extra_trees"): return ExtraTreesRegressor(n_estimators=300,min_samples_leaf=5,random_state=42,n_jobs=-1)
+    if family in ("logistic_regression","extra_trees"): return ExtraTreesRegressor(n_estimators=120,min_samples_leaf=10,random_state=42,n_jobs=-1)
     if family=="hist_gradient_boosting": return HistGradientBoostingRegressor(max_iter=250,learning_rate=.05,max_leaf_nodes=15,l2_regularization=1.0,random_state=42)
     raise ValueError(f"Unknown model family: {family}")
 
@@ -106,7 +106,7 @@ class PredictiveBrain:
         return out
     def train(self,rows,version="brain-v1",test_fraction=.2):
         if len(rows)<800: return BrainReport("REJECTED",version,{"rows":len(rows)},"At least 800 point-in-time rows are required for independent selection, calibration and OOS testing.")
-        rows=sorted(rows,key=lambda r:str(r.get("observed_at",""))); x=_x(rows); returns=_future_return(rows,6); d=_direction_target(returns); n=len(rows)
+        rows=sorted(rows,key=lambda r:str(r.get("observed_at",""))); x=_x(rows); n=len(rows)
         # Split by unique timestamps, never by arbitrary rows. This is required for
         # multi-symbol datasets so candles from the same market time cannot straddle
         # train and OOS partitions.
@@ -122,7 +122,7 @@ class PredictiveBrain:
         pre_times=sorted(set(timestamps[:test_start]))
         select_cutoff=pre_times[max(1,min(len(pre_times)-1,int(len(pre_times)*.75)))]
         select_end=next(i for i,t in enumerate(timestamps[:test_start]) if t>=select_cutoff)
-        xfit,xval=pre[:select_end],pre[select_end:]; yfit,yval=pre_y[:select_end],pre_y[select_end:]
+        xfit,xval=pre[:select_end],pre[select_end:]\n        horizon_selection={}\n        for h in HORIZONS:\n            try:\n                rh=_future_return(rows[:test_start],h); yh=_direction_target(rh); yhfit,yhval=yh[:select_end],yh[select_end:]\n                if len(yhval)<100 or len(set(yhfit.tolist()))<3 or len(set(yhval.tolist()))<3: continue\n                hm=_classifier("logistic_regression"); hm.fit(xfit,yhfit); hp=hm.predict(xval); hpr=hm.predict_proba(xval); hs=_metrics(yhval,hp,hpr,hm.classes_,rh[select_end:]); horizon_selection[str(h)] = hs\n            except Exception as exc: horizon_selection[str(h)]={"error":f"{type(exc).__name__}: {exc}"}\n        viable=[(float(v.get("avg_trade_net_return",-1e99)),float(v.get("balanced_accuracy",0.0)),int(h)) for h,v in horizon_selection.items() if "error" not in v and int(v.get("trades",0))>=100]\n        if not viable: return BrainReport("REJECTED",version,{"horizon_selection":horizon_selection}, "No horizon produced enough validation trades for selection.")\n        chosen_horizon=max(viable,key=lambda z:(z[0],z[1]))[2]\n        returns=_future_return(rows,chosen_horizon); d=_direction_target(returns)\n        pre_r=returns[:test_start]; rte=returns[test_start:]; pre_y=d[:test_start]; dte=d[test_start:]\n        xfit,xval=pre[:select_end],pre[select_end:]; yfit,yval=pre_y[:select_end],pre_y[select_end:]
         if len(xval)<100 or len(set(yfit.tolist()))<3 or len(set(yval.tolist()))<3: return BrainReport("REJECTED",version,{},"Model-selection validation partition is insufficient.")
         validation_scores={}; candidates=[]
         for family in MODEL_FAMILIES:
@@ -153,7 +153,7 @@ class PredictiveBrain:
         baseline_pred=baseline.predict(xte); baseline_prob=baseline.predict_proba(xte)
         candidate_metrics=_metrics(dte,candidate_pred,candidate_prob,direction.classes_,rte); baseline_metrics=_metrics(dte,baseline_pred,baseline_prob,baseline.classes_,rte)
         er=_regressor(family); er.fit(pre,pre_r); dn=_regressor(family); dn.fit(pre,np.minimum(pre_r,0)); vol=_regressor(family); vol.fit(pre,np.abs(pre_r)); rv=np.abs(pre_r); rq=np.quantile(rv,[.33,.66]); regime_target=np.where(rv>rq[1],2,np.where(rv>rq[0],1,0)); rm=_classifier(family); rm.fit(pre,regime_target); am=HistGradientBoostingClassifier(max_iter=150,random_state=46).fit(pre,(np.abs(pre_r)<=COST_RATE).astype(int))
-        meta_rows=[]; meta_y=[]; starts=max(250,len(pre)//3); step=max(75,(len(pre)-starts)//4)
+        meta_rows=[]; meta_y=[]; starts=max(250,len(pre)//3); step=max(100,(len(pre)-starts)//3)
         for end in range(starts,len(pre),step):
             stop=min(end+step,len(pre))
             if stop<=end: continue
@@ -170,8 +170,8 @@ class PredictiveBrain:
         absolute_gate={"enough_samples":candidate_metrics["trades"]>=100,"accuracy_ok":candidate_metrics["accuracy"]>=0.52,"balanced_accuracy_ok":candidate_metrics["balanced_accuracy"]>=0.50,"positive_trade_expectancy":candidate_metrics["avg_trade_net_return"]>0.0,"positive_total_net_return":candidate_metrics["total_net_return"]>0.0,"drawdown_ok":candidate_metrics["max_drawdown"]<=0.15}
         if not all(absolute_gate.values()): return BrainReport("REJECTED",version,{"validation_families":validation_scores,"baseline_oos":baseline_metrics,"candidate_oos":candidate_metrics,"promotion":gate,"absolute_gate":absolute_gate},"Candidate did not clear the untouched OOS absolute safety gate.")
         horizon_metrics=self._horizon_eval(pre,xte,rows[:test_start],rows[test_start:])
-        bundle={"schema_version":ARTIFACT_SCHEMA,"direction_model":direction,"baseline_model":baseline,"expected_return_model":er,"downside_model":dn,"volatility_model":vol,"regime_model":rm,"abstention_model":am,"meta_model":mm,"family":family,"decision_threshold":selection_threshold,"feature_hash":_feature_hash(),"features":FEATURES,"cost_rate":COST_RATE,"horizons":HORIZONS,"horizon_metrics":horizon_metrics,"oos_metrics":{"candidate":candidate_metrics,"baseline":baseline_metrics},"promotion":gate,"sequence_model_evaluation":{"status":"NOT_REQUIRED","reason":"Canonical Stage 3 data is tabular and the current sample/coverage does not justify sequence-model complexity; revisit when temporal sequence coverage and sample volume materially increase."}}
-        tmp=self.artifact_path.with_suffix(".tmp"); joblib.dump(bundle,tmp); tmp.replace(self.artifact_path); manifest={"schema_version":ARTIFACT_SCHEMA,"version":version,"features":FEATURES,"feature_hash":_feature_hash(),"family":family,"metrics":{"validation_families":validation_scores,"candidate_oos":candidate_metrics,"baseline_oos":baseline_metrics,"horizons":horizon_metrics},"promotion":gate,"cost_rate":COST_RATE,"horizons":HORIZONS,"python":platform.python_version()}; self.manifest_path.write_text(json.dumps(manifest,indent=2,sort_keys=True)); self.bundle=bundle; self.version=version
+        bundle={"schema_version":ARTIFACT_SCHEMA,"direction_model":direction,"baseline_model":baseline,"expected_return_model":er,"downside_model":dn,"volatility_model":vol,"regime_model":rm,"abstention_model":am,"meta_model":mm,"family":family,"decision_threshold":selection_threshold,"feature_hash":_feature_hash(),"features":FEATURES,"cost_rate":COST_RATE,"horizons":HORIZONS,"chosen_horizon":chosen_horizon,"horizon_selection":horizon_selection,"horizon_metrics":horizon_metrics,"oos_metrics":{"candidate":candidate_metrics,"baseline":baseline_metrics},"promotion":gate,"sequence_model_evaluation":{"status":"NOT_REQUIRED","reason":"Canonical Stage 3 data is tabular and the current sample/coverage does not justify sequence-model complexity; revisit when temporal sequence coverage and sample volume materially increase."}}
+        tmp=self.artifact_path.with_suffix(".tmp"); joblib.dump(bundle,tmp); tmp.replace(self.artifact_path); manifest={"schema_version":ARTIFACT_SCHEMA,"version":version,"features":FEATURES,"feature_hash":_feature_hash(),"family":family,"metrics":{"validation_families":validation_scores,"candidate_oos":candidate_metrics,"baseline_oos":baseline_metrics,"horizons":horizon_metrics},"promotion":gate,"cost_rate":COST_RATE,"horizons":HORIZONS,"chosen_horizon":chosen_horizon,"horizon_selection":horizon_selection,"python":platform.python_version()}; self.manifest_path.write_text(json.dumps(manifest,indent=2,sort_keys=True)); self.bundle=bundle; self.version=version
         return BrainReport("PROMOTED",version,manifest["metrics"],"Candidate cleared independent selection, calibrated untouched OOS evaluation and paired statistical promotion gates.",str(self.artifact_path))
     def predict(self,features):
         if self.bundle is None: return {"trained":False,"abstain":True,"version":self.version,"decision":"NO_TRADE","reason":"No promoted predictive brain artifact is available."}
