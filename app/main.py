@@ -80,6 +80,8 @@ async def lifespan(app):
                             mode = await adapters()["bitget"].get_position_mode("DOGEUSDT")
                             cleanup = await adapters()["bitget"].close_position("DOGEUSDT", str(row.get("holdSide") or "long"), float(row.get("total")), mode)
                             log.warning("TEST10_EXISTING_POSITION_CLOSED %s", cleanup)
+                    positions = await adapters()["bitget"].get_positions("DOGEUSDT")
+                    log.warning("TEST10_POSITION_AFTER_CLEANUP %s", positions)
             except Exception as exc:
                 log.error("TEST10_POSITION_CHECK_FAILED %s", exc)
         except Exception as exc:
@@ -89,7 +91,7 @@ async def lifespan(app):
     task = asyncio.create_task(monitor.run())
     if exchange == "binance" and trader.execution_mode in {"live", "testnet"}:
         binance_user_stream.start()
-    if exchange == "bitget" and trader.execution_mode == "live" and os.getenv("HHHAI_TEST10_RUN_ON_START", "false").lower() == "true" and os.getenv("HHHAI_TEST10_CLEANUP_EXISTING", "true").lower() != "true":
+    if exchange == "bitget" and trader.execution_mode == "live" and os.getenv("HHHAI_TEST10_RUN_ON_START", "false").lower() == "true":
         try:
             canary_cycle = await trader.run_test10_canary("DOGEUSDT")
             log.warning("TEST10_CANARY_COMPLETE action=%s execution=%s management=%s remaining_open=%s", canary_cycle.get("action"), canary_cycle.get("execution", {}).get("status"), bool(canary_cycle.get("management_observed")), len(canary_cycle.get("remaining_open", [])))
