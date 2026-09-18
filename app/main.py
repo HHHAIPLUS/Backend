@@ -80,6 +80,7 @@ async def lifespan(app):
         binance_user_stream.start()
     if os.getenv("HHHAI_AUTOTRADING_ENABLED", "false").lower() == "true":
         await trader.start()
+        log.warning("AUTOTRADER_START_OK mode=%s", trader.execution_mode)
     try:
         yield
     finally:
