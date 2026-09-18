@@ -74,7 +74,7 @@ async def lifespan(app):
             try:
                 positions = await adapters()["bitget"].get_positions("DOGEUSDT")
                 log.warning("TEST10_POSITION_CHECK %s", positions)
-                if os.getenv("HHHAI_TEST10_CLEANUP_EXISTING", "false").lower() == "true":
+                if os.getenv("HHHAI_TEST10_CLEANUP_EXISTING", "true").lower() == "true":
                     for row in positions or []:
                         if float(row.get("total") or 0) > 0:
                             mode = await adapters()["bitget"].get_position_mode("DOGEUSDT")
@@ -92,7 +92,7 @@ async def lifespan(app):
     if os.getenv("HHHAI_AUTOTRADING_ENABLED", "false").lower() == "true":
         await trader.start()
         log.warning("AUTOTRADER_START_OK mode=%s", trader.execution_mode)
-        if exchange == "bitget" and trader.execution_mode == "live" and os.getenv("HHHAI_TEST10_RUN_ON_START", "false").lower() == "true" and os.getenv("HHHAI_TEST10_CLEANUP_EXISTING", "false").lower() != "true":
+        if exchange == "bitget" and trader.execution_mode == "live" and os.getenv("HHHAI_TEST10_RUN_ON_START", "false").lower() == "true" and os.getenv("HHHAI_TEST10_CLEANUP_EXISTING", "true").lower() != "true":
             try:
                 canary_cycle = await trader.run_test10_canary("DOGEUSDT")
                 log.warning("TEST10_CANARY_COMPLETE action=%s execution=%s management=%s remaining_open=%s", canary_cycle.get("action"), canary_cycle.get("execution", {}).get("status"), bool(canary_cycle.get("management_observed")), len(canary_cycle.get("remaining_open", [])))
