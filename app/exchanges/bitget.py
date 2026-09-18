@@ -186,7 +186,8 @@ class BitgetAdapter(ExchangeAdapter):
             symbol = str(payload.get("symbol") or "").upper()
             size = float(payload.get("size") or 0)
             ticker = await self.get_ticker(symbol)
-            price = float((ticker or {}).get("lastPr") or 0)
+            ticker_row = ticker[0] if isinstance(ticker, list) and ticker else ticker
+            price = float((ticker_row or {}).get("lastPr") or 0)
             contracts = await self.get_contract_config(symbol)
             contract = contracts[0] if isinstance(contracts, list) and contracts else contracts
             if size <= 0 or price <= 0 or not isinstance(contract, dict):
