@@ -25,7 +25,7 @@ from app.market_data.realtime import build_world_intelligence
 from app.market_data.binance_user_stream import binance_user_stream
 from app.ml.predictive import predictive_model
 from app.ml.predictive_brain import predictive_brain
-from app.persistence.repository import record_decision, record_outcome, record_event
+from app.persistence.repository import record_decision, record_outcome, record_event, record_adaptive_observation
 from app.persistence.supabase import store
 
 log = logging.getLogger("hhhai.autonomous_trader")
@@ -288,9 +288,13 @@ class AutonomousTrader:
             from app.ml.adaptive_intelligence import AdaptiveObservation, adaptive_intelligence
             obs=AdaptiveObservation(symbol=symbol,model_version="paper",action=action,confidence=0.0,realized_return=net,observed_at=payload["closed_at"],regime=str(world.get("regime") or "unknown"),horizon=6,expected_probability=None,features={})
             adaptive_intelligence.add_observation(obs)
+            if store.configured:
+                from dataclasses import asdict
+                await record_adaptive_observation({"id":str(uuid4()),**asdict(obs)})
         except Exception:
             pass
-        await record_event("paper_trade_completed",payload) if store.configured else None
+        if store.configured:
+            await record_event("paper_trade_completed",payload)
         return [payload]
 
     async def run_cycle(self,symbol:str)->dict[str,Any]:
