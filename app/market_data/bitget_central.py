@@ -27,6 +27,7 @@ STALE_SECONDS = 15
 BOOTSTRAP_INTERVAL = 300.0
 REST_MIN_INTERVAL = 1.0
 REST_COOLDOWN_SECONDS = 60.0
+REST_MARKET_FALLBACK_INTERVAL = 5.0
 
 class _State:
     def __init__(self, symbol: str):
@@ -52,6 +53,7 @@ class _State:
         self.last_bootstrap = 0.0
         self.rest_blocked_until = 0.0
         self.rest_last_request = 0.0
+        self.rest_market_last_request = 0.0
 
 class CentralBitgetMarketData:
     """Single in-process Bitget USDT-futures market-data source.
@@ -232,9 +234,53 @@ class CentralBitgetMarketData:
             log.warning("Bitget candle bootstrap failed for %s: %s", state.symbol, exc)
 
     @classmethod
+    def _rest_market_fallback(cls, state: _State) -> bool:
+        now = time.time()
+        with state.lock:
+            if now - state.rest_market_last_request < REST_MARKET_FALLBACK_INTERVAL:
+                return False
+            state.rest_market_last_request = now
+        try:
+            response = httpx.get(
+                f"{REST_URL}/api/v2/mix/market/ticker",
+                params={"productType": "USDT-FUTURES", "symbol": state.symbol},
+                timeout=5.0,
+            )
+            if response.status_code == 429:
+                raise RuntimeError("Bitget ticker fallback rate limited (429)")
+            response.raise_for_status()
+            payload = response.json()
+            data = payload.get("data") or {}
+            row = data[0] if isinstance(data, list) and data else data
+            if not row:
+                return False
+            with state.lock:
+                state.price = float(row.get("lastPr") or state.price or 0)
+                state.mark_price = float(row.get("markPrice") or state.mark_price or 0)
+                state.bid = float(row.get("bidPr") or state.bid or 0)
+                state.ask = float(row.get("askPr") or state.ask or 0)
+                state.bid_qty = float(row.get("bidSz") or state.bid_qty or 0)
+                state.ask_qty = float(row.get("askSz") or state.ask_qty or 0)
+                state.volume_24h = float(row.get("quoteVolume") or state.volume_24h or 0)
+                state.price_change_24h = float(row.get("change24h") or state.price_change_24h or 0)
+                state.funding_rate = float(row.get("fundingRate") or state.funding_rate or 0)
+                state.open_interest = float(row.get("holdingAmount") or state.open_interest or 0) or None
+                state.last_update = time.time()
+                state.ready.set()
+            log.warning("Bitget WebSocket stale for %s; using rate-limited REST ticker fallback", state.symbol)
+            return True
+        except Exception as exc:
+            log.warning("Bitget REST market fallback failed for %s: %s", state.symbol, exc)
+            return False
+
+    @classmethod
     def snapshot(cls, symbol: str) -> RealtimeSnapshot:
         state = cls._state(symbol)
         cls._bootstrap_candles(state)
+        with state.lock:
+            stale = (time.time() - state.last_update) > STALE_SECONDS or state.price <= 0
+        if stale:
+            cls._rest_market_fallback(state)
         if not state.ready.wait(timeout=5):
             raise RuntimeError(f"Bitget WebSocket data not ready for {symbol.upper()}")
         with state.lock:
