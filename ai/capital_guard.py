@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+import os
 
 class GuardDecision(str, Enum):
     ALLOW='allow'; BLOCK='block'; EMERGENCY_STOP='emergency_stop'
@@ -7,12 +8,12 @@ class GuardDecision(str, Enum):
 @dataclass
 class CapitalPolicy:
     max_position_risk_pct: float=0.5
-    max_daily_loss_pct: float=3.0
-    max_drawdown_pct: float=8.0
-    max_leverage: float=5.0
-    max_open_positions: int=3
-    min_free_margin_pct: float=30.0
-    max_slippage_bps: float=20.0
+    max_daily_loss_pct: float=2.0
+    max_drawdown_pct: float=5.0
+    max_leverage: float=3.0
+    max_open_positions: int=2
+    min_free_margin_pct: float=50.0
+    max_slippage_bps: float=10.0
 
 @dataclass
 class RiskSnapshot:
@@ -21,7 +22,16 @@ class RiskSnapshot:
     expected_slippage_bps: float; data_fresh: bool=True; exchange_healthy: bool=True
 
 class CapitalGuard:
-    def __init__(self, policy=None): self.policy=policy or CapitalPolicy()
+    def __init__(self, policy=None):
+        self.policy=policy or CapitalPolicy(
+            max_position_risk_pct=float(os.getenv("HHHAI_MAX_POSITION_RISK_PCT","0.5")),
+            max_daily_loss_pct=float(os.getenv("HHHAI_MAX_DAILY_LOSS_PCT","2.0")),
+            max_drawdown_pct=float(os.getenv("HHHAI_MAX_DRAWDOWN_PCT","5.0")),
+            max_leverage=float(os.getenv("HHHAI_MAX_LEVERAGE","3.0")),
+            max_open_positions=int(os.getenv("HHHAI_MAX_OPEN_POSITIONS","2")),
+            min_free_margin_pct=float(os.getenv("HHHAI_MIN_FREE_MARGIN_PCT","50.0")),
+            max_slippage_bps=float(os.getenv("HHHAI_MAX_SLIPPAGE_BPS","10.0")),
+        )
     def evaluate(self,s):
         if s.equity<=0: return {'decision':'emergency_stop','reasons':['Non-positive equity'],'execution_authority':False}
         reasons=[]
@@ -35,7 +45,8 @@ class CapitalGuard:
         free_pct=s.free_margin/s.equity*100
         if free_pct < self.policy.min_free_margin_pct: reasons.append('Free margin buffer is too small.')
         if s.expected_slippage_bps > self.policy.max_slippage_bps: reasons.append('Expected slippage is too high.')
-        decision='emergency_stop' if s.daily_pnl_pct <= -self.policy.max_daily_loss_pct or s.drawdown_pct >= self.policy.max_drawdown_pct else ('block' if reasons else 'allow')
+        emergency=s.daily_pnl_pct <= -self.policy.max_daily_loss_pct or s.drawdown_pct >= self.policy.max_drawdown_pct or not s.data_fresh or not s.exchange_healthy
+        decision='emergency_stop' if emergency else ('block' if reasons else 'allow')
         return {'decision':decision,'reasons':reasons,'free_margin_pct':free_pct,'execution_authority':False}
     def size_for_risk(self,equity,stop_distance_pct,risk_pct):
         if equity<=0 or stop_distance_pct<=0 or risk_pct<=0:return 0.0
