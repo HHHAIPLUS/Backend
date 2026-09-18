@@ -133,7 +133,8 @@ class PredictiveBrain:
         if not viable: return BrainReport("REJECTED",version,{"horizon_selection":horizon_selection}, "No horizon produced enough validation trades for selection.")
         chosen_horizon=max(viable,key=lambda z:(z[0],z[1]))[2]
         returns=_future_return(rows,chosen_horizon); d=_direction_target(returns)
-        pre_r=returns[:test_start]; rte=returns[test_start:]; pre_y=d[:test_start]; dte=d[test_start:]\n        if len(set(dte.tolist()))<3: return BrainReport("REJECTED",version,{"chosen_horizon":chosen_horizon}, "Untouched OOS test period must contain all three direction classes.")
+        pre_r=returns[:test_start]; rte=returns[test_start:]; pre_y=d[:test_start]; dte=d[test_start:]
+        if len(set(dte.tolist()))<3: return BrainReport("REJECTED",version,{"chosen_horizon":chosen_horizon}, "Untouched OOS test period must contain all three direction classes.")
         xfit,xval=pre[:select_end],pre[select_end:]; yfit,yval=pre_y[:select_end],pre_y[select_end:]
         if len(xval)<100 or len(set(yfit.tolist()))<3 or len(set(yval.tolist()))<3: return BrainReport("REJECTED",version,{},"Model-selection validation partition is insufficient.")
         validation_scores={}; candidates=[]
