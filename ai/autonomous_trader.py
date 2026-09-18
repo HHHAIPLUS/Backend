@@ -296,7 +296,18 @@ class AutonomousTrader:
         if self.execution_mode=='paper': order=self.paper.submit(symbol,side,quantity,price); return {'status':'filled_simulated','order_id':order.order_id,'mode':'paper','live_exchange_order':False,'quantity':quantity,'price':price}
         exchange=self._exchange_for_market(); safe_qty=self._safe_quantity(quantity); stop_price=float(candidate.invalidation); take_profit=float(candidate.target)
         if exchange=='bitget':
-            adapter=self._adapters()[exchange]; position_mode=await adapter.get_position_mode(symbol); order={'symbol':symbol,'marginCoin':'USDT','side':side,'orderType':'market','size':safe_qty,'tradeSide':'open','marginMode':'crossed','presetStopLossPrice':f'{stop_price:.8f}','presetStopSurplusPrice':f'{take_profit:.8f}',}; result=await self.router.place_order(exchange,order,testnet=self.execution_mode=='testnet'); order_id=result.get('orderId') if isinstance(result,dict) else None
+            adapter=self._adapters()[exchange]
+            position_mode=await adapter.get_position_mode(symbol)
+            contracts=await adapter.get_contract_config(symbol)
+            contract=contracts[0] if isinstance(contracts,list) and contracts else contracts
+            if isinstance(contract,dict):
+                price_place=int(contract.get('pricePlace') or 8)
+                price_step=float(contract.get('priceEndStep') or 1) * (10 ** (-price_place))
+                if price_step>0:
+                    stop_price=round(round(stop_price/price_step)*price_step,price_place)
+                    take_profit=round(round(take_profit/price_step)*price_step,price_place)
+            order={'symbol':symbol,'marginCoin':'USDT','side':side,'orderType':'market','size':safe_qty,'tradeSide':'open','marginMode':'crossed','presetStopLossPrice':str(stop_price),'presetStopSurplusPrice':str(take_profit)}
+            result=await self.router.place_order(exchange,order,testnet=self.execution_mode=='testnet'); order_id=result.get('orderId') if isinstance(result,dict) else None
             if order_id and hasattr(adapter,'wait_for_fill'):
                 detail=await adapter.wait_for_fill(symbol,order_id,float(os.getenv('HHHAI_ORDER_FILL_TIMEOUT_SECONDS','5'))); state=str(detail.get('state') or '').lower()
                 if state not in {'filled','partially_filled'}:
