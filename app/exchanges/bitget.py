@@ -247,8 +247,9 @@ class BitgetAdapter(ExchangeAdapter):
             "marginMode": "crossed",
             "reduceOnly": "YES",
         }
-        if position_mode == "HEDGE":
-            payload["tradeSide"] = "close"
+        # Bitget hedge mode requires an explicit close trade side. Sending it
+        # consistently also avoids ambiguity during the controlled canary cleanup.
+        payload["tradeSide"] = "close"
         return await self.place_order(payload)
 
     async def get_position_mode(self, symbol="BTCUSDT"):
