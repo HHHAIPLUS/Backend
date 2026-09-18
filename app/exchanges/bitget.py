@@ -105,7 +105,8 @@ class BitgetAdapter(ExchangeAdapter):
             if response.status_code == 429:
                 self._block_after_429(response.headers.get("Retry-After"))
                 raise RuntimeError("Bitget REST rate limit reached; HHHAI execution is blocked until cooldown expires")
-            response.raise_for_status()
+            if response.status_code >= 400:
+                raise RuntimeError(f"Bitget HTTP {response.status_code}: {response.text[:500]}")
             data = response.json()
             if data.get("code") not in (None, "00000", 0):
                 raise RuntimeError(f"Bitget API error: {data.get('code')} {data.get('msg')}")
