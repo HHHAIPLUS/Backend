@@ -25,6 +25,8 @@ REST_URL = "https://api.bitget.com"
 MAX_CANDLES = 30
 STALE_SECONDS = 15
 BOOTSTRAP_INTERVAL = 300.0
+REST_MIN_INTERVAL = 1.0
+REST_COOLDOWN_SECONDS = 60.0
 
 class _State:
     def __init__(self, symbol: str):
@@ -48,6 +50,8 @@ class _State:
         self.candles = deque(maxlen=MAX_CANDLES)
         self.current_candle = None
         self.last_bootstrap = 0.0
+        self.rest_blocked_until = 0.0
+        self.rest_last_request = 0.0
 
 class CentralBitgetMarketData:
     """Single in-process Bitget USDT-futures market-data source.
@@ -189,8 +193,16 @@ class CentralBitgetMarketData:
     @classmethod
     def _bootstrap_candles(cls, state: _State) -> None:
         now = time.time()
-        if now - state.last_bootstrap < BOOTSTRAP_INTERVAL:
-            return
+        with state.lock:
+            if now < state.rest_blocked_until:
+                return
+            if now - state.last_bootstrap < BOOTSTRAP_INTERVAL:
+                return
+            wait_for = REST_MIN_INTERVAL - (now - state.rest_last_request)
+            if wait_for > 0:
+                return
+            state.rest_last_request = now
+            state.last_bootstrap = now
         try:
             response = httpx.get(
                 f"{REST_URL}/api/v2/mix/market/candles",
@@ -198,7 +210,14 @@ class CentralBitgetMarketData:
                 timeout=8.0,
             )
             if response.status_code == 429:
-                raise RuntimeError("Bitget candle bootstrap rate limited (429)")
+                retry_after = response.headers.get("Retry-After")
+                try:
+                    cooldown = max(REST_COOLDOWN_SECONDS, min(float(retry_after or REST_COOLDOWN_SECONDS), 900.0))
+                except (TypeError, ValueError):
+                    cooldown = REST_COOLDOWN_SECONDS
+                with state.lock:
+                    state.rest_blocked_until = time.time() + cooldown
+                raise RuntimeError(f"Bitget candle bootstrap rate limited (429); cooldown {cooldown:.0f}s")
             response.raise_for_status()
             payload = response.json()
             rows = payload.get("data") or []
@@ -209,7 +228,6 @@ class CentralBitgetMarketData:
             with state.lock:
                 state.candles.clear()
                 state.candles.extend(candles[-MAX_CANDLES:])
-                state.last_bootstrap = now
         except Exception as exc:
             log.warning("Bitget candle bootstrap failed for %s: %s", state.symbol, exc)
 
