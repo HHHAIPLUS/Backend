@@ -8,6 +8,7 @@ import json
 import threading
 import time
 import uuid
+import math
 from collections import deque
 from urllib.parse import urlencode
 
@@ -137,6 +138,35 @@ class BitgetAdapter(ExchangeAdapter):
     async def get_ticker(self, symbol):
         return await self._request("GET", "/api/v2/mix/market/ticker", {"productType": "USDT-FUTURES", "symbol": symbol.upper()})
 
+    async def get_contract_config(self, symbol=None):
+        params = {"productType": "USDT-FUTURES"}
+        if symbol:
+            params["symbol"] = symbol.upper()
+        return await self._request("GET", "/api/v2/mix/market/contracts", params=params)
+
+    async def set_leverage(self, symbol, leverage):
+        return await self._request(
+            "POST",
+            "/api/v2/mix/account/set-leverage",
+            body={
+                "symbol": symbol.upper(),
+                "productType": "USDT-FUTURES",
+                "marginCoin": "USDT",
+                "leverage": str(leverage),
+            },
+            private=True,
+        )
+
+    @staticmethod
+    def _minimum_order_size(contract, price):
+        min_num = float(contract.get("minTradeNum") or 0)
+        min_usdt = float(contract.get("minTradeUSDT") or 0)
+        multiplier = float(contract.get("sizeMultiplier") or 0)
+        required = max(min_num, min_usdt / max(price, 1e-12))
+        if multiplier > 0:
+            required = math.ceil(required / multiplier - 1e-12) * multiplier
+        return required
+
     async def place_order(self, order):
         payload = {"productType": "USDT-FUTURES", **order}
         payload.setdefault("clientOid", f"HHHAI-{uuid.uuid4().hex[:20]}")
@@ -157,11 +187,20 @@ class BitgetAdapter(ExchangeAdapter):
             size = float(payload.get("size") or 0)
             ticker = await self.get_ticker(symbol)
             price = float((ticker or {}).get("lastPr") or 0)
+            contracts = await self.get_contract_config(symbol)
+            contract = contracts[0] if isinstance(contracts, list) and contracts else contracts
+            if size <= 0 or price <= 0 or not isinstance(contract, dict):
+                raise RuntimeError("Live canary blocked order: Bitget order size, price, or contract rules are unavailable")
+            minimum_size = self._minimum_order_size(contract, price)
+            if minimum_size > 0 and size < minimum_size:
+                size = minimum_size
+                payload["size"] = str(size)
             notional = size * price
-            if size <= 0 or price <= 0:
-                raise RuntimeError("Live canary blocked order: Bitget size or market price is unavailable")
             if notional > max_notional + 1e-9:
-                raise RuntimeError(f"Live canary blocked order: notional {notional:.8f} USDT exceeds maximum {max_notional:.8f} USDT")
+                raise RuntimeError(
+                    f"Live canary blocked order: minimum valid notional {notional:.8f} USDT exceeds maximum {max_notional:.8f} USDT"
+                )
+            await self.set_leverage(symbol, 2)
         result = await self._request("POST", "/api/v2/mix/order/place-order", body=payload, private=True)
         if canary:
             self.__class__._live_canary_trade_count += 1
