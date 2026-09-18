@@ -57,3 +57,13 @@ def test_bitget_ws_state_does_not_depend_on_rest_for_live_updates():
     )
     assert state.ready.is_set()
     assert time.time() - state.last_update < 2
+
+
+def test_bitget_account_status_normalizes_usdt_balance(monkeypatch):
+    async def fake_request(self, method, path, params=None, body=None, private=False):
+        return [{"marginCoin": "USDT", "available": "1.75", "accountEquity": "2.00"}]
+    monkeypatch.setattr(BitgetAdapter, "_request", fake_request)
+    import asyncio
+    result = asyncio.run(BitgetAdapter(testnet=False).get_account_status())
+    assert result["available_balance"] == 1.75
+    assert result["total_wallet_balance"] == 2.0
