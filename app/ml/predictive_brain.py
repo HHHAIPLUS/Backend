@@ -134,7 +134,7 @@ class PredictiveBrain:
         best=max(candidates,key=lambda c:(c[0],c[1])); family=best[2]
         if family != "logistic_regression" and (best[0] <= float(base.get("avg_net_return",-1e99)) or best[1] < float(base.get("balanced_accuracy",0.0))):
             family="logistic_regression"
-        cal_start=int(len(pre)*.75); x_model=pre[:cal_start]; y_model=pre_y[:cal_start]; x_cal=pre[cal_start:]; y_cal=pre_y[cal_start:]
+        cal_start=select_end; x_model=pre[:cal_start]; y_model=pre_y[:cal_start]; x_cal=pre[cal_start:]; y_cal=pre_y[cal_start:]
         if len(x_cal)<100 or len(set(y_model.tolist()))<3 or len(set(y_cal.tolist()))<3: return BrainReport("REJECTED",version,{},"Calibration partition is insufficient.")
         direction_raw=_classifier(family); direction_raw.fit(x_model,y_model); direction=_calibrate(direction_raw,x_cal,y_cal)
         baseline_raw=_classifier("logistic_regression"); baseline_raw.fit(x_model,y_model); baseline=_calibrate(baseline_raw,x_cal,y_cal)
