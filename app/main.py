@@ -89,15 +89,15 @@ async def lifespan(app):
     task = asyncio.create_task(monitor.run())
     if exchange == "binance" and trader.execution_mode in {"live", "testnet"}:
         binance_user_stream.start()
+    if exchange == "bitget" and trader.execution_mode == "live" and os.getenv("HHHAI_TEST10_RUN_ON_START", "false").lower() == "true" and os.getenv("HHHAI_TEST10_CLEANUP_EXISTING", "true").lower() != "true":
+        try:
+            canary_cycle = await trader.run_test10_canary("DOGEUSDT")
+            log.warning("TEST10_CANARY_COMPLETE action=%s execution=%s management=%s remaining_open=%s", canary_cycle.get("action"), canary_cycle.get("execution", {}).get("status"), bool(canary_cycle.get("management_observed")), len(canary_cycle.get("remaining_open", [])))
+        except Exception as exc:
+            log.error("TEST10_CANARY_CYCLE_FAILED %s", exc)
     if os.getenv("HHHAI_AUTOTRADING_ENABLED", "false").lower() == "true":
         await trader.start()
         log.warning("AUTOTRADER_START_OK mode=%s", trader.execution_mode)
-        if exchange == "bitget" and trader.execution_mode == "live" and os.getenv("HHHAI_TEST10_RUN_ON_START", "false").lower() == "true" and os.getenv("HHHAI_TEST10_CLEANUP_EXISTING", "true").lower() != "true":
-            try:
-                canary_cycle = await trader.run_test10_canary("DOGEUSDT")
-                log.warning("TEST10_CANARY_COMPLETE action=%s execution=%s management=%s remaining_open=%s", canary_cycle.get("action"), canary_cycle.get("execution", {}).get("status"), bool(canary_cycle.get("management_observed")), len(canary_cycle.get("remaining_open", [])))
-            except Exception as exc:
-                log.error("TEST10_CANARY_CYCLE_FAILED %s", exc)
     try:
         yield
     finally:
