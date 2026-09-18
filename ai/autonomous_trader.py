@@ -100,7 +100,7 @@ class AutonomousTrader:
         return self.status()
 
     async def _run(self) -> None:
-        log.info("Autonomous trader started in %s mode for %s",self.execution_mode,self.config.symbols); next_decision=0.0; next_management=0.0
+        log.warning("AUTOTRADER_LOOP_STARTED mode=%s symbols=%s",self.execution_mode,self.config.symbols); next_decision=0.0; next_management=0.0
         while self.running:
             now=asyncio.get_running_loop().time()
             if self.execution_mode in {"testnet","live"} and now>=next_management:
@@ -112,7 +112,7 @@ class AutonomousTrader:
                 next_management=now+self.position_review_interval
             if now>=next_decision:
                 for symbol in self.config.symbols:
-                    try: self.last_cycle=await self.run_cycle(symbol); self.last_cycle_at=datetime.now(timezone.utc); self.last_error=None
+                    try:\n                        self.last_cycle=await self.run_cycle(symbol); self.last_cycle_at=datetime.now(timezone.utc); self.last_error=None\n                        log.warning("AUTOTRADER_CYCLE symbol=%s action=%s execution=%s risk=%s",symbol,self.last_cycle.get("decision",{}).get("action"),self.last_cycle.get("execution",{}).get("status"),self.last_cycle.get("risk",{}).get("decision"))
                     except Exception as exc: self.last_error=f"{type(exc).__name__}: {exc}"; log.exception("Autonomous decision cycle failed for %s",symbol)
                 next_decision=now+self.config.interval_seconds
             try: await asyncio.sleep(min(1.0,self.position_review_interval))
