@@ -201,7 +201,17 @@ class BitgetAdapter(ExchangeAdapter):
                 raise RuntimeError(
                     f"Live canary blocked order: minimum valid notional {notional:.8f} USDT exceeds maximum {max_notional:.8f} USDT"
                 )
-            await self.set_leverage(symbol, 2)
+            leverage = 2
+            account = await self.get_account_status()
+            available = float(account.get("available_balance") or 0)
+            estimated_margin = notional / leverage
+            safety_buffer = min(0.50, max(0.10, available * 0.10))
+            if estimated_margin + safety_buffer > available:
+                raise RuntimeError(
+                    f"Live canary blocked order: estimated margin {estimated_margin:.8f} USDT plus safety buffer "
+                    f"{safety_buffer:.8f} USDT exceeds available balance {available:.8f} USDT"
+                )
+            await self.set_leverage(symbol, leverage)
         result = await self._request("POST", "/api/v2/mix/order/place-order", body=payload, private=True)
         if canary:
             self.__class__._live_canary_trade_count += 1
