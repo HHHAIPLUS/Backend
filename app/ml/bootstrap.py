@@ -174,8 +174,8 @@ def fetch_bitget_klines(symbol: str, interval: str = "5m", limit: int = 1500) ->
 
 def fetch_binance_archive_klines(symbol: str, interval: str = "5m", limit: int = 8000) -> list[list[Any]]:
     """Fallback to Binance public USD-M futures historical archives."""
-    if interval != "5m":
-        raise ValueError("Archive bootstrap currently supports 5m candles only.")
+    if interval not in {"1m","3m","5m","15m","30m","1h","4h","1d"}:
+        raise ValueError(f"Unsupported Binance archive interval: {interval}")
     target = max(500, min(10000, int(limit)))
     now = datetime.now(timezone.utc)
     month_cursor = (now.replace(day=1) - timedelta(days=1)).replace(day=1)
