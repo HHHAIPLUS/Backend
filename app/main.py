@@ -67,11 +67,19 @@ async def lifespan(app):
         try:
             symbol = os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOL", "BTCUSDT").upper()
             limit = max(5000, min(10000, int(os.getenv("HHHAI_BRAIN_BOOTSTRAP_CANDLES", "8000"))))
-            raw, provider = await asyncio.to_thread(fetch_historical_klines, symbol, "5m", limit)
-            log.warning("PREDICTIVE_BRAIN_DATA_PROVIDER %s", provider)
-            rows = build_dataset(raw, horizon=6, threshold=float(os.getenv("HHHAI_BRAIN_LABEL_THRESHOLD", "0.0025")))
-            report = await asyncio.to_thread(predictive_brain.train, rows, f"brain-{symbol}-5m")
-            log.warning("PREDICTIVE_BRAIN_BOOTSTRAP status=%s version=%s reason=%s metrics=%s", report.status, report.version, report.reason, report.metrics)
+            intervals = [x.strip() for x in os.getenv("HHHAI_BRAIN_BOOTSTRAP_INTERVALS", "15m,30m,1h").split(",") if x.strip()]
+            threshold = float(os.getenv("HHHAI_BRAIN_LABEL_THRESHOLD", "0.0008"))
+            for interval in intervals:
+                try:
+                    raw, provider = await asyncio.to_thread(fetch_historical_klines, symbol, interval, limit)
+                    log.warning("PREDICTIVE_BRAIN_DATA_PROVIDER interval=%s provider=%s candles=%s", interval, provider, len(raw))
+                    rows = build_dataset(raw, horizon=6, threshold=threshold)
+                    report = await asyncio.to_thread(predictive_brain.train, rows, f"brain-{symbol}-{interval}")
+                    log.warning("PREDICTIVE_BRAIN_BOOTSTRAP status=%s version=%s reason=%s metrics=%s", report.status, report.version, report.reason, report.metrics)
+                    if report.status == "PROMOTED":
+                        break
+                except Exception as interval_exc:
+                    log.warning("PREDICTIVE_BRAIN_INTERVAL_FAILED interval=%s error=%s", interval, interval_exc)
         except Exception as exc:
             log.error("PREDICTIVE_BRAIN_BOOTSTRAP_FAILED %s", exc)
     await hydrate_learning()
