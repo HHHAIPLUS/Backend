@@ -5,6 +5,7 @@ import asyncio
 from app.services.monitor_worker import monitor
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import logging
 from app.api.health import router as health_router
 from app.api.status import router as status_router
 from app.api.integration import router as integration_router
@@ -42,10 +43,11 @@ from app.market_data.bitget_central import CentralBitgetMarketData
 from app.market_data import realtime as realtime_market_data
 from app.market_data.binance_user_stream import binance_user_stream
 from app.services.binance_execution_guard import install_binance_execution_guard
+from app.exchanges.factory import adapters
 from app.core.config import settings
 
-# Route Bitget observations through the centralized WebSocket cache. This keeps
-# continuous market monitoring off Bitget REST and preserves one source of truth.
+log = logging.getLogger(__name__)
+
 realtime_market_data.BitgetPublicFeed.snapshot = lambda self, symbol: CentralBitgetMarketData.snapshot(symbol)
 
 CentralBinanceMarketData.install()
@@ -64,6 +66,12 @@ async def lifespan(app):
     await hydrate_model()
     await hydrate_stage8_risk(stage8_risk)
     exchange = os.getenv("HHHAI_EXECUTION_EXCHANGE", os.getenv("HHHAI_MARKET_EXCHANGE", "binance")).lower()
+    if exchange == "bitget":
+        try:
+            account = await adapters()["bitget"].get_account_status()
+            log.info("BITGET_AUTH_CHECK_OK available_balance=%s", account.get("available_balance"))
+        except Exception as exc:
+            log.error("BITGET_AUTH_CHECK_FAILED %s", exc)
     if exchange == "binance":
         CentralBinanceMarketData._start_universe()
     task = asyncio.create_task(monitor.run())
