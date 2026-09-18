@@ -34,7 +34,7 @@ from app.api.position_intelligence import router as position_intelligence_router
 from app.api.risk_capital import router as risk_capital_router
 from app.ml.model_persistence import hydrate_model
 from app.ml.predictive_brain import predictive_brain
-from app.ml.binance_historical import fetch_binance_klines
+from app.ml.bootstrap import fetch_historical_klines
 from app.ml.bootstrap import build_dataset
 from ai.autonomous_trader import trader
 from ai.position_intelligence import install_stage6_position_intelligence
@@ -67,7 +67,8 @@ async def lifespan(app):
         try:
             symbol = os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOL", "BTCUSDT").upper()
             limit = max(5000, min(10000, int(os.getenv("HHHAI_BRAIN_BOOTSTRAP_CANDLES", "8000"))))
-            raw = await asyncio.to_thread(fetch_binance_klines, symbol, "5m", limit)
+            raw, provider = await asyncio.to_thread(fetch_historical_klines, symbol, "5m", limit)
+            log.warning("PREDICTIVE_BRAIN_DATA_PROVIDER %s", provider)
             rows = build_dataset(raw, horizon=6, threshold=float(os.getenv("HHHAI_BRAIN_LABEL_THRESHOLD", "0.0025")))
             report = await asyncio.to_thread(predictive_brain.train, rows, f"brain-{symbol}-5m")
             log.warning("PREDICTIVE_BRAIN_BOOTSTRAP status=%s version=%s reason=%s", report.status, report.version, report.reason)
