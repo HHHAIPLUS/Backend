@@ -146,7 +146,7 @@ class PredictiveBrain:
             traded=selected!=0
             if int(traded.sum())<100: continue
             net=_net_returns(y_cal*0.0 + returns[cal_start:test_start],selected)
-            score=float(net.sum()) - 0.5*float(np.max(np.maximum.accumulate(np.r_[0.0,np.cumsum(net)])-np.cumsum(net)))
+            score=float(net.sum()) - 0.5*float(np.max(np.maximum.accumulate(np.r_[0.0,np.cumsum(net)])[1:]-np.cumsum(net)))
             if score>selection_score: selection_score=score; selection_threshold=float(threshold)
         candidate_pred=direction.predict(xte); candidate_prob=direction.predict_proba(xte)
         candidate_pred[candidate_prob.max(axis=1) < selection_threshold]=0
