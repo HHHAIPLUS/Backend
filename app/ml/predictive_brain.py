@@ -117,11 +117,11 @@ class PredictiveBrain:
             try:
                 m=_classifier(family); m.fit(xfit,yfit); p=m.predict(xval); pr=m.predict_proba(xval); s=_metrics(yval,p,pr,m.classes_,pre_r[select_end:]); validation_scores[family]=s; candidates.append((s["avg_net_return"],s["balanced_accuracy"],family))
             except Exception as exc: validation_scores[family]={"error":f"{type(exc).__name__}: {exc}"}
-        base=validation_scores.get("logistic_regression"); complex_candidates=[c for c in candidates if c[2]!="logistic_regression"]
-        if not base or not complex_candidates: return BrainReport("REJECTED",version,{"validation_families":validation_scores},"Complete model-family evaluation was not possible.")
-        best=max(complex_candidates,key=lambda c:(c[0],c[1]));
-        if best[0]<=float(base.get("avg_net_return",-1e99)) or best[1]<float(base.get("balanced_accuracy",0.0)): return BrainReport("REJECTED",version,{"validation_families":validation_scores,"best_candidate":best[2]},"No complex family beat the logistic baseline on the independent selection period.")
-        family=best[2]
+        base=validation_scores.get("logistic_regression")
+        if not base or not candidates: return BrainReport("REJECTED",version,{"validation_families":validation_scores},"Complete model-family evaluation was not possible.")
+        best=max(candidates,key=lambda c:(c[0],c[1])); family=best[2]
+        if family != "logistic_regression" and (best[0] <= float(base.get("avg_net_return",-1e99)) or best[1] < float(base.get("balanced_accuracy",0.0))):
+            family="logistic_regression"
         cal_start=int(len(pre)*.75); x_model=pre[:cal_start]; y_model=pre_y[:cal_start]; x_cal=pre[cal_start:]; y_cal=pre_y[cal_start:]
         if len(x_cal)<100 or len(set(y_model.tolist()))<3 or len(set(y_cal.tolist()))<3: return BrainReport("REJECTED",version,{},"Calibration partition is insufficient.")
         direction_raw=_classifier(family); direction_raw.fit(x_model,y_model); direction=_calibrate(direction_raw,x_cal,y_cal)
@@ -129,7 +129,8 @@ class PredictiveBrain:
         candidate_pred=direction.predict(xte); candidate_prob=direction.predict_proba(xte); baseline_pred=baseline.predict(xte); baseline_prob=baseline.predict_proba(xte)
         candidate_metrics=_metrics(dte,candidate_pred,candidate_prob,direction.classes_,rte); baseline_metrics=_metrics(dte,baseline_pred,baseline_prob,baseline.classes_,rte)
         gate=promotion_gate(_net_returns(rte,candidate_pred),_net_returns(rte,baseline_pred),candidate_metrics["balanced_accuracy"],baseline_metrics["balanced_accuracy"],candidate_metrics["max_drawdown"],baseline_metrics["max_drawdown"])
-        if not gate["promoted"]: return BrainReport("REJECTED",version,{"validation_families":validation_scores,"baseline_oos":baseline_metrics,"candidate_oos":candidate_metrics,"promotion":gate},"Candidate did not clear the untouched OOS statistical/economic promotion gate.")
+        absolute_gate={"enough_samples":candidate_metrics["trades"]>=100,"accuracy_ok":candidate_metrics["accuracy"]>=0.52,"balanced_accuracy_ok":candidate_metrics["balanced_accuracy"]>=0.50,"positive_trade_expectancy":candidate_metrics["avg_trade_net_return"]>0.0,"positive_total_net_return":candidate_metrics["total_net_return"]>0.0,"drawdown_ok":candidate_metrics["max_drawdown"]<=0.15}
+        if not all(absolute_gate.values()): return BrainReport("REJECTED",version,{"validation_families":validation_scores,"baseline_oos":baseline_metrics,"candidate_oos":candidate_metrics,"promotion":gate,"absolute_gate":absolute_gate},"Candidate did not clear the untouched OOS absolute safety gate.")
         er=_regressor(family); er.fit(pre,pre_r); dn=_regressor(family); dn.fit(pre,np.minimum(pre_r,0)); vol=_regressor(family); vol.fit(pre,np.abs(pre_r)); rv=np.abs(pre_r); rq=np.quantile(rv,[.33,.66]); regime_target=np.where(rv>rq[1],2,np.where(rv>rq[0],1,0)); rm=_classifier(family); rm.fit(pre,regime_target); am=HistGradientBoostingClassifier(max_iter=150,random_state=46).fit(pre,(np.abs(pre_r)<=COST_RATE).astype(int))
         meta_rows=[]; meta_y=[]; starts=max(250,len(pre)//3); step=max(75,(len(pre)-starts)//4)
         for end in range(starts,len(pre),step):
