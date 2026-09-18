@@ -19,6 +19,7 @@ from app.core.config import settings
 
 class BitgetAdapter(ExchangeAdapter):
     name = "bitget"
+    _live_canary_trade_count = 0
 
     # Deliberately conservative global limiter. Bitget documents 6000 requests/IP/min
     # overall, plus endpoint-specific limits. HHHAI stays far below those ceilings.
@@ -138,7 +139,32 @@ class BitgetAdapter(ExchangeAdapter):
     async def place_order(self, order):
         payload = {"productType": "USDT-FUTURES", **order}
         payload.setdefault("clientOid", f"HHHAI-{uuid.uuid4().hex[:20]}")
-        return await self._request("POST", "/api/v2/mix/order/place-order", body=payload, private=True)
+        canary = (
+            not self.testnet
+            and settings.live_trading_enabled
+            and __import__("os").getenv("HHHAI_LIVE_CANARY_ENABLED", "false").lower() == "true"
+            and str(payload.get("orderType") or "").lower() == "market"
+        )
+        if canary:
+            max_trades = max(1, int(__import__("os").getenv("HHHAI_LIVE_CANARY_MAX_TRADES", "1")))
+            max_notional = float(__import__("os").getenv("HHHAI_LIVE_CANARY_MAX_NOTIONAL_USD", "2.00"))
+            if self.__class__._live_canary_trade_count >= max_trades:
+                raise RuntimeError(f"Live canary trade limit reached ({max_trades})")
+            if not max_notional > 0:
+                raise RuntimeError("Invalid live canary maximum notional")
+            symbol = str(payload.get("symbol") or "").upper()
+            size = float(payload.get("size") or 0)
+            ticker = await self.get_ticker(symbol)
+            price = float((ticker or {}).get("lastPr") or 0)
+            notional = size * price
+            if size <= 0 or price <= 0:
+                raise RuntimeError("Live canary blocked order: Bitget size or market price is unavailable")
+            if notional > max_notional + 1e-9:
+                raise RuntimeError(f"Live canary blocked order: notional {notional:.8f} USDT exceeds maximum {max_notional:.8f} USDT")
+        result = await self._request("POST", "/api/v2/mix/order/place-order", body=payload, private=True)
+        if canary:
+            self.__class__._live_canary_trade_count += 1
+        return result
 
     async def get_order_detail(self, symbol, order_id=None, client_oid=None):
         params = {"productType": "USDT-FUTURES", "symbol": symbol.upper()}
