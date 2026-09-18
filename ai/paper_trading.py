@@ -30,6 +30,8 @@ class PaperPosition:
     entry_price: float
     mark_price: float
     realized_pnl: float = 0.0
+    decision_id: str | None = None
+    opened_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def unrealized_pnl(self) -> float:
@@ -111,6 +113,8 @@ class PaperExecutionEngine:
                     "mark_price": p.mark_price,
                     "unrealized_pnl": p.unrealized_pnl,
                     "realized_pnl": p.realized_pnl,
+                    "decision_id": p.decision_id,
+                    "opened_at": p.opened_at.isoformat(),
                 }
                 for p in self.positions.values()
             ],
