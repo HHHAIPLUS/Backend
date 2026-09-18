@@ -66,6 +66,7 @@ async def lifespan(app):
     await hydrate_model()
     await hydrate_stage8_risk(stage8_risk)
     exchange = os.getenv("HHHAI_EXECUTION_EXCHANGE", os.getenv("HHHAI_MARKET_EXCHANGE", "binance")).lower()
+    log.info("HHHAI_RUNTIME exchange=%s bitget_testnet=%s trading_mode=%s live_enabled=%s autotrading=%s", exchange, settings.bitget_testnet, settings.hhhai_trading_mode, settings.live_trading_enabled, settings.hhhai_autotrading_enabled)
     if exchange == "bitget":
         try:
             account = await adapters()["bitget"].get_account_status()
