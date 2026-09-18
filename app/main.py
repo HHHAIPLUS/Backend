@@ -64,9 +64,11 @@ install_multi_coin_selection(trader)
 @asynccontextmanager
 async def lifespan(app):
     await hydrate_model()
-    if os.getenv("HHHAI_AUTO_BOOTSTRAP_BRAIN", "false").lower() == "true" and predictive_brain.bundle is None:
+    async def bootstrap_predictive_brain():
         try:
-            symbols = [x.strip().upper() for x in os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOLS", os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOL", "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT")).split(",") if x.strip()]
+            if os.getenv("HHHAI_AUTO_BOOTSTRAP_BRAIN", "false").lower() != "true" or predictive_brain.bundle is not None:
+                return
+            symbols = [x.strip().upper() for x in os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOLS", os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOL", "BTCUSDT,ETHUSDT")).split(",") if x.strip()]
             limit = max(5000, min(10000, int(os.getenv("HHHAI_BRAIN_BOOTSTRAP_CANDLES", "6000"))))
             interval = os.getenv("HHHAI_BRAIN_BOOTSTRAP_INTERVAL", "15m").strip()
             threshold = float(os.getenv("HHHAI_BRAIN_LABEL_THRESHOLD", "0.0015"))
@@ -94,6 +96,8 @@ async def lifespan(app):
                         log.error("PREDICTIVE_BRAIN_PERSIST_FAILED error=%s", persist_exc)
         except Exception as exc:
             log.exception("PREDICTIVE_BRAIN_BOOTSTRAP_FAILED %s", exc)
+
+    brain_task = asyncio.create_task(bootstrap_predictive_brain())
     await hydrate_learning()
     await hydrate_adaptive()
     await hydrate_research()
@@ -141,6 +145,12 @@ async def lifespan(app):
         if trader.running:
             await trader.stop()
         binance_user_stream.stop()
+        if not brain_task.done():
+            brain_task.cancel()
+            try:
+                await brain_task
+            except asyncio.CancelledError:
+                pass
 
 app = FastAPI(title=settings.app_name, version='1.0.0', description='HHHAI backend — cumulative Stage 8', lifespan=lifespan)
 allowed_origins = [x.strip() for x in (os.getenv('HHHAI_CORS_ORIGINS') or settings.cors_origins).split(',') if x.strip()]
