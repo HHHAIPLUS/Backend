@@ -71,7 +71,7 @@ async def lifespan(app):
             log.warning("PREDICTIVE_BRAIN_DATA_PROVIDER %s", provider)
             rows = build_dataset(raw, horizon=6, threshold=float(os.getenv("HHHAI_BRAIN_LABEL_THRESHOLD", "0.0025")))
             report = await asyncio.to_thread(predictive_brain.train, rows, f"brain-{symbol}-5m")
-            log.warning("PREDICTIVE_BRAIN_BOOTSTRAP status=%s version=%s reason=%s", report.status, report.version, report.reason)
+            log.warning("PREDICTIVE_BRAIN_BOOTSTRAP status=%s version=%s reason=%s metrics=%s", report.status, report.version, report.reason, report.metrics)
         except Exception as exc:
             log.error("PREDICTIVE_BRAIN_BOOTSTRAP_FAILED %s", exc)
     await hydrate_learning()
