@@ -71,6 +71,11 @@ async def lifespan(app):
         try:
             account = await adapters()["bitget"].get_account_status()
             log.warning("BITGET_AUTH_CHECK_OK available_balance=%s", account.get("available_balance"))
+            try:
+                positions = await adapters()["bitget"].get_positions("DOGEUSDT")
+                log.warning("TEST10_POSITION_CHECK %s", positions)
+            except Exception as exc:
+                log.error("TEST10_POSITION_CHECK_FAILED %s", exc)
         except Exception as exc:
             log.error("BITGET_AUTH_CHECK_FAILED %s", exc)
     if exchange == "binance":
