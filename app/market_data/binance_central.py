@@ -95,15 +95,69 @@ class CentralBinanceMarketData:
         with state.lock:
             state.bid=float(data.get("b") or state.bid or 0); state.ask=float(data.get("a") or state.ask or 0); state.bid_qty=float(data.get("B") or state.bid_qty or 0); state.ask_qty=float(data.get("A") or state.ask_qty or 0); state.last_update=time.time(); state.ready.set()
     @classmethod
+    def _rest_fallback(cls, state) -> bool:
+        """Fail-safe public REST snapshot when the central WebSocket is stale."""
+        try:
+            import httpx
+            response = httpx.get(
+                f"https://fapi.binance.com/fapi/v1/ticker/bookTicker",
+                params={"symbol": state.symbol},
+                timeout=5.0,
+            )
+            response.raise_for_status()
+            book = response.json()
+            ticker = httpx.get(
+                f"https://fapi.binance.com/fapi/v1/ticker/24hr",
+                params={"symbol": state.symbol},
+                timeout=5.0,
+            )
+            ticker.raise_for_status()
+            data = ticker.json()
+            with state.lock:
+                state.price=float(data.get("lastPrice") or state.price or 0)
+                state.bid=float(book.get("bidPrice") or state.bid or state.price)
+                state.ask=float(book.get("askPrice") or state.ask or state.price)
+                state.bid_qty=float(book.get("bidQty") or state.bid_qty or 0)
+                state.ask_qty=float(book.get("askQty") or state.ask_qty or 0)
+                state.volume_24h=float(data.get("quoteVolume") or state.volume_24h or 0)
+                state.price_change_24h=float(data.get("priceChangePercent") or 0)/100.0
+                state.last_update=time.time()
+                state.ready.set()
+            log.warning("Central Binance WebSocket stale for %s; using REST market fallback", state.symbol)
+            return True
+        except Exception as exc:
+            with state.lock: state.last_error=f"REST fallback failed: {type(exc).__name__}: {exc}"
+            return False
+
+    @classmethod
     def snapshot(cls,symbol:str)->RealtimeSnapshot:
         state=cls._state(symbol)
-        if not state.ready.wait(timeout=3): raise RuntimeError(f"Binance WebSocket data not ready for {symbol.upper()}")
+        if not state.ready.wait(timeout=3):
+            cls._rest_fallback(state)
+        with state.lock:
+            stale=(time.time()-state.last_update)>STALE_SECONDS or state.price<=0
+        if stale:
+            cls._rest_fallback(state)
         with state.lock:
             age=time.time()-state.last_update
-            if age>STALE_SECONDS or state.price<=0: raise RuntimeError(f"Binance WebSocket market data is stale for {state.symbol}")
-            bid=state.bid or state.price; ask=state.ask or state.price; imbalance=(state.bid_qty-state.ask_qty)/max(state.bid_qty+state.ask_qty,1e-12); now=datetime.now(timezone.utc)
-            health=FeedHealth(source="binance_futures_websocket_central",status="healthy",latency_ms=round(age*1000,2),observed_at=now,stale_after_seconds=STALE_SECONDS,error=state.last_error)
-            return RealtimeSnapshot(symbol=state.symbol,source="binance_futures_websocket_central",price=state.mark_price or state.price,bid=bid,ask=ask,volume_24h=max(0.0,state.volume_24h),funding_rate=state.funding_rate,open_interest=state.open_interest,open_interest_change=(state.open_interest/state.previous_open_interest-1.0 if state.open_interest and state.previous_open_interest else None),order_book_imbalance=max(-1.0,min(1.0,imbalance)),volatility_proxy=abs(state.price_change_24h),price_change_24h=state.price_change_24h,observed_at=now,feed_health=health)
+            if age>STALE_SECONDS or state.price<=0:
+                raise RuntimeError(f"Binance market data unavailable/stale for {state.symbol}")
+            bid=state.bid or state.price; ask=state.ask or state.price
+            imbalance=(state.bid_qty-state.ask_qty)/max(state.bid_qty+state.ask_qty,1e-12)
+            now=datetime.now(timezone.utc)
+            return RealtimeSnapshot(
+                symbol=state.symbol,source="binance_futures_central",
+                price=state.mark_price or state.price,bid=bid,ask=ask,
+                volume_24h=max(0.0,state.volume_24h),funding_rate=state.funding_rate,
+                open_interest=state.open_interest,
+                open_interest_change=(state.open_interest/state.previous_open_interest-1.0 if state.open_interest and state.previous_open_interest else None),
+                order_book_imbalance=max(-1.0,min(1.0,imbalance)),
+                volatility_proxy=abs(state.price_change_24h),price_change_24h=state.price_change_24h,
+                observed_at=now,
+                feed_health=FeedHealth(source="binance_futures_central",status="healthy",
+                    latency_ms=round(age*1000,2),observed_at=now,stale_after_seconds=STALE_SECONDS,error=state.last_error),
+            )
+
     @classmethod
     def model_features(cls,symbol:str)->dict[str,float]:
         state=cls._state(symbol)
