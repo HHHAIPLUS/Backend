@@ -116,13 +116,26 @@ class PredictiveBrain:
         cutoff_pos=max(1,min(len(unique_times)-1,int(len(unique_times)*(1-test_fraction))))
         cutoff_time=unique_times[cutoff_pos]
         test_start=next(i for i,t in enumerate(timestamps) if t>=cutoff_time)
-        pre=x[:test_start]; pre_y=d[:test_start]; pre_r=returns[:test_start]; xte=x[test_start:]; dte=d[test_start:]; rte=returns[test_start:]
+        pre=x[:test_start]; xte=x[test_start:]
         if len(xte)<100 or len(pre)<600: return BrainReport("REJECTED",version,{},"Chronological train/validation/calibration/test partitions are too small.")
         if len(set(dte.tolist()))<3: return BrainReport("REJECTED",version,{},"Untouched OOS test period must contain all three direction classes.")
         pre_times=sorted(set(timestamps[:test_start]))
         select_cutoff=pre_times[max(1,min(len(pre_times)-1,int(len(pre_times)*.75)))]
         select_end=next(i for i,t in enumerate(timestamps[:test_start]) if t>=select_cutoff)
-        xfit,xval=pre[:select_end],pre[select_end:]\n        horizon_selection={}\n        for h in HORIZONS:\n            try:\n                rh=_future_return(rows[:test_start],h); yh=_direction_target(rh); yhfit,yhval=yh[:select_end],yh[select_end:]\n                if len(yhval)<100 or len(set(yhfit.tolist()))<3 or len(set(yhval.tolist()))<3: continue\n                hm=_classifier("logistic_regression"); hm.fit(xfit,yhfit); hp=hm.predict(xval); hpr=hm.predict_proba(xval); hs=_metrics(yhval,hp,hpr,hm.classes_,rh[select_end:]); horizon_selection[str(h)] = hs\n            except Exception as exc: horizon_selection[str(h)]={"error":f"{type(exc).__name__}: {exc}"}\n        viable=[(float(v.get("avg_trade_net_return",-1e99)),float(v.get("balanced_accuracy",0.0)),int(h)) for h,v in horizon_selection.items() if "error" not in v and int(v.get("trades",0))>=100]\n        if not viable: return BrainReport("REJECTED",version,{"horizon_selection":horizon_selection}, "No horizon produced enough validation trades for selection.")\n        chosen_horizon=max(viable,key=lambda z:(z[0],z[1]))[2]\n        returns=_future_return(rows,chosen_horizon); d=_direction_target(returns)\n        pre_r=returns[:test_start]; rte=returns[test_start:]; pre_y=d[:test_start]; dte=d[test_start:]\n        xfit,xval=pre[:select_end],pre[select_end:]; yfit,yval=pre_y[:select_end],pre_y[select_end:]
+        xfit,xval=pre[:select_end],pre[select_end:]
+        horizon_selection={}
+        for h in HORIZONS:
+            try:
+                rh=_future_return(rows[:test_start],h); yh=_direction_target(rh); yhfit,yhval=yh[:select_end],yh[select_end:]
+                if len(yhval)<100 or len(set(yhfit.tolist()))<3 or len(set(yhval.tolist()))<3: continue
+                hm=_classifier("logistic_regression"); hm.fit(xfit,yhfit); hp=hm.predict(xval); hpr=hm.predict_proba(xval); hs=_metrics(yhval,hp,hpr,hm.classes_,rh[select_end:]); horizon_selection[str(h)] = hs
+            except Exception as exc: horizon_selection[str(h)]={"error":f"{type(exc).__name__}: {exc}"}
+        viable=[(float(v.get("avg_trade_net_return",-1e99)),float(v.get("balanced_accuracy",0.0)),int(h)) for h,v in horizon_selection.items() if "error" not in v and int(v.get("trades",0))>=100]
+        if not viable: return BrainReport("REJECTED",version,{"horizon_selection":horizon_selection}, "No horizon produced enough validation trades for selection.")
+        chosen_horizon=max(viable,key=lambda z:(z[0],z[1]))[2]
+        returns=_future_return(rows,chosen_horizon); d=_direction_target(returns)
+        pre_r=returns[:test_start]; rte=returns[test_start:]; pre_y=d[:test_start]; dte=d[test_start:]
+        xfit,xval=pre[:select_end],pre[select_end:]; yfit,yval=pre_y[:select_end],pre_y[select_end:]
         if len(xval)<100 or len(set(yfit.tolist()))<3 or len(set(yval.tolist()))<3: return BrainReport("REJECTED",version,{},"Model-selection validation partition is insufficient.")
         validation_scores={}; candidates=[]
         for family in MODEL_FAMILIES:
