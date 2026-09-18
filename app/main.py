@@ -93,7 +93,7 @@ async def lifespan(app):
                     except Exception as persist_exc:
                         log.error("PREDICTIVE_BRAIN_PERSIST_FAILED error=%s", persist_exc)
         except Exception as exc:
-            log.error("PREDICTIVE_BRAIN_BOOTSTRAP_FAILED %s", exc)
+            log.exception("PREDICTIVE_BRAIN_BOOTSTRAP_FAILED %s", exc)
     await hydrate_learning()
     await hydrate_adaptive()
     await hydrate_research()
