@@ -118,7 +118,7 @@ class PredictiveBrain:
         test_start=next(i for i,t in enumerate(timestamps) if t>=cutoff_time)
         pre=x[:test_start]; xte=x[test_start:]
         if len(xte)<100 or len(pre)<600: return BrainReport("REJECTED",version,{},"Chronological train/validation/calibration/test partitions are too small.")
-                pre_times=sorted(set(timestamps[:test_start]))
+        pre_times=sorted(set(timestamps[:test_start]))
         select_cutoff=pre_times[max(1,min(len(pre_times)-1,int(len(pre_times)*.75)))]
         select_end=next(i for i,t in enumerate(timestamps[:test_start]) if t>=select_cutoff)
         xfit,xval=pre[:select_end],pre[select_end:]
