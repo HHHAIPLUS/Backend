@@ -223,15 +223,24 @@ class AutonomousTrader:
         if not risk.get("allowed"):
             raise RuntimeError(f"Test 10 risk gate blocked execution: {risk.get('reasons')}")
         execution = await self._execute(symbol, world, decision, candidate, risk, test10=True)
+        log.warning("TEST10_EXECUTION %s", execution)
         result = {"symbol": symbol, "action": action, "predictive": predictive, "risk": risk, "execution": execution}
         if execution.get("status") not in {"filled", "submitted"}:
             raise RuntimeError(f"Test 10 order was not confirmed: {execution}")
         adapter = self._adapters()["bitget"]
         management_observed = []
-        for _ in range(3):
-            await asyncio.sleep(5)
-            management_observed.extend(await self._manage_open_positions(symbol))
-            if management_observed:
+        for attempt in range(6):
+            await asyncio.sleep(2)
+            try:
+                raw_positions = await adapter.get_positions(symbol)
+                rows = self._position_rows(raw_positions)
+                log.warning("TEST10_POSITION_OBSERVATION attempt=%s rows=%s", attempt + 1, rows)
+            except Exception as exc:
+                log.warning("TEST10_POSITION_OBSERVATION_FAILED attempt=%s error=%s", attempt + 1, exc)
+            managed_now = await self._manage_open_positions(symbol)
+            if managed_now:
+                management_observed.extend(managed_now)
+                log.warning("TEST10_MANAGEMENT_OBSERVED attempt=%s count=%s", attempt + 1, len(managed_now))
                 break
         result["management_observed"] = management_observed[-5:]
         rows = self._position_rows(await adapter.get_positions(symbol))
