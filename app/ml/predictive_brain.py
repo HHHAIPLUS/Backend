@@ -19,7 +19,7 @@ from app.ml.predictive import FEATURES
 from app.ml.model_validation import promotion_gate
 
 MODEL_FAMILIES = ("logistic_regression", "extra_trees", "hist_gradient_boosting")
-HORIZONS = (1, 3, 6, 12)
+HORIZONS = (1, 3, 6)
 COST_RATE = 0.0008
 ARTIFACT_SCHEMA = 2
 
