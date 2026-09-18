@@ -25,7 +25,7 @@ from app.market_data.realtime import build_world_intelligence
 from app.market_data.binance_user_stream import binance_user_stream
 from app.ml.predictive import predictive_model
 from app.ml.predictive_brain import predictive_brain
-from app.persistence.repository import record_decision, record_event
+from app.persistence.repository import record_decision, record_outcome, record_event
 from app.persistence.supabase import store
 
 log = logging.getLogger("hhhai.autonomous_trader")
@@ -263,8 +263,40 @@ class AutonomousTrader:
             raise RuntimeError("Test 10 cleanup did not fully close the position")
         return result
 
+    async def _settle_paper_positions(self, world: dict[str, Any]) -> list[dict[str, Any]]:
+        if self.execution_mode != "paper":
+            return []
+        hold_seconds=max(60,int(os.getenv("HHHAI_PAPER_HOLD_SECONDS","300")))
+        symbol=str(world["symbol"]).upper()
+        position=self.paper.positions.get(symbol)
+        if not position or not position.decision_id:
+            return []
+        age=(datetime.now(timezone.utc)-position.opened_at).total_seconds()
+        if age < hold_seconds:
+            return []
+        price=float(world["market"]["price"])
+        gross=(price-position.entry_price)/position.entry_price if position.side=="long" else (position.entry_price-price)/position.entry_price
+        net=float(gross-(2*0.0008))
+        record_id=position.decision_id
+        action=position.side.upper()
+        close_order=self.paper.close(symbol,price)
+        payload={"record_id":record_id,"symbol":symbol,"action":action,"realized_return":net,"outcome_profitable":net>0,"entry_price":position.entry_price,"exit_price":price,"holding_seconds":age,"mode":"paper","closed_at":datetime.now(timezone.utc).isoformat(),"close_order_id":getattr(close_order,"order_id",None)}
+        if store.configured:
+            try: await record_outcome(record_id,payload)
+            except Exception: log.exception("Failed to persist paper outcome %s",record_id)
+        try:
+            from app.ml.adaptive_intelligence import AdaptiveObservation, adaptive_intelligence
+            obs=AdaptiveObservation(symbol=symbol,model_version="paper",action=action,confidence=0.0,realized_return=net,observed_at=payload["closed_at"],regime=str(world.get("regime") or "unknown"),horizon=6,expected_probability=None,features={})
+            adaptive_intelligence.add_observation(obs)
+        except Exception:
+            pass
+        await record_event("paper_trade_completed",payload) if store.configured else None
+        return [payload]
+
     async def run_cycle(self,symbol:str)->dict[str,Any]:
-        world_model=await asyncio.to_thread(build_world_intelligence,symbol,self._exchange_for_market()); world=world_model.model_dump(mode='json'); context=self._context(world); council=self.council.deliberate(context).model_dump(mode='json'); scenario_req=ScenarioRequest(symbol=symbol,horizon_minutes=60,momentum=context.momentum,trend_strength=context.trend_strength,buying_pressure=context.buying_pressure,selling_pressure=context.selling_pressure,volatility=context.volatility,liquidity_stress=context.liquidity_stress,news_risk=context.news_risk,news_sentiment=context.news_sentiment,market_risk=context.correlation_risk,thesis_integrity=context.thesis_integrity); scenario=self.scenarios.generate(scenario_req).model_dump(mode='json'); proposed='long' if council['action']=='bullish' else 'short' if council['action']=='bearish' else 'wait'
+        world_model=await asyncio.to_thread(build_world_intelligence,symbol,self._exchange_for_market()); world=world_model.model_dump(mode='json')
+        paper_outcomes=await self._settle_paper_positions(world)
+        context=self._context(world); council=self.council.deliberate(context).model_dump(mode='json'); scenario_req=ScenarioRequest(symbol=symbol,horizon_minutes=60,momentum=context.momentum,trend_strength=context.trend_strength,buying_pressure=context.buying_pressure,selling_pressure=context.selling_pressure,volatility=context.volatility,liquidity_stress=context.liquidity_stress,news_risk=context.news_risk,news_sentiment=context.news_sentiment,market_risk=context.correlation_risk,thesis_integrity=context.thesis_integrity); scenario=self.scenarios.generate(scenario_req).model_dump(mode='json'); proposed='long' if council['action']=='bullish' else 'short' if council['action']=='bearish' else 'wait'
         from ai.adversarial import AdversarialEngine
         adversarial=AdversarialEngine().evaluate(symbol=symbol,proposed_action=proposed,context={'position_side':None,'momentum':context.momentum,'trend_strength':context.trend_strength,'buying_pressure':context.buying_pressure,'selling_pressure':context.selling_pressure,'volatility':context.volatility,'liquidity_stress':context.liquidity_stress,'news_risk':context.news_risk,'news_credibility':context.news_credibility}).model_dump(mode='json'); predictive=brain.predict(self._features(world)); fusion=self.fusion.decide(council_action=council['action'],council_confidence=float(council['confidence']),disagreement=float(council['disagreement']),predictive=predictive,adversarial_block=bool(adversarial['should_block']),scenario_uncertainty=float(scenario['uncertainty']),data_quality=float(world.get('data_quality') or 0),risk_vetoes=council['veto_flags']); decision=fusion.__dict__.copy(); candidate=None; optimizer_result=None
         if decision['action'] in {'LONG','SHORT'}:
@@ -273,10 +305,14 @@ class AutonomousTrader:
         risk=await self._risk_check(world,decision,candidate)
         if not risk['allowed']: decision['action']='WAIT'; decision['execution_candidate']=False; decision['vetoes']=list(decision.get('vetoes',[]))+risk['reasons']
         execution=await self._execute(symbol,world,decision,candidate,risk); record_id=str(uuid4()); payload={'record_id':record_id,'symbol':symbol,'action':decision['action'],'thesis':decision['reason'],'features':self._features(world),'confidence':float(decision['confidence']),'model_version':predictive.get('version','untrained'),'created_at':datetime.now(timezone.utc).isoformat(),'pipeline':{'council':council,'scenario':scenario,'adversarial':adversarial,'predictive':predictive,'fusion':decision,'risk':risk,'execution':execution}}; self.decision_ids.append(record_id); self.decision_ids=self.decision_ids[-200:]
+        if execution.get("status") == "filled_simulated":
+            paper_position=self.paper.positions.get(symbol)
+            if paper_position is not None:
+                paper_position.decision_id=record_id
         if store.configured:
             try: await record_decision(symbol,payload); await record_event('autonomous_cycle',payload)
             except Exception: log.exception('Failed to persist autonomous cycle for %s',symbol)
-        return {'symbol':symbol,'observed_at':world.get('observed_at'),'decision':decision,'risk':risk,'execution':execution,'predictive':predictive,'council':council,'scenario':scenario,'adversarial':adversarial,'optimizer':optimizer_result,'record_id':record_id}
+        return {'symbol':symbol,'observed_at':world.get('observed_at'),'decision':decision,'risk':risk,'execution':execution,'predictive':predictive,'council':council,'scenario':scenario,'adversarial':adversarial,'optimizer':optimizer_result,'record_id':record_id,'paper_outcomes':paper_outcomes}
 
     def _exchange_for_market(self)->str: return os.getenv('HHHAI_EXECUTION_EXCHANGE','binance').lower() if self.execution_mode in {'testnet','live'} else os.getenv('HHHAI_MARKET_EXCHANGE','binance').lower()
 
