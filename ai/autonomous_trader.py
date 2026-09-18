@@ -112,7 +112,11 @@ class AutonomousTrader:
                 next_management=now+self.position_review_interval
             if now>=next_decision:
                 for symbol in self.config.symbols:
-                    try:\n                        self.last_cycle=await self.run_cycle(symbol); self.last_cycle_at=datetime.now(timezone.utc); self.last_error=None\n                        log.warning("AUTOTRADER_CYCLE symbol=%s action=%s execution=%s risk=%s",symbol,self.last_cycle.get("decision",{}).get("action"),self.last_cycle.get("execution",{}).get("status"),self.last_cycle.get("risk",{}).get("decision"))
+                    try:
+                        self.last_cycle=await self.run_cycle(symbol)
+                        self.last_cycle_at=datetime.now(timezone.utc)
+                        self.last_error=None
+                        log.warning("AUTOTRADER_CYCLE symbol=%s action=%s execution=%s risk=%s",symbol,self.last_cycle.get("decision",{}).get("action"),self.last_cycle.get("execution",{}).get("status"),self.last_cycle.get("risk",{}).get("decision"))
                     except Exception as exc: self.last_error=f"{type(exc).__name__}: {exc}"; log.exception("Autonomous decision cycle failed for %s",symbol)
                 next_decision=now+self.config.interval_seconds
             try: await asyncio.sleep(min(1.0,self.position_review_interval))
