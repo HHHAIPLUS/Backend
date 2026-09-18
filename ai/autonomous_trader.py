@@ -198,6 +198,57 @@ class AutonomousTrader:
         m=world['market']; price=float(m['price']); vol=max(0.002,float(m.get('volatility_proxy') or 0.005)); stop_distance=min(0.03,max(0.003,vol*1.5)); side='long' if action=='LONG' else 'short'; invalidation=price*(1-stop_distance) if side=='long' else price*(1+stop_distance); target=price*(1+stop_distance*self.config.reward_risk) if side=='long' else price*(1-stop_distance*self.config.reward_risk); p=predictive_model.predict(self._features(world)); probability=float(p['probabilities'].get('long' if side=='long' else 'short',0)); regime=str(world.get('regime') or 'unknown')
         return TradeCandidate(symbol=world['symbol'],side=side,entry=price,target=target,invalidation=invalidation,probability_of_success=probability,regime_fit=0.75 if regime in {'trending_up','trending_down'} else 0.55,confirmation=0.75,timing_quality=max(0.0,1-float(m.get('volatility_proxy') or 0)),liquidity_score=max(0.0,1-float(world.get('liquidity_stress') or 0)),news_risk=float(world.get('news_risk') or 0))
 
+    async def run_test10_canary(self, symbol: str = "DOGEUSDT") -> dict[str, Any]:
+        """Controlled live execution test: one tiny, exchange-valid position, then observe and close it."""
+        exchange = self._exchange_for_market()
+        if exchange != "bitget":
+            raise RuntimeError("Test 10 canary is configured for Bitget")
+        world_model = await asyncio.to_thread(build_world_intelligence, symbol, exchange)
+        world = world_model.model_dump(mode="json")
+        predictive = predictive_model.predict(self._features(world))
+        probs = predictive.get("probabilities") or {}
+        long_p = float(probs.get("long") or 0)
+        short_p = float(probs.get("short") or 0)
+        action = "LONG" if long_p >= short_p else "SHORT"
+        candidate = self._candidate(world, action)
+        confidence = max(long_p, short_p)
+        decision = {
+            "action": action,
+            "execution_candidate": True,
+            "confidence": max(confidence, 0.60),
+            "reason": "Test 10 controlled live execution canary using HHHAI live market/predictive data.",
+            "vetoes": [],
+        }
+        risk = await self._risk_check(world, decision, candidate, test10=True)
+        if not risk.get("allowed"):
+            raise RuntimeError(f"Test 10 risk gate blocked execution: {risk.get('reasons')}")
+        execution = await self._execute(symbol, world, decision, candidate, risk)
+        result = {"symbol": symbol, "action": action, "predictive": predictive, "risk": risk, "execution": execution}
+        if execution.get("status") not in {"filled", "submitted"}:
+            raise RuntimeError(f"Test 10 order was not confirmed: {execution}")
+        adapter = self._adapters()["bitget"]
+        management_observed = []
+        for _ in range(3):
+            await asyncio.sleep(5)
+            management_observed.extend(await self._manage_open_positions(symbol))
+            if management_observed:
+                break
+        result["management_observed"] = management_observed[-5:]
+        rows = self._position_rows(await adapter.get_positions(symbol))
+        open_rows = [r for r in rows if self._position_fields(r)[0] == symbol and self._position_fields(r)[2] > 0]
+        if open_rows:
+            psymbol, side, qty, _, _ = self._position_fields(open_rows[0])
+            mode = await adapter.get_position_mode(psymbol)
+            result["cleanup"] = await adapter.close_position(psymbol, side, qty, mode)
+        await asyncio.sleep(3)
+        remaining = self._position_rows(await adapter.get_positions(symbol))
+        result["remaining_open"] = [r for r in remaining if self._position_fields(r)[0] == symbol and self._position_fields(r)[2] > 0]
+        if not management_observed:
+            raise RuntimeError("Test 10 order filled but position management was not observed")
+        if result["remaining_open"]:
+            raise RuntimeError("Test 10 cleanup did not fully close the position")
+        return result
+
     async def run_cycle(self,symbol:str)->dict[str,Any]:
         world_model=await asyncio.to_thread(build_world_intelligence,symbol,self._exchange_for_market()); world=world_model.model_dump(mode='json'); context=self._context(world); council=self.council.deliberate(context).model_dump(mode='json'); scenario_req=ScenarioRequest(symbol=symbol,horizon_minutes=60,momentum=context.momentum,trend_strength=context.trend_strength,buying_pressure=context.buying_pressure,selling_pressure=context.selling_pressure,volatility=context.volatility,liquidity_stress=context.liquidity_stress,news_risk=context.news_risk,news_sentiment=context.news_sentiment,market_risk=context.correlation_risk,thesis_integrity=context.thesis_integrity); scenario=self.scenarios.generate(scenario_req).model_dump(mode='json'); proposed='long' if council['action']=='bullish' else 'short' if council['action']=='bearish' else 'wait'
         from ai.adversarial import AdversarialEngine
@@ -215,7 +266,7 @@ class AutonomousTrader:
 
     def _exchange_for_market(self)->str: return os.getenv('HHHAI_EXECUTION_EXCHANGE','binance').lower() if self.execution_mode in {'testnet','live'} else os.getenv('HHHAI_MARKET_EXCHANGE','binance').lower()
 
-    async def _risk_check(self,world:dict[str,Any],decision:dict[str,Any],candidate:TradeCandidate|None)->dict[str,Any]:
+    async def _risk_check(self,world:dict[str,Any],decision:dict[str,Any],candidate:TradeCandidate|None,test10:bool=False)->dict[str,Any]:
         if not candidate or not decision.get('execution_candidate'): return {'allowed':False,'reasons':['no executable candidate'],'decision':'block'}
         equity=self.config.paper_equity; open_positions=len(self.paper.positions)
         if self.execution_mode in {'testnet','live'}:
@@ -229,7 +280,7 @@ class AutonomousTrader:
             except Exception as exc: return {'allowed':False,'reasons':[f'account health unavailable: {exc}'],'decision':'block'}
         m=world['market']; spread_bps=max(0.0,(float(m['ask'])-float(m['bid']))/float(m['price'])*10000); stop_pct=abs(candidate.entry-candidate.invalidation)/candidate.entry*100; size=self.guard.size_for_risk(equity,stop_pct,self.config.risk_pct); self._update_equity_state(equity); daily_pnl_pct=0.0 if not self._day_start_equity else (equity-self._day_start_equity)/self._day_start_equity*100.0; drawdown_pct=0.0 if not self._peak_equity else max(0.0,(self._peak_equity-equity)/self._peak_equity*100.0); snapshot=RiskSnapshot(equity=equity,free_margin=equity,daily_pnl_pct=daily_pnl_pct,drawdown_pct=drawdown_pct,proposed_risk_pct=self.config.risk_pct,leverage=min(5,size*candidate.entry/max(equity,1e-9)),open_positions=open_positions,expected_slippage_bps=spread_bps,data_fresh=float(world.get('data_quality') or 0)>=0.9,exchange_healthy=True); result=self.guard.evaluate(snapshot); reasons=list(result.get('reasons',[]))
         if spread_bps>self.config.max_spread_bps: reasons.append('spread exceeds execution limit')
-        if decision.get('confidence',0)<self.config.min_confidence: reasons.append('confidence below execution threshold')
+        if not test10 and decision.get('confidence',0)<self.config.min_confidence: reasons.append('confidence below execution threshold')
         return {'allowed':not reasons and result.get('decision')=='allow','reasons':reasons,'decision':result.get('decision'),'equity':equity,'quantity':size,'spread_bps':spread_bps,'stop_distance_pct':stop_pct}
 
     def _update_equity_state(self,equity:float)->None:
