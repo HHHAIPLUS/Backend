@@ -118,8 +118,7 @@ class PredictiveBrain:
         test_start=next(i for i,t in enumerate(timestamps) if t>=cutoff_time)
         pre=x[:test_start]; xte=x[test_start:]
         if len(xte)<100 or len(pre)<600: return BrainReport("REJECTED",version,{},"Chronological train/validation/calibration/test partitions are too small.")
-        if len(set(dte.tolist()))<3: return BrainReport("REJECTED",version,{},"Untouched OOS test period must contain all three direction classes.")
-        pre_times=sorted(set(timestamps[:test_start]))
+                pre_times=sorted(set(timestamps[:test_start]))
         select_cutoff=pre_times[max(1,min(len(pre_times)-1,int(len(pre_times)*.75)))]
         select_end=next(i for i,t in enumerate(timestamps[:test_start]) if t>=select_cutoff)
         xfit,xval=pre[:select_end],pre[select_end:]
@@ -134,7 +133,7 @@ class PredictiveBrain:
         if not viable: return BrainReport("REJECTED",version,{"horizon_selection":horizon_selection}, "No horizon produced enough validation trades for selection.")
         chosen_horizon=max(viable,key=lambda z:(z[0],z[1]))[2]
         returns=_future_return(rows,chosen_horizon); d=_direction_target(returns)
-        pre_r=returns[:test_start]; rte=returns[test_start:]; pre_y=d[:test_start]; dte=d[test_start:]
+        pre_r=returns[:test_start]; rte=returns[test_start:]; pre_y=d[:test_start]; dte=d[test_start:]\n        if len(set(dte.tolist()))<3: return BrainReport("REJECTED",version,{"chosen_horizon":chosen_horizon}, "Untouched OOS test period must contain all three direction classes.")
         xfit,xval=pre[:select_end],pre[select_end:]; yfit,yval=pre_y[:select_end],pre_y[select_end:]
         if len(xval)<100 or len(set(yfit.tolist()))<3 or len(set(yval.tolist()))<3: return BrainReport("REJECTED",version,{},"Model-selection validation partition is insufficient.")
         validation_scores={}; candidates=[]
