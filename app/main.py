@@ -38,9 +38,15 @@ from ai.stage6_hydration import install_stage6_hydration
 from ai.stage8_integration import install_stage8_risk, hydrate_stage8_risk
 from ai.multi_coin_selection import install_multi_coin_selection
 from app.market_data.binance_central import CentralBinanceMarketData
+from app.market_data.bitget_central import CentralBitgetMarketData
+from app.market_data import realtime as realtime_market_data
 from app.market_data.binance_user_stream import binance_user_stream
 from app.services.binance_execution_guard import install_binance_execution_guard
 from app.core.config import settings
+
+# Route Bitget observations through the centralized WebSocket cache. This keeps
+# continuous market monitoring off Bitget REST and preserves one source of truth.
+realtime_market_data.BitgetPublicFeed.snapshot = lambda self, symbol: CentralBitgetMarketData.snapshot(symbol)
 
 CentralBinanceMarketData.install()
 install_binance_execution_guard(trader)
@@ -57,10 +63,12 @@ async def lifespan(app):
     await hydrate_research()
     await hydrate_model()
     await hydrate_stage8_risk(stage8_risk)
-    CentralBinanceMarketData._start_universe()
-    if trader.execution_mode in {"live", "testnet"}:
-        binance_user_stream.start()
+    exchange = os.getenv("HHHAI_EXECUTION_EXCHANGE", os.getenv("HHHAI_MARKET_EXCHANGE", "binance")).lower()
+    if exchange == "binance":
+        CentralBinanceMarketData._start_universe()
     task = asyncio.create_task(monitor.run())
+    if exchange == "binance" and trader.execution_mode in {"live", "testnet"}:
+        binance_user_stream.start()
     if os.getenv("HHHAI_AUTOTRADING_ENABLED", "false").lower() == "true":
         await trader.start()
     try:
