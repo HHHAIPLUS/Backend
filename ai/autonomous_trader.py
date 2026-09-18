@@ -24,12 +24,12 @@ from app.exchanges.safe_router import SafeExchangeRouter
 from app.market_data.realtime import build_world_intelligence
 from app.market_data.binance_user_stream import binance_user_stream
 from app.ml.predictive import predictive_model
-from app.ml.predictive_brain import PredictiveBrain
+from app.ml.predictive_brain import predictive_brain
 from app.persistence.repository import record_decision, record_event
 from app.persistence.supabase import store
 
 log = logging.getLogger("hhhai.autonomous_trader")
-brain = PredictiveBrain()
+brain = predictive_brain
 
 
 @dataclass
