@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import numpy as np
 
 from app.ml.model_validation import paired_bootstrap_ci, promotion_gate
@@ -38,7 +40,8 @@ def test_phase2_promotion_gate_never_promotes_failed_statistical_gate():
 
 
 def test_phase2_split_is_chronological_and_purged():
-    from datetime import datetime, timedelta, timezone\n    start = datetime(2026, 1, 1, tzinfo=timezone.utc)\n    rows = [{"observed_at": (start + timedelta(hours=i)).isoformat()} for i in range(24 * 60)]
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    rows = [{"observed_at": (start + timedelta(hours=i)).isoformat()} for i in range(24 * 60)]
     split = _purged_time_splits(rows)
     tr = split["train"]
     va = split["validation"]
