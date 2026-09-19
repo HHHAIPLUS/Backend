@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import logging
 import subprocess
+import sys
 from app.api.health import router as health_router
 from app.api.status import router as status_router
 from app.api.integration import router as integration_router
@@ -63,8 +64,9 @@ stage8_risk = install_stage8_risk(trader)
 install_multi_coin_selection(trader)
 
 async def _run_phase1_verification() -> None:
+    log.warning("PHASE1_VERIFICATION_STARTED")
     phase1_cmd = [
-        "pytest", "-q",
+        sys.executable, "-m", "pytest", "-q",
         "tests/test_dataset_integrity.py",
         "tests/test_historical_dataset.py",
         "tests/test_historical_dataset_context_features.py",
@@ -78,7 +80,7 @@ async def _run_phase1_verification() -> None:
         log.error("PHASE1_TESTS_FAILED stdout=%s stderr=%s", test_result.stdout[-12000:], test_result.stderr[-12000:])
         return
     audit_result = await asyncio.to_thread(
-        subprocess.run, ["python", "scripts/phase1_data_integrity.py"],
+        subprocess.run, [sys.executable, "scripts/phase1_data_integrity.py"],
         capture_output=True, text=True,
         env={**os.environ, "PYTHONPATH": os.getcwd(), "PHASE1_SYMBOL": "BTCUSDT", "PHASE1_INTERVAL": "1h", "PHASE1_CANDLES": "10000"},
     )
