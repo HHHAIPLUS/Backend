@@ -179,14 +179,18 @@ class PredictiveBrain:
                 cal_prob[:,mapping[-1]],cal_prob[:,mapping[1]]=cal_prob[:,mapping[1]],cal_prob[:,mapping[-1]]
         confidence=np.max(cal_prob,axis=1)
         selection_threshold=0.55; selection_score=-float("inf")
-        for threshold in np.arange(0.45,0.81,0.02):
+        validation_samples=max(1,len(y_cal))
+        min_validation_trades=max(100,int(validation_samples*0.20))
+        for threshold in np.arange(0.45,0.71,0.02):
             selected=cal_pred.copy(); selected[confidence < threshold]=0
             traded=selected!=0
-            if int(traded.sum())<100: continue
+            trade_count=int(traded.sum())
+            if trade_count<min_validation_trades: continue
             net=_net_returns(returns[cal_start:test_start],selected)
             equity=np.cumsum(net); peak=np.maximum.accumulate(np.r_[0.0,equity])
             drawdown=float(np.max(peak[1:]-equity)) if len(equity) else 0.0
-            score=float(net.sum()) - 0.5*drawdown
+            avg_trade=float(net[traded].mean()) if trade_count else 0.0
+            score=avg_trade - 0.5*drawdown/max(1.0,trade_count)
             if score>selection_score: selection_score=score; selection_threshold=float(threshold)
 
         candidate_pred=direction.predict(xte); candidate_prob=direction.predict_proba(xte)
