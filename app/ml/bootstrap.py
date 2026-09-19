@@ -177,10 +177,14 @@ def fetch_bitget_klines(symbol: str, interval: str = "5m", limit: int = 1500) ->
     all_klines: list[list[Any]] = []
     end_time: int | None = int(time.time() * 1000)
     with httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True, trust_env=True, headers={"User-Agent": "HHHAI/1.0", "Accept": "application/json"}) as client:
-        while len(all_klines) < requested:
-            batch_limit = min(BITGET_BATCH_SIZE, requested - len(all_klines))
+        while len(_deduplicate_klines(all_klines)) < requested:
+            unique_before = len(_deduplicate_klines(all_klines))
+            batch_limit = BITGET_BATCH_SIZE
             batch = _request_bitget_batch(client, symbol, interval, batch_limit, end_time)
             all_klines = batch + all_klines
+            unique_after = len(_deduplicate_klines(all_klines))
+            if unique_after <= unique_before:
+                raise RuntimeError("Bitget historical pagination made no progress; refusing to reuse the same candle page.")
             if len(batch) < batch_limit:
                 break
             # Bitget rounds endTime to the candle boundary. Passing the exact
