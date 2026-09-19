@@ -68,7 +68,8 @@ async def lifespan(app):
     await hydrate_model()
     async def bootstrap_predictive_brain():
         try:
-            if os.getenv("HHHAI_AUTO_BOOTSTRAP_BRAIN", "false").lower() != "true" or predictive_brain.bundle is not None:
+            force_bootstrap = os.getenv("HHHAI_FORCE_BOOTSTRAP_BRAIN", "false").lower() == "true"
+            if os.getenv("HHHAI_AUTO_BOOTSTRAP_BRAIN", "false").lower() != "true" or (predictive_brain.bundle is not None and not force_bootstrap):
                 return
             symbols = [x.strip().upper() for x in os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOLS", os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOL", "BTCUSDT,ETHUSDT")).split(",") if x.strip()]
             # Allow the configured verified-history window to exceed 10k candles.
