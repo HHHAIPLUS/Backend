@@ -164,7 +164,7 @@ class CentralBinanceMarketData:
         with state.lock: candles=list(state.candles); current=list(state.current_candle) if state.current_candle else None; price_change=state.price_change_24h
         if len(candles)<3: raise RuntimeError(f"Waiting for Binance WebSocket 5m candle history for {symbol.upper()}: {len(candles)}/{MAX_CANDLES} closed candles cached")
         rows=candles[-MAX_CANDLES:]
-        if current and current[0]==rows[-1][0]: rows[-1]=current
+        # current_candle is the still-forming bar and must not enter prediction.
         features=build_model_features(rows); required=("return_1","range_pct","volume_change","volatility_proxy","trend_strength","momentum"); missing=[name for name in required if name not in features]
         if missing: raise RuntimeError("Central Binance feature builder missing: "+", ".join(missing))
         result={key:float(value) for key,value in features.items()}; result.setdefault("return_1",price_change); return result
