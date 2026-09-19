@@ -63,35 +63,9 @@ install_stage6_hydration(trader)
 stage8_risk = install_stage8_risk(trader)
 install_multi_coin_selection(trader)
 
-async def _run_phase2_verification() -> None:
-    log.warning("PHASE2_VERIFICATION_STARTED")
-    phase2_cmd = [
-        sys.executable, "-m", "pytest", "-q",
-        "tests/test_phase2_predictive.py",
-        "tests/test_stage3_ensemble.py",
-        "tests/test_stage3_validation.py",
-    ]
-    test_result = await asyncio.to_thread(
-        subprocess.run, phase2_cmd, capture_output=True, text=True,
-        env={**os.environ, "PYTHONPATH": os.getcwd()},
-    )
-    if test_result.returncode != 0:
-        log.error("PHASE2_TESTS_FAILED stdout=%s stderr=%s", test_result.stdout[-12000:], test_result.stderr[-12000:])
-        return
-    audit_result = await asyncio.to_thread(
-        subprocess.run, [sys.executable, "scripts/phase2_oos_validation.py"],
-        capture_output=True, text=True,
-        env={**os.environ, "PYTHONPATH": os.getcwd(), "PHASE2_SYMBOL": "BTCUSDT", "PHASE2_INTERVAL": "1h", "PHASE2_CANDLES": "10000"},
-    )
-    if audit_result.returncode != 0:
-        log.error("PHASE2_OOS_FAILED stdout=%s stderr=%s", audit_result.stdout[-16000:], audit_result.stderr[-12000:])
-        return
-    log.warning("PHASE2_VERIFICATION_PASS %s", audit_result.stdout[-16000:])
-
 @asynccontextmanager
 async def lifespan(app):
     await hydrate_model()
-    app.state.phase2_verification_task = asyncio.create_task(_run_phase2_verification())
     async def bootstrap_predictive_brain():
         try:
             if os.getenv("HHHAI_AUTO_BOOTSTRAP_BRAIN", "false").lower() != "true" or predictive_brain.bundle is not None:
@@ -129,7 +103,7 @@ async def lifespan(app):
         except Exception as exc:
             log.exception("PREDICTIVE_BRAIN_BOOTSTRAP_FAILED %s", exc)
 
-    brain_task = None if os.getenv("HHHAI_PHASE2_VERIFY_ON_START", "true").lower() == "true" else asyncio.create_task(bootstrap_predictive_brain())
+    brain_task = asyncio.create_task(bootstrap_predictive_brain())
     await hydrate_learning()
     await hydrate_adaptive()
     await hydrate_research()
