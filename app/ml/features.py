@@ -149,5 +149,8 @@ def build_model_features(candles: Iterable[Any] | None = None, context: Any | No
         "volatility_proxy": min(1.0,max(0.0,volatility*12.0)), "trend_strength": trend_strength,
         "momentum": momentum, "liquidity_stress": context_or_live("liquidity_stress"),
     }
-    return {name: (float(features.get(name,0.0) or 0.0) if math.isfinite(float(features.get(name,0.0) or 0.0)) else 0.0) for name in FEATURES}
+    # Return the full canonical market feature state. PredictiveModel/Ensemble select
+    # their explicit FEATURES subset, while decision layers can still consume
+    # live context features without contaminating historical supervised training.
+    return {name: (float(value or 0.0) if math.isfinite(float(value or 0.0)) else 0.0) for name, value in features.items()}
 
