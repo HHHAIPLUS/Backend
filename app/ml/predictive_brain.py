@@ -152,8 +152,10 @@ class PredictiveBrain:
             family="logistic_regression"
         cal_start=select_end; x_model=pre[:cal_start]; y_model=pre_y[:cal_start]; x_cal=pre[cal_start:]; y_cal=pre_y[cal_start:]
         if len(x_cal)<100 or len(set(y_model.tolist()))<3 or len(set(y_cal.tolist()))<3: return BrainReport("REJECTED",version,{},"Calibration partition is insufficient.")
-        direction_raw=_classifier(family); direction_raw.fit(x_model,y_model); direction=_calibrate(direction_raw,x_cal,y_cal)
-        baseline_raw=_classifier("logistic_regression"); baseline_raw.fit(x_model,y_model); baseline=_calibrate(baseline_raw,x_cal,y_cal)
+        model_trade_mask=y_model!=0; cal_trade_mask=y_cal!=0
+        if int(model_trade_mask.sum())<300 or int(cal_trade_mask.sum())<50: return BrainReport("REJECTED",version,{},"Insufficient non-flat samples for calibrated long/short training.")
+        direction_raw=_classifier(family); direction_raw.fit(x_model[model_trade_mask],y_model[model_trade_mask]); direction=_calibrate(direction_raw,x_cal[cal_trade_mask],y_cal[cal_trade_mask])
+        baseline_raw=_classifier("logistic_regression"); baseline_raw.fit(x_model[model_trade_mask],y_model[model_trade_mask]); baseline=_calibrate(baseline_raw,x_cal[cal_trade_mask],y_cal[cal_trade_mask])
         cal_pred=direction.predict(x_cal); cal_prob=direction.predict_proba(x_cal)
         confidence=np.max(cal_prob,axis=1)
         selection_threshold=0.55; selection_score=-float("inf")
