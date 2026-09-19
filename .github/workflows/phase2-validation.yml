@@ -17,4 +17,11 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: pytest -q tests/test_phase2_predictive.py tests/test_stage3_ensemble.py tests/test_stage3_validation.py
-      - run: PYTHONPATH=. python scripts/phase2_oos_validation.py
+      - run: PYTHONPATH=. PHASE2_CANDLES=30000 python scripts/phase2_oos_validation.py
+      - name: Upload Phase 2 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-predictive-evidence
+          path: artifacts/phase2_oos_report.json
+          if-no-files-found: warn
