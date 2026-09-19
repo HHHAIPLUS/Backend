@@ -301,25 +301,62 @@ class PredictiveBrain:
         ca = splits["calibration"]
         oo = splits["oos"]
 
-        # The horizon/label target is selected using validation only.
+        # Selection uses two chronological validation folds inside the pre-OOS
+        # history. This reduces dependence on one favorable validation slice while
+        # keeping the final OOS period completely untouched.
+        selection_end = va[1]
+        purge = MAX_LABEL_HORIZON
+        fold1_train_end = max(600, int(selection_end * 0.58))
+        fold1_val_start = fold1_train_end + purge
+        fold1_val_end = int(selection_end * 0.75)
+        fold2_train_end = fold1_val_end
+        fold2_val_start = fold2_train_end + purge
+        fold2_val_end = selection_end
+        selection_folds = [
+            ((0, fold1_train_end), (fold1_val_start, fold1_val_end)),
+            ((0, fold2_train_end), (fold2_val_start, fold2_val_end)),
+        ]
+        selection_folds = [
+            (train_bounds, val_bounds)
+            for train_bounds, val_bounds in selection_folds
+            if val_bounds[1] - val_bounds[0] >= 100
+        ]
+        if len(selection_folds) < 2:
+            return BrainReport("REJECTED", version, {}, "Multiple chronological validation folds are required for model selection.")
+
+        def aggregate_scores(scores):
+            if not scores:
+                return {"status": "UNAVAILABLE"}
+            numeric = ("accuracy", "balanced_accuracy", "avg_net_return", "avg_trade_net_return", "trade_rate")
+            out = {key: float(np.mean([float(s[key]) for s in scores])) for key in numeric if key in scores[0]}
+            out["samples"] = int(sum(int(s.get("samples", 0)) for s in scores))
+            out["trades"] = int(sum(int(s.get("trades", 0)) for s in scores))
+            out["total_net_return"] = float(sum(float(s.get("total_net_return", 0.0)) for s in scores))
+            out["max_drawdown"] = float(max(float(s.get("max_drawdown", 0.0)) for s in scores))
+            out["folds"] = scores
+            return out
+
         horizon_selection = {}
         for h in HORIZONS:
             full_returns = _future_return(rows, h)
-            train_returns = _slice(full_returns, tr)
-            val_returns = _slice(full_returns, va)
             for threshold in LABEL_THRESHOLDS:
-                y_train = _direction_target(train_returns, threshold)
-                y_val = _direction_target(val_returns, threshold)
-                if len(set(y_train.tolist())) < 3 or len(set(y_val.tolist())) < 3:
-                    continue
-                model = _classifier("logistic_regression")
-                model.fit(_slice(x, tr), y_train)
-                pred = model.predict(_slice(x, va))
-                probs = model.predict_proba(_slice(x, va))
-                score = _metrics(y_val, pred, probs, model.classes_, val_returns)
-                horizon_selection[f"{h}:{threshold:.4f}"] = {
-                    **score, "horizon": h, "label_threshold": threshold
-                }
+                fold_scores = []
+                for train_bounds, val_bounds in selection_folds:
+                    train_returns = _slice(full_returns, train_bounds)
+                    val_returns = _slice(full_returns, val_bounds)
+                    y_train_fold = _direction_target(train_returns, threshold)
+                    y_val_fold = _direction_target(val_returns, threshold)
+                    if len(set(y_train_fold.tolist())) < 3 or len(set(y_val_fold.tolist())) < 3:
+                        continue
+                    model = _classifier("logistic_regression")
+                    model.fit(_slice(x, train_bounds), y_train_fold)
+                    pred = model.predict(_slice(x, val_bounds))
+                    probs = model.predict_proba(_slice(x, val_bounds))
+                    fold_scores.append(_metrics(y_val_fold, pred, probs, model.classes_, val_returns))
+                if fold_scores:
+                    horizon_selection[f"{h}:{threshold:.4f}"] = {
+                        **aggregate_scores(fold_scores), "horizon": h, "label_threshold": threshold
+                    }
 
         viable = [
             v for v in horizon_selection.values()
@@ -328,10 +365,8 @@ class PredictiveBrain:
         ]
         if not viable:
             return BrainReport("REJECTED", version, {"horizon_selection": horizon_selection},
-                               "No horizon/label threshold produced enough validation trades for selection.")
+                               "No horizon/label threshold produced enough validation trades across the chronological selection folds.")
 
-        # Validation selection is explicitly allowed to use economic return,
-        # but OOS is never inspected during this choice.
         chosen = max(
             viable,
             key=lambda v: (float(v["avg_trade_net_return"]), float(v["balanced_accuracy"]))
@@ -354,43 +389,52 @@ class PredictiveBrain:
             return BrainReport("REJECTED", version, {"chosen_horizon": chosen_horizon, "chosen_threshold": chosen_threshold},
                                "Every chronological partition must contain long, flat and short classes.")
 
-        # Model-family and direction selection are validation-only.
+        # Model-family and direction selection are validation-only across the
+        # same chronological folds. OOS is not inspected during selection.
         validation_scores = {}
         candidates = []
         for family in MODEL_FAMILIES:
-            model = _classifier(family)
-            model.fit(_slice(x, tr), y_train)
-            pred = model.predict(_slice(x, va))
-            probs = model.predict_proba(_slice(x, va))
-            score = _metrics(y_val, pred, probs, model.classes_, r_val)
-            validation_scores[family] = score
-            candidates.append((score["avg_trade_net_return"], score["balanced_accuracy"], family, False))
-
-            inv_pred = np.where(pred == 1, -1, np.where(pred == -1, 1, 0))
-            inv_probs = probs.copy()
-            mapping = {int(c): i for i, c in enumerate(model.classes_)}
-            if all(c in mapping for c in (-1, 0, 1)):
-                inv_probs[:, mapping[-1]], inv_probs[:, mapping[1]] = (
-                    probs[:, mapping[1]], probs[:, mapping[-1]]
+            fold_scores = []
+            inverse_fold_scores = []
+            for train_bounds, val_bounds in selection_folds:
+                y_train_fold = _slice(y, train_bounds)
+                y_val_fold = _slice(y, val_bounds)
+                model = _classifier(family)
+                model.fit(_slice(x, train_bounds), y_train_fold)
+                pred = model.predict(_slice(x, val_bounds))
+                probs = model.predict_proba(_slice(x, val_bounds))
+                fold_scores.append(_metrics(y_val_fold, pred, probs, model.classes_, _slice(returns, val_bounds)))
+                inv_pred = np.where(pred == 1, -1, np.where(pred == -1, 1, 0))
+                inv_probs = probs.copy()
+                mapping = {int(c): i for i, c in enumerate(model.classes_)}
+                if all(c in mapping for c in (-1, 0, 1)):
+                    inv_probs[:, mapping[-1]], inv_probs[:, mapping[1]] = (
+                        probs[:, mapping[1]], probs[:, mapping[-1]]
+                    )
+                inverse_fold_scores.append(
+                    _metrics(y_val_fold, inv_pred, inv_probs, model.classes_, _slice(returns, val_bounds))
                 )
-            inv_score = _metrics(y_val, inv_pred, inv_probs, model.classes_, r_val)
+            score = aggregate_scores(fold_scores)
+            inv_score = aggregate_scores(inverse_fold_scores)
+            validation_scores[family] = score
             validation_scores[family + "_inverse"] = inv_score
+            candidates.append((score["avg_trade_net_return"], score["balanced_accuracy"], family, False))
             candidates.append((inv_score["avg_trade_net_return"], inv_score["balanced_accuracy"], family, True))
 
-        # Regression candidates are evaluated on validation as an independent
-        # economic signal family. The edge threshold is fixed to trading cost;
-        # no OOS tuning is permitted.
         for family in RETURN_FAMILIES:
-            reg = _regressor(family)
-            reg.fit(_slice(x, tr), r_train)
-            expected = reg.predict(_slice(x, va))
-            pred = _regression_signal(expected, COST_RATE)
-            probs = np.column_stack([
-                np.where(pred == -1, 0.90, 0.05),
-                np.where(pred == 0, 0.90, 0.05),
-                np.where(pred == 1, 0.90, 0.05),
-            ])
-            score = _metrics(y_val, pred, probs, np.array([-1, 0, 1]), r_val)
+            fold_scores = []
+            for train_bounds, val_bounds in selection_folds:
+                reg = _regressor(family)
+                reg.fit(_slice(x, train_bounds), _slice(returns, train_bounds))
+                expected = reg.predict(_slice(x, val_bounds))
+                pred = _regression_signal(expected, COST_RATE)
+                probs = np.column_stack([
+                    np.where(pred == -1, 0.90, 0.05),
+                    np.where(pred == 0, 0.90, 0.05),
+                    np.where(pred == 1, 0.90, 0.05),
+                ])
+                fold_scores.append(_metrics(_slice(y, val_bounds), pred, probs, np.array([-1, 0, 1]), _slice(returns, val_bounds)))
+            score = aggregate_scores(fold_scores)
             validation_scores[family] = score
             candidates.append((score["avg_trade_net_return"], score["balanced_accuracy"], family, False))
 
@@ -402,8 +446,6 @@ class PredictiveBrain:
         family = best[2]
         invert_direction = bool(best[3])
 
-        # Never promote a non-baseline classifier solely because it wins by a
-        # tiny validation fluctuation while losing balanced accuracy to baseline.
         baseline_val = validation_scores.get("logistic_regression", {})
         if family in MODEL_FAMILIES and family != "logistic_regression":
             if (
