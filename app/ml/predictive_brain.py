@@ -8,7 +8,7 @@ from typing import Any
 import joblib
 import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor, HistGradientBoostingClassifier, HistGradientBoostingRegressor
+from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor, HistGradientBoostingClassifier, HistGradientBoostingRegressor, RandomForestClassifier
 from sklearn.dummy import DummyClassifier
 from sklearn.frozen import FrozenEstimator
 from sklearn.linear_model import LogisticRegression
@@ -19,7 +19,7 @@ from sklearn.preprocessing import StandardScaler
 from app.ml.predictive import FEATURES
 from app.ml.model_validation import promotion_gate
 
-MODEL_FAMILIES = ("logistic_regression", "extra_trees", "hist_gradient_boosting")
+MODEL_FAMILIES = ("logistic_regression", "extra_trees", "hist_gradient_boosting", "random_forest")
 HORIZONS = (3, 6, 12)
 LABEL_THRESHOLDS = (0.0015, 0.0025, 0.0035)
 COST_RATE = 0.0008
@@ -60,6 +60,7 @@ def _classifier(family):
     if family=="logistic_regression": return Pipeline([("scale",StandardScaler()),("model",LogisticRegression(max_iter=1500,class_weight="balanced",random_state=42))])
     if family=="extra_trees": return ExtraTreesClassifier(n_estimators=60,min_samples_leaf=10,class_weight="balanced",random_state=42,n_jobs=1)
     if family=="hist_gradient_boosting": return HistGradientBoostingClassifier(max_iter=180,learning_rate=.05,max_leaf_nodes=15,l2_regularization=1.0,random_state=42)
+    if family=="random_forest": return RandomForestClassifier(n_estimators=180,min_samples_leaf=12,max_features="sqrt",class_weight="balanced_subsample",random_state=42,n_jobs=1)
     raise ValueError(f"Unknown model family: {family}")
 
 def _regressor(family):
@@ -195,7 +196,7 @@ class PredictiveBrain:
         if self.bundle is None: return {"trained":False,"abstain":True,"version":self.version,"decision":"NO_TRADE","reason":"No promoted predictive brain artifact is available."}
         x=np.asarray([[float(features.get(k,0.0) or 0.0) for k in FEATURES]],dtype=float)
         if not np.isfinite(x).all(): return {"trained":True,"abstain":True,"version":self.version,"decision":"NO_TRADE","reason":"Non-finite predictive features."}
-        dm=self.bundle["direction_model"]; bp=dm.predict_proba(x)[0]; er=float(self.bundle["expected_return_model"].predict(x)[0]); dn=max(0.0,float(self.bundle["downside_model"].predict(x)[0])); vo=max(0.0,float(self.bundle["volatility_model"].predict(x)[0])); rg=int(self.bundle["regime_model"].predict(x)[0]); classes=list(dm.classes_); probs={"short":float(bp[classes.index(-1)]) if -1 in classes else 0.0,"flat":float(bp[classes.index(0)]) if 0 in classes else 0.0,"long":float(bp[classes.index(1)]) if 1 in classes else 0.0}; direction=max(probs,key=probs.get); edge=er-self.bundle["cost_rate"]; threshold=float(self.bundle.get("decision_threshold",0.55)); uncertainty=float(1-max(probs.values())); abstain=direction=="flat" or max(probs.values())<threshold or edge<=0 or not np.isfinite([er,dn,vo]).all(); return {"trained":True,"abstain":abstain,"version":self.version,"decision":"NO_TRADE" if abstain else direction.upper(),"probabilities":probs,"expected_return":er,"expected_edge_after_cost":edge,"downside":dn,"volatility":vo,"regime":rg,"uncertainty":uncertainty,"abstention_probability":am,"model_family":self.bundle["family"]}
+        dm=self.bundle["direction_model"]; bp=dm.predict_proba(x)[0]; er=float(self.bundle["expected_return_model"].predict(x)[0]); dn=max(0.0,float(self.bundle["downside_model"].predict(x)[0])); vo=max(0.0,float(self.bundle["volatility_model"].predict(x)[0])); rg=int(self.bundle["regime_model"].predict(x)[0]); classes=list(dm.classes_); probs={"short":float(bp[classes.index(-1)]) if -1 in classes else 0.0,"flat":float(bp[classes.index(0)]) if 0 in classes else 0.0,"long":float(bp[classes.index(1)]) if 1 in classes else 0.0}; direction=max(probs,key=probs.get); edge=er-self.bundle["cost_rate"]; threshold=float(self.bundle.get("decision_threshold",0.55)); uncertainty=float(1-max(probs.values())); abstain=direction=="flat" or max(probs.values())<threshold or edge<=0 or not np.isfinite([er,dn,vo]).all(); return {"trained":True,"abstain":abstain,"version":self.version,"decision":"NO_TRADE" if abstain else direction.upper(),"probabilities":probs,"expected_return":er,"expected_edge_after_cost":edge,"downside":dn,"volatility":vo,"regime":rg,"uncertainty":uncertainty,"abstention_probability":float(max(probs.values()) < threshold),"model_family":self.bundle["family"]}
     def manifest(self):
         if not self.manifest_path.exists(): return None
         try: return json.loads(self.manifest_path.read_text())
