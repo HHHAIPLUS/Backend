@@ -129,7 +129,7 @@ async def lifespan(app):
         except Exception as exc:
             log.exception("PREDICTIVE_BRAIN_BOOTSTRAP_FAILED %s", exc)
 
-    brain_task = asyncio.create_task(bootstrap_predictive_brain())
+    brain_task = None if os.getenv("HHHAI_PHASE2_VERIFY_ON_START", "true").lower() == "true" else asyncio.create_task(bootstrap_predictive_brain())
     await hydrate_learning()
     await hydrate_adaptive()
     await hydrate_research()
@@ -177,7 +177,7 @@ async def lifespan(app):
         if trader.running:
             await trader.stop()
         binance_user_stream.stop()
-        if not brain_task.done():
+        if brain_task is not None and not brain_task.done():
             brain_task.cancel()
             try:
                 await brain_task
