@@ -29,7 +29,7 @@ def promotion_gate(candidate_returns: np.ndarray, baseline_returns: np.ndarray, 
     return {
         "promoted": promoted,
         "enough_samples": enough,
-    "sample_count": int(candidate.size),
+    "sample_count": int(candidate_returns.size),
     "trade_count": int(np.count_nonzero(candidate_returns != 0.0)),
         "balanced_accuracy_not_worse": accuracy_ok,
         "drawdown_within_limit": drawdown_ok,
