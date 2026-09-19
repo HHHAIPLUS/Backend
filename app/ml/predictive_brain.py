@@ -8,7 +8,8 @@ from typing import Any
 import joblib
 import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor, HistGradientBoostingClassifier, HistGradientBoostingRegressor, DummyClassifier
+from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor, HistGradientBoostingClassifier, HistGradientBoostingRegressor
+from sklearn.dummy import DummyClassifier
 from sklearn.frozen import FrozenEstimator
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_score, recall_score
