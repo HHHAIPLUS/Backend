@@ -123,7 +123,7 @@ def _classifier(family):
         return Pipeline([(
             "scale", StandardScaler(),
         ), (
-            "model", __import__("sklearn.neighbors", fromlist=["KNeighborsClassifier"]).KNeighborsClassifier(
+            "model", KNeighborsClassifier(
                 n_neighbors=75, weights="distance", p=2,
             ),
         )])
@@ -439,8 +439,7 @@ class PredictiveBrain:
             # Regression candidates are fit on train+validation and use the
             # calibration set only to choose a confidence/abstention threshold.
             raw_reg = _regressor(family)
-            raw_reg.fit(x_fit, y_fit.astype(float) * 0.0 + _slice(returns, va).mean())
-            # Replace the placeholder fit above with the actual returns.
+            # Regression candidates predict the actual future return target.
             raw_reg.fit(x_fit, _slice(returns, (0, fit_end)))
             direction = raw_reg
             baseline_raw = _classifier("logistic_regression")
@@ -527,7 +526,7 @@ class PredictiveBrain:
                                "Candidate did not clear the untouched OOS absolute safety gate.")
 
         horizon_metrics = self._horizon_eval(
-            _slice(x, tr), _slice(x, oo), rows[:oo[0]], rows[oo[0]:], chosen_threshold
+            _slice(x, tr), _slice(x, oo), rows[tr[0]:tr[1]], rows[oo[0]:], chosen_threshold
         )
         bundle = {
             "schema_version": ARTIFACT_SCHEMA,
