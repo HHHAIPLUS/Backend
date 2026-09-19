@@ -12,6 +12,7 @@ from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor, HistGrad
 from sklearn.dummy import DummyClassifier
 from sklearn.frozen import FrozenEstimator
 from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_score, recall_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -19,7 +20,7 @@ from sklearn.preprocessing import StandardScaler
 from app.ml.predictive import FEATURES
 from app.ml.model_validation import promotion_gate
 
-MODEL_FAMILIES = ("logistic_regression", "extra_trees", "hist_gradient_boosting", "random_forest")
+MODEL_FAMILIES = ("logistic_regression", "extra_trees", "hist_gradient_boosting", "random_forest", "gaussian_nb")
 HORIZONS = (3, 6, 12)
 LABEL_THRESHOLDS = (0.0015, 0.0025, 0.0035)
 COST_RATE = 0.0008
@@ -61,6 +62,7 @@ def _classifier(family):
     if family=="extra_trees": return ExtraTreesClassifier(n_estimators=60,min_samples_leaf=10,class_weight="balanced",random_state=42,n_jobs=1)
     if family=="hist_gradient_boosting": return HistGradientBoostingClassifier(max_iter=180,learning_rate=.05,max_leaf_nodes=15,l2_regularization=1.0,random_state=42)
     if family=="random_forest": return RandomForestClassifier(n_estimators=180,min_samples_leaf=12,max_features="sqrt",class_weight="balanced_subsample",random_state=42,n_jobs=1)
+    if family=="gaussian_nb": return GaussianNB(var_smoothing=1e-8)
     raise ValueError(f"Unknown model family: {family}")
 
 def _regressor(family):
