@@ -83,7 +83,7 @@ async def lifespan(app):
         audit_result = await asyncio.to_thread(
             subprocess.run, ["python", "scripts/phase1_data_integrity.py"],
             capture_output=True, text=True,
-            env={**os.environ, "PHASE1_SYMBOL": "BTCUSDT", "PHASE1_INTERVAL": "1h", "PHASE1_CANDLES": "10000"},
+            env={**os.environ, "PYTHONPATH": os.getcwd(), "PHASE1_SYMBOL": "BTCUSDT", "PHASE1_INTERVAL": "1h", "PHASE1_CANDLES": "10000"},
         )
         if audit_result.returncode != 0:
             log.error("PHASE1_LIVE_AUDIT_FAILED stdout=%s stderr=%s", audit_result.stdout[-12000:], audit_result.stderr[-12000:])
