@@ -40,7 +40,7 @@ MODEL_FAMILIES = (
 )
 RETURN_FAMILIES = ("ridge", "extra_trees_regressor", "hist_gradient_boosting_regressor")
 HORIZONS = (3, 6, 12)
-LABEL_THRESHOLDS = (0.0015, 0.0025, 0.0035)
+LABEL_THRESHOLDS = (0.0009, 0.0012, 0.0015, 0.0025, 0.0035)
 COST_RATE = 0.0008
 ARTIFACT_SCHEMA = 4
 MAX_LABEL_HORIZON = max(HORIZONS)
