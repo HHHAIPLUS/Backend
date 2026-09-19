@@ -185,10 +185,10 @@ def fetch_bitget_klines(symbol: str, interval: str = "5m", limit: int = 1500) ->
                 break
             end_time = int(sorted(batch, key=lambda row: int(row[0]))[0][0]) - 1
             time.sleep(HISTORICAL_REQUEST_DELAY)
-    result = _deduplicate_klines(all_klines)[-requested:]
+    result = _deduplicate_klines(all_klines)
     interval_ms = _interval_ms(interval)
     now_ms = int(time.time() * 1000)
-    result = [row for row in result if int(row[0]) + interval_ms <= now_ms]
+    result = [row for row in result if int(row[0]) + interval_ms <= now_ms][-requested:]
     if len(result) < requested:
         raise RuntimeError(f"Bitget returned only {len(result)} closed usable candles out of {requested} requested")
     return result
