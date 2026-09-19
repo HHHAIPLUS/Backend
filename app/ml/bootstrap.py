@@ -261,7 +261,7 @@ def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 
     candles = [_candle_to_dict(row) for row in raw]
     if len(candles) < 50:
         raise ValueError(f"Not enough valid OHLCV candles: {len(candles)}")
-    lookback = 24
+    lookback = 168
     if len(candles) <= lookback + horizon:
         raise ValueError("Not enough candles for the requested lookback and horizon")
     rows: list[dict[str, Any]] = []
