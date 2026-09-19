@@ -234,7 +234,8 @@ def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 
     if len(candles) <= lookback + horizon:
         raise ValueError("Not enough candles for the requested lookback and horizon")
     rows: list[dict[str, Any]] = []
-    for i in range(lookback, len(candles) - horizon):
+    max_horizon = max(HORIZONS)
+    for i in range(lookback, len(candles) - max_horizon):
         window = candles[i - lookback:i + 1]
         last = window[-1]
         future_return = candles[i + horizon]["close"] / last["close"] - 1.0
