@@ -91,7 +91,7 @@ async def _run_phase1_verification() -> None:
 async def lifespan(app):
     await hydrate_model()
     # Temporary Phase 1 release verification; removed immediately after PASS.
-    phase1_task = asyncio.create_task(_run_phase1_verification())
+    app.state.phase1_verification_task = asyncio.create_task(_run_phase1_verification())
     async def bootstrap_predictive_brain():
         try:
             if os.getenv("HHHAI_AUTO_BOOTSTRAP_BRAIN", "false").lower() != "true" or predictive_brain.bundle is not None:
