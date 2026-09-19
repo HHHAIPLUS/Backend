@@ -19,8 +19,9 @@ from sklearn.ensemble import (
     RandomForestRegressor,
 )
 from sklearn.frozen import FrozenEstimator
-from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.linear_model import LogisticRegression, Ridge, SGDClassifier
 from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_score, recall_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -34,8 +35,10 @@ MODEL_FAMILIES = (
     "hist_gradient_boosting",
     "random_forest",
     "gaussian_nb",
+    "sgd_logistic",
+    "knn",
 )
-RETURN_FAMILIES = ("ridge", "extra_trees_regressor", "random_forest_regressor", "hist_gradient_boosting_regressor")
+RETURN_FAMILIES = ("ridge", "extra_trees_regressor", "hist_gradient_boosting_regressor")
 HORIZONS = (3, 6, 12)
 LABEL_THRESHOLDS = (0.0015, 0.0025, 0.0035)
 COST_RATE = 0.0008
@@ -108,6 +111,22 @@ def _classifier(family):
         )
     if family == "gaussian_nb":
         return GaussianNB(var_smoothing=1e-8)
+    if family == "sgd_logistic":
+        return Pipeline([(
+            "scale", StandardScaler(),
+        ), (
+            "model", SGDClassifier(loss="log_loss", alpha=1e-4, class_weight="balanced",
+                                   max_iter=2500, tol=1e-4, random_state=42, early_stopping=True,
+                                   validation_fraction=0.12, n_iter_no_change=20),
+        )])
+    if family == "knn":
+        return Pipeline([(
+            "scale", StandardScaler(),
+        ), (
+            "model", __import__("sklearn.neighbors", fromlist=["KNeighborsClassifier"]).KNeighborsClassifier(
+                n_neighbors=75, weights="distance", p=2,
+            ),
+        )])
     raise ValueError(f"Unknown model family: {family}")
 
 
@@ -434,7 +453,7 @@ class PredictiveBrain:
         confidence = np.max(cal_prob, axis=1)
         selection_threshold = 0.55
         selection_score = -float("inf")
-        min_cal_trades = max(100, int(len(y_cal) * 0.10))
+        min_cal_trades = max(100, int(len(y_cal) * 0.20))
         for threshold in np.arange(0.45, 0.71, 0.02):
             selected = cal_pred.copy()
             if family in MODEL_FAMILIES:
@@ -447,7 +466,13 @@ class PredictiveBrain:
             peak = np.maximum.accumulate(np.r_[0.0, equity])
             drawdown = float(np.max(peak[1:] - equity)) if len(equity) else 0.0
             avg_trade = float(net[traded].mean())
-            score = avg_trade - 0.5 * drawdown / max(1.0, int(traded.sum()))
+            trade_count = int(traded.sum())
+            trade_rate = trade_count / max(1, len(selected))
+            # Prefer positive expectancy with stable participation. The
+            # calibration period alone determines this choice; OOS is untouched.
+            score = avg_trade - 0.25 * drawdown / max(1.0, np.sqrt(trade_count))
+            if trade_rate < 0.20:
+                continue
             if score > selection_score:
                 selection_score = score
                 selection_threshold = float(threshold)
@@ -458,7 +483,9 @@ class PredictiveBrain:
         if family in MODEL_FAMILIES:
             candidate_pred[candidate_prob.max(axis=1) < selection_threshold] = 0
         else:
-            candidate_pred = _regression_signal(candidate_pred, COST_RATE)
+            # _predict_selected already converts the expected return into a
+            # {-1,0,1} signal. Do not threshold the discrete signal again.
+            candidate_pred = candidate_pred.astype(int)
 
         candidate_metrics = _metrics(y_oos, candidate_pred, candidate_prob, np.array([-1, 0, 1]), r_oos)
         baseline_metrics = _metrics(y_oos, baseline_pred, baseline_prob, baseline.classes_, r_oos)
@@ -611,6 +638,11 @@ class PredictiveBrain:
                 yb = _direction_target(b, threshold)
                 if len(set(ya.tolist())) < 3 or len(set(yb.tolist())) < 3:
                     raise ValueError("three classes required")
+                if len(x_train) != len(ya):
+                    # x_train corresponds to the same chronological train
+                    # partition as train_rows; fail closed rather than silently
+                    # evaluating mismatched samples.
+                    raise ValueError("Horizon evaluation feature/label length mismatch")
                 m = _classifier("logistic_regression")
                 m.fit(x_train, ya)
                 out[str(h)] = _metrics(yb, m.predict(x_oos), m.predict_proba(x_oos), m.classes_, b)
