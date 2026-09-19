@@ -21,7 +21,8 @@ def test_phase2_metrics_include_net_cost_and_trade_count():
     assert metrics["samples"] == 4
     assert metrics["trades"] == 3
     assert metrics["avg_trade_net_return"] < .004
-    assert metrics["total_net_return"] < 0\n    assert metrics["total_net_return"] < float(np.sum(returns * np.where(pred == 1, 1.0, np.where(pred == -1, -1.0, 0.0))))
+    assert metrics["total_net_return"] < 0
+    assert metrics["total_net_return"] < float(np.sum(returns * np.where(pred == 1, 1.0, np.where(pred == -1, -1.0, 0.0))))
 
 
 def test_phase2_paired_bootstrap_rejects_invalid_small_sample():
