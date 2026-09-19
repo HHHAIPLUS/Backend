@@ -222,9 +222,9 @@ def _candle_to_dict(row: list[Any]) -> dict[str, Any]:
     return {"observed_at": datetime.fromtimestamp(int(row[0]) / 1000, timezone.utc).isoformat(), "open": float(row[1]), "high": float(row[2]), "low": float(row[3]), "close": float(row[4]), "volume": max(0.0, float(row[5]))}
 
 
-def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 0.0025) -> list[dict[str, Any]]:
-    if horizon <= 0 or threshold <= 0:
-        raise ValueError("Horizon and threshold must be greater than zero")
+def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 0.0025, take_profit: float = 0.006, stop_loss: float = 0.004) -> list[dict[str, Any]]:
+    if horizon <= 0 or threshold <= 0 or take_profit <= 0 or stop_loss <= 0:
+        raise ValueError("Horizon, threshold, take_profit and stop_loss must be greater than zero")
     candles = [_candle_to_dict(row) for row in _deduplicate_klines(klines)]
     if len(candles) < 50:
         raise ValueError(f"Not enough valid OHLCV candles: {len(candles)}")
@@ -237,10 +237,33 @@ def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 
         last = window[-1]
         future_return = candles[i + horizon]["close"] / last["close"] - 1.0
         horizon_returns = {str(h): candles[i + h]["close"] / last["close"] - 1.0 for h in HORIZONS if i + h < len(candles)}
-        label = 1 if future_return > threshold else -1 if future_return < -threshold else 0
+        barrier_returns = {}
+        for h in HORIZONS:
+            if i + h >= len(candles):
+                continue
+            long_barrier = last["close"] * (1.0 + take_profit)
+            short_barrier = last["close"] * (1.0 - stop_loss)
+            barrier = None
+            for j in range(i + 1, i + h + 1):
+                hi, lo = candles[j]["high"], candles[j]["low"]
+                hit_long, hit_short = hi >= long_barrier, lo <= short_barrier
+                if hit_long and hit_short:
+                    barrier = 0.0
+                    break
+                if hit_long:
+                    barrier = take_profit
+                    break
+                if hit_short:
+                    barrier = -stop_loss
+                    break
+            if barrier is None:
+                barrier = candles[i + h]["close"] / last["close"] - 1.0
+            barrier_returns[str(h)] = float(barrier)
+        future_trade_return = barrier_returns.get(str(horizon), future_return)
+        label = 1 if future_trade_return > threshold else -1 if future_trade_return < -threshold else 0
         candle_rows = [[int(datetime.fromisoformat(c["observed_at"]).timestamp() * 1000), c["open"], c["high"], c["low"], c["close"], c["volume"]] for c in window]
         model_features = build_model_features(candle_rows)
-        rows.append({"observed_at": last["observed_at"], "features": model_features, "label": label, "outcome_return": future_return, "outcome_horizon": horizon, "outcome_return_by_horizon": horizon_returns, "context_available": {name: False for name in CONTEXT_FEATURES}, "feature_provenance": {}, "data_source": "ohlcv_only"})
+        rows.append({"observed_at": last["observed_at"], "features": model_features, "label": label, "outcome_return": future_trade_return, "outcome_horizon": horizon, "outcome_return_by_horizon": barrier_returns, "close_return_by_horizon": horizon_returns, "context_available": {name: False for name in CONTEXT_FEATURES}, "feature_provenance": {}, "data_source": "ohlcv_only"})
     return rows
 
 
