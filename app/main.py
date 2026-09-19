@@ -6,6 +6,7 @@ from app.services.monitor_worker import monitor
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import logging
+import subprocess
 from app.api.health import router as health_router
 from app.api.status import router as status_router
 from app.api.integration import router as integration_router
@@ -64,6 +65,30 @@ install_multi_coin_selection(trader)
 @asynccontextmanager
 async def lifespan(app):
     await hydrate_model()
+    if os.getenv("HHHAI_PHASE1_VERIFY_ON_START", "false").lower() == "true":
+        phase1_cmd = [
+            "pytest", "-q",
+            "tests/test_dataset_integrity.py",
+            "tests/test_historical_dataset.py",
+            "tests/test_historical_dataset_context_features.py",
+            "tests/test_historical_enrichment.py",
+            "tests/test_historical_sources.py",
+            "tests/test_stage1a_truthfulness.py",
+            "tests/test_phase1_data_integrity.py",
+        ]
+        test_result = await asyncio.to_thread(subprocess.run, phase1_cmd, capture_output=True, text=True)
+        if test_result.returncode != 0:
+            log.error("PHASE1_TESTS_FAILED stdout=%s stderr=%s", test_result.stdout[-12000:], test_result.stderr[-12000:])
+            raise RuntimeError("Phase 1 automated tests failed")
+        audit_result = await asyncio.to_thread(
+            subprocess.run, ["python", "scripts/phase1_data_integrity.py"],
+            capture_output=True, text=True,
+            env={**os.environ, "PHASE1_SYMBOL": "BTCUSDT", "PHASE1_INTERVAL": "1h", "PHASE1_CANDLES": "10000"},
+        )
+        if audit_result.returncode != 0:
+            log.error("PHASE1_LIVE_AUDIT_FAILED stdout=%s stderr=%s", audit_result.stdout[-12000:], audit_result.stderr[-12000:])
+            raise RuntimeError("Phase 1 live historical-data audit failed")
+        log.warning("PHASE1_VERIFICATION_PASS %s", audit_result.stdout[-12000:])
     async def bootstrap_predictive_brain():
         try:
             if os.getenv("HHHAI_AUTO_BOOTSTRAP_BRAIN", "false").lower() != "true" or predictive_brain.bundle is not None:
