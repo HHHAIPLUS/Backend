@@ -16,11 +16,14 @@ from app.ml.ensemble import predictive_ensemble
 # open interest, news and liquidity stress) remains available to the decision
 # engine but is not silently fabricated into the supervised training set.
 FEATURES = [
-    "return_1", "return_3", "return_6", "return_12", "return_24",
-    "range_pct", "range_mean_12", "close_location", "atr_pct_14",
-    "volume_change", "volume_zscore",
-    "rsi_14", "ema_gap_8_24", "breakout_24",
-    "volatility_proxy", "trend_strength", "momentum",
+    "return_1", "return_3", "return_6", "return_12", "return_24", "return_48", "return_72", "return_168",
+    "range_pct", "range_mean_12", "range_mean_24", "close_location", "atr_pct_14", "atr_pct_28",
+    "volume_change", "volume_zscore", "volume_zscore_72",
+    "rsi_14", "rsi_28", "ema_gap_8_24", "ema_gap_24_72",
+    "breakout_24", "breakout_72", "volatility_proxy", "volatility_72",
+    "trend_strength", "trend_strength_72", "momentum",
+    "body_pct", "upper_wick_pct", "lower_wick_pct",
+    "hour_sin", "hour_cos", "day_sin", "day_cos",
 ]
 
 @dataclass
