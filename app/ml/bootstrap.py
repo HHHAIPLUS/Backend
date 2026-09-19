@@ -25,6 +25,7 @@ BINANCE_BATCH_SIZE = 500
 BITGET_BATCH_SIZE = 200
 BINANCE_RETRIES_PER_HOST = 2
 BITGET_RETRIES_PER_REQUEST = 2
+BITGET_GRANULARITY = {"1m":"1m","3m":"3m","5m":"5m","15m":"15m","30m":"30m","1h":"1H","4h":"4H","6h":"6H","12h":"12H","1d":"1D"}
 HISTORICAL_REQUEST_DELAY = 0.25
 HTTP_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 CONTEXT_FEATURES = ("order_book_imbalance", "funding_rate", "open_interest_change", "news_risk", "news_sentiment", "liquidity_stress")
@@ -125,7 +126,8 @@ def _normalize_bitget_candle(row: Any) -> list[Any] | None:
 
 
 def _request_bitget_batch(client: httpx.Client, symbol: str, granularity: str, limit: int, end_time: int | None) -> list[list[Any]]:
-    params: dict[str, Any] = {"productType": "USDT-FUTURES", "symbol": symbol.upper(), "granularity": granularity, "limit": min(BITGET_BATCH_SIZE, max(1, int(limit)))}
+    normalized_granularity = BITGET_GRANULARITY.get(str(granularity).lower(), str(granularity))
+    params: dict[str, Any] = {"productType": "USDT-FUTURES", "symbol": symbol.upper(), "granularity": normalized_granularity, "limit": min(BITGET_BATCH_SIZE, max(1, int(limit)))}
     if end_time is not None:
         params["endTime"] = str(end_time)
     last_error: Exception | None = None
@@ -159,7 +161,7 @@ def fetch_bitget_klines(symbol: str, interval: str = "5m", limit: int = 1500) ->
     with httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True, trust_env=True, headers={"User-Agent": "HHHAI/1.0", "Accept": "application/json"}) as client:
         while len(all_klines) < requested:
             batch_limit = min(BITGET_BATCH_SIZE, requested - len(all_klines))
-            batch = _request_bitget_batch(client, symbol, interval.lower(), batch_limit, end_time)
+            batch = _request_bitget_batch(client, symbol, interval, batch_limit, end_time)
             all_klines = batch + all_klines
             if len(batch) < batch_limit:
                 break
