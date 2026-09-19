@@ -81,7 +81,8 @@ class AutonomousTrader:
             if not settings.testnet_trading_enabled: return False, "testnet execution is disabled by TESTNET_TRADING_ENABLED"
             return True, "testnet execution enabled"
         if mode == "live":
-            if not autotrading_enabled: return False, "autonomous trading is disabled by HHHAI_AUTOTRADING_ENABLED"
+            if brain.bundle is None: return False, "no promoted predictive brain is available"
+            if autotrading_enabled: return False, "autonomous trading is disabled by HHHAI_AUTOTRADING_ENABLED"
             if not settings.live_trading_enabled: return False, "live execution is disabled by LIVE_TRADING_ENABLED"
             return True, "live execution enabled"
         return False, f"unsupported trading mode: {mode}"
@@ -304,7 +305,10 @@ class AutonomousTrader:
         from ai.adversarial import AdversarialEngine
         adversarial=AdversarialEngine().evaluate(symbol=symbol,proposed_action=proposed,context={'position_side':None,'momentum':context.momentum,'trend_strength':context.trend_strength,'buying_pressure':context.buying_pressure,'selling_pressure':context.selling_pressure,'volatility':context.volatility,'liquidity_stress':context.liquidity_stress,'news_risk':context.news_risk,'news_credibility':context.news_credibility}).model_dump(mode='json'); predictive=brain.predict(self._features(world)); fusion=self.fusion.decide(council_action=council['action'],council_confidence=float(council['confidence']),disagreement=float(council['disagreement']),predictive=predictive,adversarial_block=bool(adversarial['should_block']),scenario_uncertainty=float(scenario['uncertainty']),data_quality=float(world.get('data_quality') or 0),risk_vetoes=council['veto_flags']); decision=fusion.__dict__.copy(); candidate=None; optimizer_result=None
         if decision['action'] in {'LONG','SHORT'}:
-            candidate=self._candidate(world,decision['action']); regime_name=str(world.get('regime') or 'unknown'); optimizer_result=self.optimizer.evaluate(candidate,MarketRegime(name=regime_name,trend_strength=context.trend_strength,volatility=context.volatility,liquidity=context.liquidity_stress)).copy()
+            candidate=self._candidate(world,decision['action'])
+            if self.execution_mode == 'paper' and brain.bundle is None:
+                candidate.probability_of_success=float(decision.get('confidence') or 0.0)
+            regime_name=str(world.get('regime') or 'unknown'); optimizer_result=self.optimizer.evaluate(candidate,MarketRegime(name=regime_name,trend_strength=context.trend_strength,volatility=context.volatility,liquidity=context.liquidity_stress)).copy()
             if optimizer_result['decision']!='trade': decision['action']='WAIT'; decision['execution_candidate']=False; decision['vetoes']=list(decision.get('vetoes',[]))+['trade_quality_optimizer']
         risk=await self._risk_check(world,decision,candidate)
         if not risk['allowed']: decision['action']='WAIT'; decision['execution_candidate']=False; decision['vetoes']=list(decision.get('vetoes',[]))+risk['reasons']
