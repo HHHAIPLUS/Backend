@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from app.ml.model_validation import paired_bootstrap_ci, promotion_gate
-from app.ml.predictive_brain import _direction_target, _metrics
+from app.ml.predictive_brain import _direction_target, _metrics, _purged_time_splits
 
 
 def test_phase2_direction_labels_are_cost_aware():
@@ -35,3 +35,26 @@ def test_phase2_promotion_gate_never_promotes_failed_statistical_gate():
     baseline = np.full(100, 0.0002)
     result = promotion_gate(candidate, baseline, .55, .50, .01, .01)
     assert result["promoted"] is False
+
+
+def test_phase2_split_is_chronological_and_purged():
+    rows = [{"observed_at": f"2026-01-{(i // 24) + 1:02d}T{(i % 24):02d}:00:00+00:00"} for i in range(24 * 60)]
+    split = _purged_time_splits(rows)
+    tr = split["train"]
+    va = split["validation"]
+    ca = split["calibration"]
+    oo = split["oos"]
+    assert tr[1] <= va[0] - split["purge_rows"]
+    assert va[1] <= ca[0] - split["purge_rows"]
+    assert ca[1] <= oo[0] - split["purge_rows"]
+    assert rows[tr[1] - 1]["observed_at"] < rows[va[0]]["observed_at"]
+    assert rows[va[1] - 1]["observed_at"] < rows[ca[0]]["observed_at"]
+    assert rows[ca[1] - 1]["observed_at"] < rows[oo[0]]["observed_at"]
+
+
+def test_phase2_promotion_gate_counts_trades_not_flat_samples():
+    candidate = np.r_[np.zeros(1000), np.full(99, 0.001)]
+    baseline = np.r_[np.zeros(1000), np.full(99, 0.0005)]
+    result = promotion_gate(candidate, baseline, .60, .50, .01, .01)
+    assert result["trade_count"] == 99
+    assert result["enough_samples"] is False
