@@ -57,12 +57,12 @@ def _direction_target(values,threshold=COST_RATE):
 
 def _classifier(family):
     if family=="logistic_regression": return Pipeline([("scale",StandardScaler()),("model",LogisticRegression(max_iter=1500,class_weight="balanced",random_state=42))])
-    if family=="extra_trees": return ExtraTreesClassifier(n_estimators=120,min_samples_leaf=10,class_weight="balanced",random_state=42,n_jobs=-1)
+    if family=="extra_trees": return ExtraTreesClassifier(n_estimators=60,min_samples_leaf=10,class_weight="balanced",random_state=42,n_jobs=1)
     if family=="hist_gradient_boosting": return HistGradientBoostingClassifier(max_iter=180,learning_rate=.05,max_leaf_nodes=15,l2_regularization=1.0,random_state=42)
     raise ValueError(f"Unknown model family: {family}")
 
 def _regressor(family):
-    if family in ("logistic_regression","extra_trees"): return ExtraTreesRegressor(n_estimators=120,min_samples_leaf=10,random_state=42,n_jobs=-1)
+    if family in ("logistic_regression","extra_trees"): return ExtraTreesRegressor(n_estimators=60,min_samples_leaf=10,random_state=42,n_jobs=1)
     if family=="hist_gradient_boosting": return HistGradientBoostingRegressor(max_iter=250,learning_rate=.05,max_leaf_nodes=15,l2_regularization=1.0,random_state=42)
     raise ValueError(f"Unknown model family: {family}")
 
@@ -168,7 +168,7 @@ class PredictiveBrain:
         baseline_pred=baseline.predict(xte); baseline_prob=baseline.predict_proba(xte)
         candidate_metrics=_metrics(dte,candidate_pred,candidate_prob,direction.classes_,rte); baseline_metrics=_metrics(dte,baseline_pred,baseline_prob,baseline.classes_,rte)
         er=_regressor(family); er.fit(pre,pre_r); dn=_regressor(family); dn.fit(pre,np.minimum(pre_r,0)); vol=_regressor(family); vol.fit(pre,np.abs(pre_r)); rv=np.abs(pre_r); rq=np.quantile(rv,[.33,.66]); regime_target=np.where(rv>rq[1],2,np.where(rv>rq[0],1,0)); rm=_classifier(family); rm.fit(pre,regime_target)
-        meta_rows=[]; meta_y=[]; starts=max(250,len(pre)//3); step=max(100,(len(pre)-starts)//3)
+        meta_rows=[]; meta_y=[]; starts=max(250,len(pre)//2); step=max(100,(len(pre)-starts)//2)
         for end in range(starts,len(pre),step):
             stop=min(end+step,len(pre))
             if stop<=end: continue
