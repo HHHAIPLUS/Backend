@@ -157,7 +157,7 @@ def fetch_bitget_klines(symbol: str, interval: str = "5m", limit: int = 1500) ->
     if not symbol or not interval:
         raise ValueError("Symbol and interval are required")
     all_klines: list[list[Any]] = []
-    end_time: int | None = None
+    end_time: int | None = int(time.time() * 1000)
     with httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True, trust_env=True, headers={"User-Agent": "HHHAI/1.0", "Accept": "application/json"}) as client:
         while len(all_klines) < requested:
             batch_limit = min(BITGET_BATCH_SIZE, requested - len(all_klines))
