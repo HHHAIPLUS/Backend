@@ -6,20 +6,9 @@ from app.ml.dataset_integrity import audit_dataset, require_production_ready
 
 
 def _row(ts: str, complete: bool = True) -> dict:
-    features = {
-        "return_1": 0.01,
-        "range_pct": 0.02,
-        "volume_change": 0.1,
-        "order_book_imbalance": 0.0,
-        "funding_rate": 0.0,
-        "open_interest_change": 0.0,
-        "news_risk": 0.0,
-        "news_sentiment": 0.0,
-        "volatility_proxy": 0.1,
-        "trend_strength": 0.2,
-        "momentum": 0.3,
-        "liquidity_stress": 0.0,
-    }
+    from app.ml.predictive import FEATURES
+    features = {name: 0.1 for name in FEATURES}
+    features.update({"return_1": 0.01, "range_pct": 0.02, "volume_change": 0.1, "volatility_proxy": 0.1, "trend_strength": 0.2, "momentum": 0.3})
     provenance = {key: complete for key in (
         "order_book_imbalance", "funding_rate", "open_interest_change",
         "news_risk", "news_sentiment", "liquidity_stress",
