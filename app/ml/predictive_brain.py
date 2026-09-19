@@ -152,10 +152,15 @@ class PredictiveBrain:
             family="logistic_regression"
         cal_start=select_end; x_model=pre[:cal_start]; y_model=pre_y[:cal_start]; x_cal=pre[cal_start:]; y_cal=pre_y[cal_start:]
         if len(x_cal)<100 or len(set(y_model.tolist()))<3 or len(set(y_cal.tolist()))<3: return BrainReport("REJECTED",version,{},"Calibration partition is insufficient.")
-        model_trade_mask=y_model!=0; cal_trade_mask=y_cal!=0
-        if int(model_trade_mask.sum())<300 or int(cal_trade_mask.sum())<50: return BrainReport("REJECTED",version,{},"Insufficient non-flat samples for calibrated long/short training.")
-        direction_raw=_classifier(family); direction_raw.fit(x_model[model_trade_mask],y_model[model_trade_mask]); direction=_calibrate(direction_raw,x_cal[cal_trade_mask],y_cal[cal_trade_mask])
-        baseline_raw=_classifier("logistic_regression"); baseline_raw.fit(x_model[model_trade_mask],y_model[model_trade_mask]); baseline=_calibrate(baseline_raw,x_cal[cal_trade_mask],y_cal[cal_trade_mask])
+        # Train the directional classifier on all three economic classes.
+        # Excluding flat observations before calibration forced long/short-only
+        # predictions and distorted the OOS accuracy/abstention evaluation.
+        if len(x_model)<600 or len(x_cal)<100 or len(set(y_model.tolist()))<3 or len(set(y_cal.tolist()))<3:
+            return BrainReport("REJECTED",version,{},"Calibration partition is insufficient.")
+        direction_raw=_classifier(family); direction_raw.fit(x_model,y_model)
+        baseline_raw=_classifier("logistic_regression"); baseline_raw.fit(x_model,y_model)
+        direction=_calibrate(direction_raw,x_cal,y_cal)
+        baseline=_calibrate(baseline_raw,x_cal,y_cal)
         cal_pred=direction.predict(x_cal); cal_prob=direction.predict_proba(x_cal)
         confidence=np.max(cal_prob,axis=1)
         selection_threshold=0.55; selection_score=-float("inf")
@@ -163,9 +168,12 @@ class PredictiveBrain:
             selected=cal_pred.copy(); selected[confidence < threshold]=0
             traded=selected!=0
             if int(traded.sum())<100: continue
-            net=_net_returns(y_cal*0.0 + returns[cal_start:test_start],selected)
-            score=float(net.sum()) - 0.5*float(np.max(np.maximum.accumulate(np.r_[0.0,np.cumsum(net)])[1:]-np.cumsum(net)))
+            net=_net_returns(returns[cal_start:test_start],selected)
+            equity=np.cumsum(net); peak=np.maximum.accumulate(np.r_[0.0,equity])
+            drawdown=float(np.max(peak[1:]-equity)) if len(equity) else 0.0
+            score=float(net.sum()) - 0.5*drawdown
             if score>selection_score: selection_score=score; selection_threshold=float(threshold)
+
         candidate_pred=direction.predict(xte); candidate_prob=direction.predict_proba(xte)
         candidate_pred[candidate_prob.max(axis=1) < selection_threshold]=0
         baseline_pred=baseline.predict(xte); baseline_prob=baseline.predict_proba(xte)
