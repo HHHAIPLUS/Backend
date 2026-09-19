@@ -168,17 +168,21 @@ class PredictiveBrain:
         baseline_pred=baseline.predict(xte); baseline_prob=baseline.predict_proba(xte)
         candidate_metrics=_metrics(dte,candidate_pred,candidate_prob,direction.classes_,rte); baseline_metrics=_metrics(dte,baseline_pred,baseline_prob,baseline.classes_,rte)
         er=_regressor(family); er.fit(pre,pre_r); dn=_regressor(family); dn.fit(pre,np.minimum(pre_r,0)); vol=_regressor(family); vol.fit(pre,np.abs(pre_r)); rv=np.abs(pre_r); rq=np.quantile(rv,[.33,.66]); regime_target=np.where(rv>rq[1],2,np.where(rv>rq[0],1,0)); rm=_classifier(family); rm.fit(pre,regime_target)
+        # True out-of-fold meta-training uses only base direction probabilities.
+        # Expected-return/downside/volatility models remain separate production heads;
+        # excluding their repeated OOF regressors keeps validation reproducible on
+        # the constrained deployment CPU without changing any promotion gates.
         meta_rows=[]; meta_y=[]; starts=max(250,len(pre)//2); step=max(100,(len(pre)-starts)//2)
         for end in range(starts,len(pre),step):
             stop=min(end+step,len(pre))
             if stop<=end: continue
-            fm=_classifier(family); fm.fit(pre[:end],pre_y[:end]); fr=_regressor(family); fr.fit(pre[:end],pre_r[:end]); fd=_regressor(family); fd.fit(pre[:end],np.minimum(pre_r[:end],0)); fv=_regressor(family); fv.fit(pre[:end],np.abs(pre_r[:end]))
-            meta_rows.append(np.column_stack([fm.predict_proba(pre[end:stop]),fr.predict(pre[end:stop]),fd.predict(pre[end:stop]),fv.predict(pre[end:stop])]))
+            fm=_classifier(family); fm.fit(pre[:end],pre_y[:end])
+            meta_rows.append(fm.predict_proba(pre[end:stop]))
             meta_y.extend(pre_y[end:stop].tolist())
-        if not meta_rows or sum(len(a) for a in meta_rows)<100: return BrainReport("REJECTED",version,{},"Insufficient true out-of-fold meta-training samples.")
+        if not meta_rows or sum(len(a) for a in meta_rows)<100: return BrainReport("REJECTED",version,{}, "Insufficient true out-of-fold meta-training samples.")
         meta_x=np.vstack(meta_rows); meta_y=np.asarray(meta_y,dtype=int); mm=LogisticRegression(max_iter=1000,class_weight="balanced",random_state=42); mm.fit(meta_x,meta_y)
-        fm_oos=_classifier(family); fm_oos.fit(pre,pre_y); fr_oos=_regressor(family); fr_oos.fit(pre,pre_r); fd_oos=_regressor(family); fd_oos.fit(pre,np.minimum(pre_r,0)); fv_oos=_regressor(family); fv_oos.fit(pre,np.abs(pre_r))
-        meta_oos=np.column_stack([fm_oos.predict_proba(xte),fr_oos.predict(xte),fd_oos.predict(xte),fv_oos.predict(xte)])
+        fm_oos=_classifier(family); fm_oos.fit(pre,pre_y)
+        meta_oos=fm_oos.predict_proba(xte)
         candidate_prob=mm.predict_proba(meta_oos); candidate_pred=mm.predict(meta_oos); candidate_pred[candidate_prob.max(axis=1)<selection_threshold]=0
         candidate_metrics=_metrics(dte,candidate_pred,candidate_prob,mm.classes_,rte)
         gate=promotion_gate(_net_returns(rte,candidate_pred),_net_returns(rte,baseline_pred),candidate_metrics["balanced_accuracy"],baseline_metrics["balanced_accuracy"],candidate_metrics["max_drawdown"],baseline_metrics["max_drawdown"])
