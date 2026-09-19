@@ -109,7 +109,7 @@ def _request_binance_batch(client: httpx.Client, symbol: str, interval: str, lim
 
 
 def fetch_binance_klines(symbol: str, interval: str = "5m", limit: int = 1500) -> list[list[Any]]:
-    requested = min(30000, max(500, int(limit)))
+    requested = min(10000, max(500, int(limit)))
     symbol = symbol.upper().strip()
     if not symbol or not interval:
         raise ValueError("Symbol and interval are required")
@@ -170,7 +170,7 @@ def _request_bitget_batch(client: httpx.Client, symbol: str, granularity: str, l
 
 
 def fetch_bitget_klines(symbol: str, interval: str = "5m", limit: int = 1500) -> list[list[Any]]:
-    requested = min(10000, max(500, int(limit)))
+    requested = min(30000, max(500, int(limit)))
     symbol = symbol.upper().strip()
     if not symbol or not interval:
         raise ValueError("Symbol and interval are required")
