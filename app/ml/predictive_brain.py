@@ -19,7 +19,8 @@ from app.ml.predictive import FEATURES
 from app.ml.model_validation import promotion_gate
 
 MODEL_FAMILIES = ("logistic_regression", "extra_trees", "hist_gradient_boosting")
-HORIZONS = (1, 3, 6)
+HORIZONS = (1, 3, 6, 12, 24)
+LABEL_THRESHOLDS = (0.0015, 0.0025, 0.0040, 0.0060)
 COST_RATE = 0.0008
 ARTIFACT_SCHEMA = 2
 
@@ -95,11 +96,11 @@ class PredictiveBrain:
             if m.get("promotion",{}).get("promoted") is not True: raise ValueError("Artifact is not a promoted candidate")
             self.bundle=b; self.version=str(m["version"])
         except Exception: self.bundle=None; self.version="untrained"
-    def _horizon_eval(self,xtr,xte,rtr,rte):
+    def _horizon_eval(self,xtr,xte,rtr,rte,threshold):
         out={}
         for h in HORIZONS:
             try:
-                a=_future_return(rtr,h); b=_future_return(rte,h); ya=_direction_target(a); yb=_direction_target(b)
+                a=_future_return(rtr,h); b=_future_return(rte,h); ya=_direction_target(a,threshold); yb=_direction_target(b,threshold)
                 if len(set(ya.tolist()))<3 or len(set(yb.tolist()))<3: raise ValueError("three classes required")
                 m=_classifier("logistic_regression"); m.fit(xtr,ya); out[str(h)]=_metrics(yb,m.predict(xte),m.predict_proba(xte),m.classes_,b)
             except Exception as exc: out[str(h)]={"status":"UNAVAILABLE","reason":str(exc)}
@@ -124,15 +125,16 @@ class PredictiveBrain:
         xfit,xval=pre[:select_end],pre[select_end:]
         horizon_selection={}
         for h in HORIZONS:
-            try:
-                rh=_future_return(rows[:test_start],h); yh=_direction_target(rh); yhfit,yhval=yh[:select_end],yh[select_end:]
-                if len(yhval)<100 or len(set(yhfit.tolist()))<3 or len(set(yhval.tolist()))<3: continue
-                hm=_classifier("logistic_regression"); hm.fit(xfit,yhfit); hp=hm.predict(xval); hpr=hm.predict_proba(xval); hs=_metrics(yhval,hp,hpr,hm.classes_,rh[select_end:]); horizon_selection[str(h)] = hs
-            except Exception as exc: horizon_selection[str(h)]={"error":f"{type(exc).__name__}: {exc}"}
-        viable=[(float(v.get("avg_trade_net_return",-1e99)),float(v.get("balanced_accuracy",0.0)),int(h)) for h,v in horizon_selection.items() if "error" not in v and int(v.get("trades",0))>=100]
-        if not viable: return BrainReport("REJECTED",version,{"horizon_selection":horizon_selection}, "No horizon produced enough validation trades for selection.")
-        chosen_horizon=max(viable,key=lambda z:(z[0],z[1]))[2]
-        returns=_future_return(rows,chosen_horizon); d=_direction_target(returns)
+            for threshold in LABEL_THRESHOLDS:
+                try:
+                    rh=_future_return(rows[:test_start],h); yh=_direction_target(rh,threshold); yhfit,yhval=yh[:select_end],yh[select_end:]
+                    if len(yhval)<100 or len(set(yhfit.tolist()))<3 or len(set(yhval.tolist()))<3: continue
+                    hm=_classifier("logistic_regression"); hm.fit(xfit,yhfit); hp=hm.predict(xval); hpr=hm.predict_proba(xval); hs=_metrics(yhval,hp,hpr,hm.classes_,rh[select_end:]); hs["horizon"]=h; hs["label_threshold"]=threshold; horizon_selection[f"{h}:{threshold:.4f}"] = hs
+                except Exception as exc: horizon_selection[f"{h}:{threshold:.4f}"]={"error":f"{type(exc).__name__}: {exc}"}
+        viable=[(float(v.get("avg_trade_net_return",-1e99)),float(v.get("balanced_accuracy",0.0)),int(v.get("horizon",0)),float(v.get("label_threshold",0.0))) for v in horizon_selection.values() if "error" not in v and int(v.get("trades",0))>=100]
+        if not viable: return BrainReport("REJECTED",version,{"horizon_selection":horizon_selection}, "No horizon/label threshold produced enough validation trades for selection.")
+        chosen=max(viable,key=lambda z:(z[0],z[1])); chosen_horizon,chosen_threshold=chosen[2],chosen[3]
+        returns=_future_return(rows,chosen_horizon); d=_direction_target(returns,chosen_threshold)
         pre_r=returns[:test_start]; rte=returns[test_start:]; pre_y=d[:test_start]; dte=d[test_start:]
         if len(set(dte.tolist()))<3: return BrainReport("REJECTED",version,{"chosen_horizon":chosen_horizon}, "Untouched OOS test period must contain all three direction classes.")
         xfit,xval=pre[:select_end],pre[select_end:]; yfit,yval=pre_y[:select_end],pre_y[select_end:]
@@ -182,8 +184,8 @@ class PredictiveBrain:
         gate=promotion_gate(_net_returns(rte,candidate_pred),_net_returns(rte,baseline_pred),candidate_metrics["balanced_accuracy"],baseline_metrics["balanced_accuracy"],candidate_metrics["max_drawdown"],baseline_metrics["max_drawdown"])
         absolute_gate={"enough_samples":candidate_metrics["trades"]>=100,"accuracy_ok":candidate_metrics["accuracy"]>=0.52,"balanced_accuracy_ok":candidate_metrics["balanced_accuracy"]>=0.50,"positive_trade_expectancy":candidate_metrics["avg_trade_net_return"]>0.0,"positive_total_net_return":candidate_metrics["total_net_return"]>0.0,"drawdown_ok":candidate_metrics["max_drawdown"]<=0.15}
         if not all(absolute_gate.values()): return BrainReport("REJECTED",version,{"validation_families":validation_scores,"baseline_oos":baseline_metrics,"candidate_oos":candidate_metrics,"promotion":gate,"absolute_gate":absolute_gate},"Candidate did not clear the untouched OOS absolute safety gate.")
-        horizon_metrics=self._horizon_eval(pre,xte,rows[:test_start],rows[test_start:])
-        bundle={"schema_version":ARTIFACT_SCHEMA,"direction_model":direction,"baseline_model":baseline,"expected_return_model":er,"downside_model":dn,"volatility_model":vol,"regime_model":rm,"abstention_model":am,"meta_model":mm,"family":family,"decision_threshold":selection_threshold,"feature_hash":_feature_hash(),"features":FEATURES,"cost_rate":COST_RATE,"horizons":HORIZONS,"chosen_horizon":chosen_horizon,"horizon_selection":horizon_selection,"horizon_metrics":horizon_metrics,"oos_metrics":{"candidate":candidate_metrics,"baseline":baseline_metrics},"promotion":gate,"sequence_model_evaluation":{"status":"NOT_REQUIRED","reason":"Canonical Stage 3 data is tabular and the current sample/coverage does not justify sequence-model complexity; revisit when temporal sequence coverage and sample volume materially increase."}}
+        horizon_metrics=self._horizon_eval(pre,xte,rows[:test_start],rows[test_start:],chosen_threshold)
+        bundle={"schema_version":ARTIFACT_SCHEMA,"direction_model":direction,"baseline_model":baseline,"expected_return_model":er,"downside_model":dn,"volatility_model":vol,"regime_model":rm,"abstention_model":am,"meta_model":mm,"family":family,"decision_threshold":selection_threshold,"feature_hash":_feature_hash(),"features":FEATURES,"cost_rate":COST_RATE,"horizons":HORIZONS,"chosen_horizon":chosen_horizon,"label_threshold":chosen_threshold,"horizon_selection":horizon_selection,"horizon_metrics":horizon_metrics,"oos_metrics":{"candidate":candidate_metrics,"baseline":baseline_metrics},"promotion":gate,"sequence_model_evaluation":{"status":"NOT_REQUIRED","reason":"Canonical Stage 3 data is tabular and the current sample/coverage does not justify sequence-model complexity; revisit when temporal sequence coverage and sample volume materially increase."}}
         tmp=self.artifact_path.with_suffix(".tmp"); joblib.dump(bundle,tmp); tmp.replace(self.artifact_path); manifest={"schema_version":ARTIFACT_SCHEMA,"version":version,"features":FEATURES,"feature_hash":_feature_hash(),"family":family,"metrics":{"validation_families":validation_scores,"candidate_oos":candidate_metrics,"baseline_oos":baseline_metrics,"horizons":horizon_metrics},"promotion":gate,"cost_rate":COST_RATE,"horizons":HORIZONS,"chosen_horizon":chosen_horizon,"horizon_selection":horizon_selection,"python":platform.python_version()}; self.manifest_path.write_text(json.dumps(manifest,indent=2,sort_keys=True)); self.bundle=bundle; self.version=version
         return BrainReport("PROMOTED",version,manifest["metrics"],"Candidate cleared independent selection, calibrated untouched OOS evaluation and paired statistical promotion gates.",str(self.artifact_path))
     def predict(self,features):
