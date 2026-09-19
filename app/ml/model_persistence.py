@@ -54,8 +54,7 @@ async def hydrate_model():
         bundle=joblib.load(io.BytesIO(data))
         if bundle.get('schema_version') != 4:
             return False
-        manifest = bundle.get('manifest') or {}
-        if manifest and manifest.get('promotion', {}).get('promoted') is not True:
+        if bundle.get('promotion', {}).get('promoted') is not True:
             return False
         if bundle.get('feature_hash') is None or not bundle.get('features'):
             return False
