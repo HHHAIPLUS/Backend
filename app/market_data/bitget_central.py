@@ -325,8 +325,12 @@ class CentralBitgetMarketData:
         if len(candles) < 3:
             raise RuntimeError(f"Waiting for Bitget 5m candle history for {symbol.upper()}: {len(candles)}/{MAX_CANDLES}")
         rows = candles[-MAX_CANDLES:]
-        if current and current[0] == rows[-1][0]:
-            rows[-1] = current
+        # The exchange candle stream can contain the still-forming candle. Do not
+        # feed an open candle into the predictive model; training uses closed bars.
+        if current and rows and current[0] == rows[-1][0]:
+            rows = rows[:-1]
+        if len(rows) < 25:
+            raise RuntimeError(f"Insufficient closed Bitget candles for {symbol.upper()}: {len(rows)}")
         features = build_model_features(rows)
         required = ("return_1", "range_pct", "volume_change", "volatility_proxy", "trend_strength", "momentum")
         missing = [name for name in required if name not in features]
