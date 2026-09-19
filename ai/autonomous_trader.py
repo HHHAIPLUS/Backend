@@ -82,7 +82,7 @@ class AutonomousTrader:
             return True, "testnet execution enabled"
         if mode == "live":
             if brain.bundle is None: return False, "no promoted predictive brain is available"
-            if autotrading_enabled: return False, "autonomous trading is disabled by HHHAI_AUTOTRADING_ENABLED"
+            if not autotrading_enabled: return False, "autonomous trading is disabled by HHHAI_AUTOTRADING_ENABLED"
             if not settings.live_trading_enabled: return False, "live execution is disabled by LIVE_TRADING_ENABLED"
             return True, "live execution enabled"
         return False, f"unsupported trading mode: {mode}"
