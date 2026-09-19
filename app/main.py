@@ -71,7 +71,7 @@ async def lifespan(app):
             if os.getenv("HHHAI_AUTO_BOOTSTRAP_BRAIN", "false").lower() != "true" or predictive_brain.bundle is not None:
                 return
             symbols = [x.strip().upper() for x in os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOLS", os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOL", "BTCUSDT,ETHUSDT")).split(",") if x.strip()]
-            limit = max(5000, min(10000, int(os.getenv("HHHAI_BRAIN_BOOTSTRAP_CANDLES", "10000"))))
+            # Allow the configured verified-history window to exceed 10k candles.\n            # Phase 2 benefits from a materially larger chronological training\n            # sample while keeping the value bounded for predictable startup cost.\n            limit = max(5000, min(30000, int(os.getenv("HHHAI_BRAIN_BOOTSTRAP_CANDLES", "10000"))))
             interval = os.getenv("HHHAI_BRAIN_BOOTSTRAP_INTERVAL", "1h").strip()
             threshold = float(os.getenv("HHHAI_BRAIN_LABEL_THRESHOLD", "0.0015"))
             combined_rows = []
