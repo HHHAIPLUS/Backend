@@ -242,7 +242,7 @@ def _candle_to_dict(row: list[Any]) -> dict[str, Any]:
     return {"observed_at": datetime.fromtimestamp(int(row[0]) / 1000, timezone.utc).isoformat(), "open": float(row[1]), "high": float(row[2]), "low": float(row[3]), "close": float(row[4]), "volume": max(0.0, float(row[5]))}
 
 
-def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 0.0025, take_profit: float = 0.004, stop_loss: float = 0.004, *, symbol: str = "", interval: str = "", provider: str = ""):
+def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 0.0025, take_profit: float = 0.004, stop_loss: float = 0.004, *, symbol: str = "", interval: str = "", provider: str = "") -> list[dict[str, Any]]:
     if horizon <= 0 or threshold <= 0 or take_profit <= 0 or stop_loss <= 0:
         raise ValueError("Horizon, threshold, take_profit and stop_loss must be greater than zero")
     raw = _deduplicate_klines(klines)
