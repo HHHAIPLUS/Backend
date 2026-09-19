@@ -65,7 +65,7 @@ install_multi_coin_selection(trader)
 @asynccontextmanager
 async def lifespan(app):
     await hydrate_model()
-    if os.getenv("HHHAI_PHASE1_VERIFY_ON_START", "false").lower() == "true":
+    # Temporary fail-closed release verification: this branch is removed immediately after Phase 1 PASS.\n    if True:
         phase1_cmd = [
             "pytest", "-q",
             "tests/test_dataset_integrity.py",
