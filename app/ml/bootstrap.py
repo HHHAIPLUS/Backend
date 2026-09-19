@@ -293,7 +293,10 @@ def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 
             if barrier is None:
                 barrier = candles[i + h]["close"] / last["close"] - 1.0
             barrier_returns[str(h)] = float(barrier)
-        # Phase 2 supervised targets use the future close return at the selected horizon.\n        # Barrier outcomes remain stored separately for later execution research.\n        future_trade_return = future_return\n        label = 1 if future_trade_return > threshold else -1 if future_trade_return < -threshold else 0
+        # Phase 2 supervised targets use the future close return at the selected horizon.
+        # Barrier outcomes remain stored separately for later execution research.
+        future_trade_return = future_return
+        label = 1 if future_trade_return > threshold else -1 if future_trade_return < -threshold else 0
         candle_rows = [[int(datetime.fromisoformat(c["observed_at"]).timestamp() * 1000), c["open"], c["high"], c["low"], c["close"], c["volume"]] for c in window]
         model_features = build_model_features(candle_rows)
         rows.append({"observed_at": last["observed_at"], "features": model_features, "label": label, "outcome_return": future_trade_return, "outcome_horizon": horizon, "outcome_return_by_horizon": horizon_returns, "barrier_return_by_horizon": barrier_returns, "close_return_by_horizon": horizon_returns, "context_available": {name: False for name in CONTEXT_FEATURES}, "feature_provenance": {}, "data_source": provider or "ohlcv_only", "symbol": symbol.upper(), "interval": interval, "candle": {"timestamp": int(datetime.fromisoformat(last["observed_at"]).timestamp() * 1000), "open": last["open"], "high": last["high"], "low": last["low"], "close": last["close"], "volume": last["volume"]}})
