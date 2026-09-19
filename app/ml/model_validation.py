@@ -24,11 +24,13 @@ def promotion_gate(candidate_returns: np.ndarray, baseline_returns: np.ndarray, 
     drawdown_ok = candidate_drawdown <= max(1e-12, baseline_drawdown * 1.25) if baseline_drawdown > 0 else candidate_drawdown <= 1e-12
     accuracy_ok = candidate_balanced_accuracy >= baseline_balanced_accuracy
     statistically_better = bool(ci.get("valid") and float(ci["ci_low"]) > 0.0)
-    enough = len(candidate_returns) >= min_samples
+    enough = int(np.count_nonzero(candidate_returns != 0.0)) >= min_samples
     promoted = bool(enough and accuracy_ok and drawdown_ok and statistically_better)
     return {
         "promoted": promoted,
         "enough_samples": enough,
+    "sample_count": int(candidate.size),
+    "trade_count": int(np.count_nonzero(candidate_returns != 0.0)),
         "balanced_accuracy_not_worse": accuracy_ok,
         "drawdown_within_limit": drawdown_ok,
         "statistically_positive": statistically_better,
