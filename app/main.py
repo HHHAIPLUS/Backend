@@ -63,37 +63,35 @@ install_stage6_hydration(trader)
 stage8_risk = install_stage8_risk(trader)
 install_multi_coin_selection(trader)
 
-async def _run_phase1_verification() -> None:
-    log.warning("PHASE1_VERIFICATION_STARTED")
-    phase1_cmd = [
+async def _run_phase2_verification() -> None:
+    log.warning("PHASE2_VERIFICATION_STARTED")
+    phase2_cmd = [
         sys.executable, "-m", "pytest", "-q",
-        "tests/test_dataset_integrity.py",
-        "tests/test_historical_dataset.py",
-        "tests/test_historical_dataset_context_features.py",
-        "tests/test_historical_enrichment.py",
-        "tests/test_historical_sources.py",
-        "tests/test_stage1a_truthfulness.py",
-        "tests/test_phase1_data_integrity.py",
+        "tests/test_phase2_predictive.py",
+        "tests/test_stage3_ensemble.py",
+        "tests/test_stage3_validation.py",
     ]
-    test_result = await asyncio.to_thread(subprocess.run, phase1_cmd, capture_output=True, text=True)
+    test_result = await asyncio.to_thread(
+        subprocess.run, phase2_cmd, capture_output=True, text=True,
+        env={**os.environ, "PYTHONPATH": os.getcwd()},
+    )
     if test_result.returncode != 0:
-        log.error("PHASE1_TESTS_FAILED stdout=%s stderr=%s", test_result.stdout[-12000:], test_result.stderr[-12000:])
+        log.error("PHASE2_TESTS_FAILED stdout=%s stderr=%s", test_result.stdout[-12000:], test_result.stderr[-12000:])
         return
     audit_result = await asyncio.to_thread(
-        subprocess.run, [sys.executable, "scripts/phase1_data_integrity.py"],
+        subprocess.run, [sys.executable, "scripts/phase2_oos_validation.py"],
         capture_output=True, text=True,
-        env={**os.environ, "PYTHONPATH": os.getcwd(), "PHASE1_SYMBOL": "BTCUSDT", "PHASE1_INTERVAL": "1h", "PHASE1_CANDLES": "10000"},
+        env={**os.environ, "PYTHONPATH": os.getcwd(), "PHASE2_SYMBOL": "BTCUSDT", "PHASE2_INTERVAL": "1h", "PHASE2_CANDLES": "10000"},
     )
     if audit_result.returncode != 0:
-        log.error("PHASE1_LIVE_AUDIT_FAILED stdout=%s stderr=%s", audit_result.stdout[-12000:], audit_result.stderr[-12000:])
+        log.error("PHASE2_OOS_FAILED stdout=%s stderr=%s", audit_result.stdout[-16000:], audit_result.stderr[-12000:])
         return
-    log.warning("PHASE1_VERIFICATION_PASS %s", audit_result.stdout[-12000:])
+    log.warning("PHASE2_VERIFICATION_PASS %s", audit_result.stdout[-16000:])
 
 @asynccontextmanager
 async def lifespan(app):
     await hydrate_model()
-    # Temporary Phase 1 release verification; removed immediately after PASS.
-    app.state.phase1_verification_task = asyncio.create_task(_run_phase1_verification())
+    app.state.phase2_verification_task = asyncio.create_task(_run_phase2_verification())
     async def bootstrap_predictive_brain():
         try:
             if os.getenv("HHHAI_AUTO_BOOTSTRAP_BRAIN", "false").lower() != "true" or predictive_brain.bundle is not None:
