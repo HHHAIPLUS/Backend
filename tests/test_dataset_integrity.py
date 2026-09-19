@@ -16,12 +16,11 @@ def _row(ts: str, complete: bool = True) -> dict:
     return {"observed_at": ts, "features": features, "feature_provenance": provenance}
 
 
-def test_incomplete_context_is_not_called_production_ready() -> None:
+def test_live_only_context_is_not_required_for_historical_model_features() -> None:
     audit = audit_dataset([_row("2026-01-01T00:00:00+00:00", False)])
-    assert audit.incomplete_context_rows == 1
-    assert not audit.production_ready
-    with pytest.raises(ValueError, match="not production-ready"):
-        require_production_ready([_row("2026-01-01T00:00:00+00:00", False)])
+    assert audit.incomplete_context_rows == 0
+    assert audit.production_ready
+    assert require_production_ready([_row("2026-01-01T00:00:00+00:00", False)]).production_ready
 
 
 def test_duplicate_or_out_of_order_timestamps_are_rejected() -> None:
