@@ -35,7 +35,7 @@ from app.api.risk_capital import router as risk_capital_router
 from app.ml.model_persistence import hydrate_model, persist_brain
 from app.ml.predictive_brain import predictive_brain
 from app.ml.bootstrap import fetch_historical_klines
-from app.ml.bootstrap import build_dataset
+from app.ml.bootstrap import build_dataset, audit_historical_klines
 from ai.autonomous_trader import trader
 from ai.position_intelligence import install_stage6_position_intelligence
 from ai.stage6_hydration import install_stage6_hydration
@@ -77,7 +77,11 @@ async def lifespan(app):
                 try:
                     raw, provider = await asyncio.to_thread(fetch_historical_klines, symbol, interval, limit)
                     log.warning("PREDICTIVE_BRAIN_DATA_PROVIDER symbol=%s interval=%s provider=%s candles=%s", symbol, interval, provider, len(raw))
-                    rows = build_dataset(raw, horizon=6, threshold=threshold)
+                    if provider != "bitget":
+                        raise RuntimeError(f"Production training requires Bitget USDT-futures history; received provider={provider}")
+                    candle_audit = audit_historical_klines(raw, interval)
+                    log.warning("PREDICTIVE_BRAIN_CANDLE_AUDIT symbol=%s audit=%s", symbol, candle_audit)
+                    rows = build_dataset(raw, horizon=6, threshold=threshold, symbol=symbol, interval=interval, provider=provider)
                     for row in rows:
                         row["symbol"] = symbol
                     combined_rows.extend(rows)
