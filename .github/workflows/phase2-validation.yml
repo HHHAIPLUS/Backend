@@ -17,4 +17,4 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: pytest -q tests/test_phase2_predictive.py tests/test_stage3_ensemble.py tests/test_stage3_validation.py
-      - run: PYTHONPATH=. python scripts/phase2_oos_validation.py
+      - run: PHASE2_INTERVAL=15m PHASE2_CANDLES=10000 PYTHONPATH=. python scripts/phase2_oos_validation.py
