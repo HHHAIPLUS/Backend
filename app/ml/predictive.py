@@ -11,14 +11,16 @@ from sklearn.preprocessing import StandardScaler
 
 from app.ml.ensemble import predictive_ensemble
 
+# Predictive training uses only features that can be reconstructed truthfully
+# from the historical OHLCV dataset. Live-only context (order book, funding,
+# open interest, news and liquidity stress) remains available to the decision
+# engine but is not silently fabricated into the supervised training set.
 FEATURES = [
     "return_1", "return_3", "return_6", "return_12", "return_24",
     "range_pct", "range_mean_12", "close_location", "atr_pct_14",
     "volume_change", "volume_zscore",
     "rsi_14", "ema_gap_8_24", "breakout_24",
-    "order_book_imbalance", "funding_rate", "open_interest_change",
-    "news_risk", "news_sentiment", "volatility_proxy", "trend_strength",
-    "momentum", "liquidity_stress",
+    "volatility_proxy", "trend_strength", "momentum",
 ]
 
 @dataclass
