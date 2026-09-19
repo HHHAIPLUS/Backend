@@ -20,9 +20,9 @@ from app.ml.dataset_integrity import require_production_ready, DatasetAudit
 
 BINANCE_KLINES_HOSTS = ["https://fapi.binance.com", "https://fapi1.binance.com", "https://fapi2.binance.com", "https://fapi3.binance.com", "https://fapi4.binance.com"]
 BINANCE_KLINES_PATH = "/fapi/v1/klines"
-BITGET_KLINES_URL = "https://api.bitget.com/api/v2/mix/market/candles"
+BITGET_KLINES_URL = "https://api.bitget.com/api/v3/market/history-candles"
 BINANCE_BATCH_SIZE = 500
-BITGET_BATCH_SIZE = 200
+BITGET_BATCH_SIZE = 100
 BINANCE_RETRIES_PER_HOST = 2
 BITGET_RETRIES_PER_REQUEST = 2
 BITGET_GRANULARITY = {"1m":"1m","3m":"3m","5m":"5m","15m":"15m","30m":"30m","1h":"1H","4h":"4H","6h":"6H","12h":"12H","1d":"1D"}
@@ -127,7 +127,7 @@ def _normalize_bitget_candle(row: Any) -> list[Any] | None:
 
 def _request_bitget_batch(client: httpx.Client, symbol: str, granularity: str, limit: int, end_time: int | None) -> list[list[Any]]:
     normalized_granularity = BITGET_GRANULARITY.get(str(granularity).lower(), str(granularity))
-    params: dict[str, Any] = {"productType": "USDT-FUTURES", "symbol": symbol.upper(), "granularity": normalized_granularity, "limit": min(BITGET_BATCH_SIZE, max(1, int(limit)))}
+    params: dict[str, Any] = {"category": "USDT-FUTURES", "symbol": symbol.upper(), "interval": normalized_granularity, "limit": min(BITGET_BATCH_SIZE, max(1, int(limit)))}
     if end_time is not None:
         params["endTime"] = str(end_time)
     last_error: Exception | None = None
