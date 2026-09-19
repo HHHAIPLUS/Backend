@@ -35,3 +35,5 @@ def test_phase2_promotion_gate_never_promotes_failed_statistical_gate():
     baseline = np.full(100, 0.0002)
     result = promotion_gate(candidate, baseline, .55, .50, .01, .01)
     assert result["promoted"] is False
+
+# Phase 2 final verification trigger.
