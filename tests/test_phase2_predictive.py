@@ -38,7 +38,7 @@ def test_phase2_promotion_gate_never_promotes_failed_statistical_gate():
 
 
 def test_phase2_split_is_chronological_and_purged():
-    rows = [{"observed_at": f"2026-01-{(i // 24) + 1:02d}T{(i % 24):02d}:00:00+00:00"} for i in range(24 * 60)]
+    from datetime import datetime, timedelta, timezone\n    start = datetime(2026, 1, 1, tzinfo=timezone.utc)\n    rows = [{"observed_at": (start + timedelta(hours=i)).isoformat()} for i in range(24 * 60)]
     split = _purged_time_splits(rows)
     tr = split["train"]
     va = split["validation"]
