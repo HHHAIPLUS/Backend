@@ -62,7 +62,6 @@ install_stage6_hydration(trader)
 stage8_risk = install_stage8_risk(trader)
 install_multi_coin_selection(trader)
 
-@asynccontextmanager
 async def _run_phase1_verification() -> None:
     phase1_cmd = [
         "pytest", "-q",
@@ -88,6 +87,7 @@ async def _run_phase1_verification() -> None:
         return
     log.warning("PHASE1_VERIFICATION_PASS %s", audit_result.stdout[-12000:])
 
+@asynccontextmanager
 async def lifespan(app):
     await hydrate_model()
     # Temporary Phase 1 release verification; removed immediately after PASS.
