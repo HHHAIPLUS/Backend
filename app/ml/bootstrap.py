@@ -183,7 +183,10 @@ def fetch_bitget_klines(symbol: str, interval: str = "5m", limit: int = 1500) ->
             all_klines = batch + all_klines
             if len(batch) < batch_limit:
                 break
-            end_time = int(sorted(batch, key=lambda row: int(row[0]))[0][0]) - 1
+            # Bitget rounds endTime to the candle boundary. Passing the exact
+            # oldest timestamp and deduplicating the overlap is safer than subtracting
+            # 1ms, which can skip a boundary candle on some intervals.
+            end_time = int(sorted(batch, key=lambda row: int(row[0]))[0][0])
             time.sleep(HISTORICAL_REQUEST_DELAY)
     result = _deduplicate_klines(all_klines)
     interval_ms = _interval_ms(interval)
