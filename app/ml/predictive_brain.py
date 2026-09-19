@@ -144,13 +144,22 @@ class PredictiveBrain:
         validation_scores={}; candidates=[]
         for family in MODEL_FAMILIES:
             try:
-                m=_classifier(family); m.fit(xfit,yfit); p=m.predict(xval); pr=m.predict_proba(xval); s=_metrics(yval,p,pr,m.classes_,pre_r[select_end:]); validation_scores[family]=s; candidates.append((s["avg_net_return"],s["balanced_accuracy"],family))
+                m=_classifier(family); m.fit(xfit,yfit); p=m.predict(xval); pr=m.predict_proba(xval)
+                s=_metrics(yval,p,pr,m.classes_,pre_r[select_end:]); validation_scores[family]=s
+                candidates.append((s["avg_net_return"],s["balanced_accuracy"],family,False))
+                inv_p=np.where(p==1,-1,np.where(p==-1,1,0)); inv_pr=pr.copy()
+                mapping={int(cls):i for i,cls in enumerate(m.classes_)}
+                if all(cls in mapping for cls in (-1,0,1)):
+                    inv_pr[:,mapping[-1]],inv_pr[:,mapping[1]]=pr[:,mapping[1]],pr[:,mapping[-1]]
+                inv_s=_metrics(yval,inv_p,inv_pr,m.classes_,pre_r[select_end:])
+                validation_scores[family+"_inverse"]=inv_s
+                candidates.append((inv_s["avg_net_return"],inv_s["balanced_accuracy"],family,True))
             except Exception as exc: validation_scores[family]={"error":f"{type(exc).__name__}: {exc}"}
         base=validation_scores.get("logistic_regression")
         if not base or not candidates: return BrainReport("REJECTED",version,{"validation_families":validation_scores},"Complete model-family evaluation was not possible.")
-        best=max(candidates,key=lambda c:(c[0],c[1])); family=best[2]
+        best=max(candidates,key=lambda c:(c[0],c[1])); family=best[2]; invert_direction=bool(best[3])
         if family != "logistic_regression" and (best[0] <= float(base.get("avg_net_return",-1e99)) or best[1] < float(base.get("balanced_accuracy",0.0))):
-            family="logistic_regression"
+            family="logistic_regression"; invert_direction=False
         cal_start=select_end; x_model=pre[:cal_start]; y_model=pre_y[:cal_start]; x_cal=pre[cal_start:]; y_cal=pre_y[cal_start:]
         if len(x_cal)<100 or len(set(y_model.tolist()))<3 or len(set(y_cal.tolist()))<3: return BrainReport("REJECTED",version,{},"Calibration partition is insufficient.")
         # Train the directional classifier on all three economic classes.
@@ -163,6 +172,11 @@ class PredictiveBrain:
         direction=_calibrate(direction_raw,x_cal,y_cal)
         baseline=_calibrate(baseline_raw,x_cal,y_cal)
         cal_pred=direction.predict(x_cal); cal_prob=direction.predict_proba(x_cal)
+        if invert_direction:
+            cal_pred=np.where(cal_pred==1,-1,np.where(cal_pred==-1,1,0)); cal_prob=cal_prob.copy()
+            mapping={int(cls):i for i,cls in enumerate(direction.classes_)}
+            if all(cls in mapping for cls in (-1,0,1)):
+                cal_prob[:,mapping[-1]],cal_prob[:,mapping[1]]=cal_prob[:,mapping[1]],cal_prob[:,mapping[-1]]
         confidence=np.max(cal_prob,axis=1)
         selection_threshold=0.55; selection_score=-float("inf")
         for threshold in np.arange(0.45,0.81,0.02):
@@ -176,6 +190,11 @@ class PredictiveBrain:
             if score>selection_score: selection_score=score; selection_threshold=float(threshold)
 
         candidate_pred=direction.predict(xte); candidate_prob=direction.predict_proba(xte)
+        if invert_direction:
+            candidate_pred=np.where(candidate_pred==1,-1,np.where(candidate_pred==-1,1,0)); candidate_prob=candidate_prob.copy()
+            mapping={int(cls):i for i,cls in enumerate(direction.classes_)}
+            if all(cls in mapping for cls in (-1,0,1)):
+                candidate_prob[:,mapping[-1]],candidate_prob[:,mapping[1]]=candidate_prob[:,mapping[1]],candidate_prob[:,mapping[-1]]
         candidate_pred[candidate_prob.max(axis=1) < selection_threshold]=0
         baseline_pred=baseline.predict(xte); baseline_prob=baseline.predict_proba(xte)
         candidate_metrics=_metrics(dte,candidate_pred,candidate_prob,direction.classes_,rte); baseline_metrics=_metrics(dte,baseline_pred,baseline_prob,baseline.classes_,rte)
@@ -189,14 +208,14 @@ class PredictiveBrain:
         absolute_gate={"enough_samples":candidate_metrics["trades"]>=100,"accuracy_ok":candidate_metrics["accuracy"]>=0.52,"balanced_accuracy_ok":candidate_metrics["balanced_accuracy"]>=0.50,"positive_trade_expectancy":candidate_metrics["avg_trade_net_return"]>0.0,"positive_total_net_return":candidate_metrics["total_net_return"]>0.0,"drawdown_ok":candidate_metrics["max_drawdown"]<=0.15}
         if not all(absolute_gate.values()): return BrainReport("REJECTED",version,{"validation_families":validation_scores,"baseline_oos":baseline_metrics,"candidate_oos":candidate_metrics,"promotion":gate,"absolute_gate":absolute_gate},"Candidate did not clear the untouched OOS absolute safety gate.")
         horizon_metrics=self._horizon_eval(pre,xte,rows[:test_start],rows[test_start:],chosen_threshold)
-        bundle={"schema_version":ARTIFACT_SCHEMA,"direction_model":direction,"baseline_model":baseline,"expected_return_model":er,"downside_model":dn,"volatility_model":vol,"regime_model":rm,"abstention_model":None,"meta_model":None,"family":family,"decision_threshold":selection_threshold,"feature_hash":_feature_hash(),"features":FEATURES,"cost_rate":COST_RATE,"horizons":HORIZONS,"chosen_horizon":chosen_horizon,"label_threshold":chosen_threshold,"horizon_selection":horizon_selection,"horizon_metrics":horizon_metrics,"oos_metrics":{"candidate":candidate_metrics,"baseline":baseline_metrics},"promotion":gate,"sequence_model_evaluation":{"status":"NOT_REQUIRED","reason":"Canonical Stage 3 data is tabular and the current sample/coverage does not justify sequence-model complexity; revisit when temporal sequence coverage and sample volume materially increase."}}
-        tmp=self.artifact_path.with_suffix(".tmp"); joblib.dump(bundle,tmp); tmp.replace(self.artifact_path); manifest={"schema_version":ARTIFACT_SCHEMA,"version":version,"features":FEATURES,"feature_hash":_feature_hash(),"family":family,"metrics":{"validation_families":validation_scores,"candidate_oos":candidate_metrics,"baseline_oos":baseline_metrics,"horizons":horizon_metrics},"promotion":gate,"cost_rate":COST_RATE,"horizons":HORIZONS,"chosen_horizon":chosen_horizon,"horizon_selection":horizon_selection,"python":platform.python_version()}; self.manifest_path.write_text(json.dumps(manifest,indent=2,sort_keys=True)); self.bundle=bundle; self.version=version
+        bundle={"schema_version":ARTIFACT_SCHEMA,"direction_model":direction,"baseline_model":baseline,"expected_return_model":er,"downside_model":dn,"volatility_model":vol,"regime_model":rm,"abstention_model":None,"meta_model":None,"family":family,"direction_inverted":invert_direction,"decision_threshold":selection_threshold,"feature_hash":_feature_hash(),"features":FEATURES,"cost_rate":COST_RATE,"horizons":HORIZONS,"chosen_horizon":chosen_horizon,"label_threshold":chosen_threshold,"horizon_selection":horizon_selection,"horizon_metrics":horizon_metrics,"oos_metrics":{"candidate":candidate_metrics,"baseline":baseline_metrics},"promotion":gate,"sequence_model_evaluation":{"status":"NOT_REQUIRED","reason":"Canonical Stage 3 data is tabular and the current sample/coverage does not justify sequence-model complexity; revisit when temporal sequence coverage and sample volume materially increase."}}
+        tmp=self.artifact_path.with_suffix(".tmp"); joblib.dump(bundle,tmp); tmp.replace(self.artifact_path); manifest={"schema_version":ARTIFACT_SCHEMA,"version":version,"features":FEATURES,"feature_hash":_feature_hash(),"family":family,"direction_inverted":invert_direction,"metrics":{"validation_families":validation_scores,"candidate_oos":candidate_metrics,"baseline_oos":baseline_metrics,"horizons":horizon_metrics},"promotion":gate,"cost_rate":COST_RATE,"horizons":HORIZONS,"chosen_horizon":chosen_horizon,"horizon_selection":horizon_selection,"python":platform.python_version()}; self.manifest_path.write_text(json.dumps(manifest,indent=2,sort_keys=True)); self.bundle=bundle; self.version=version
         return BrainReport("PROMOTED",version,manifest["metrics"],"Candidate cleared independent selection, calibrated untouched OOS evaluation and paired statistical promotion gates.",str(self.artifact_path))
     def predict(self,features):
         if self.bundle is None: return {"trained":False,"abstain":True,"version":self.version,"decision":"NO_TRADE","reason":"No promoted predictive brain artifact is available."}
         x=np.asarray([[float(features.get(k,0.0) or 0.0) for k in FEATURES]],dtype=float)
         if not np.isfinite(x).all(): return {"trained":True,"abstain":True,"version":self.version,"decision":"NO_TRADE","reason":"Non-finite predictive features."}
-        dm=self.bundle["direction_model"]; bp=dm.predict_proba(x)[0]; er=float(self.bundle["expected_return_model"].predict(x)[0]); dn=max(0.0,float(self.bundle["downside_model"].predict(x)[0])); vo=max(0.0,float(self.bundle["volatility_model"].predict(x)[0])); rg=int(self.bundle["regime_model"].predict(x)[0]); classes=list(dm.classes_); probs={"short":float(bp[classes.index(-1)]) if -1 in classes else 0.0,"flat":float(bp[classes.index(0)]) if 0 in classes else 0.0,"long":float(bp[classes.index(1)]) if 1 in classes else 0.0}; direction=max(probs,key=probs.get); edge=er-self.bundle["cost_rate"]; threshold=float(self.bundle.get("decision_threshold",0.55)); uncertainty=float(1-max(probs.values())); abstain=direction=="flat" or max(probs.values())<threshold or edge<=0 or not np.isfinite([er,dn,vo]).all(); return {"trained":True,"abstain":abstain,"version":self.version,"decision":"NO_TRADE" if abstain else direction.upper(),"probabilities":probs,"expected_return":er,"expected_edge_after_cost":edge,"downside":dn,"volatility":vo,"regime":rg,"uncertainty":uncertainty,"abstention_probability":float(max(probs.values()) < threshold),"model_family":self.bundle["family"]}
+        dm=self.bundle["direction_model"]; bp=dm.predict_proba(x)[0]; er=float(self.bundle["expected_return_model"].predict(x)[0]); dn=max(0.0,float(self.bundle["downside_model"].predict(x)[0])); vo=max(0.0,float(self.bundle["volatility_model"].predict(x)[0])); rg=int(self.bundle["regime_model"].predict(x)[0]); classes=list(dm.classes_); probs={"short":float(bp[classes.index(-1)]) if -1 in classes else 0.0,"flat":float(bp[classes.index(0)]) if 0 in classes else 0.0,"long":float(bp[classes.index(1)]) if 1 in classes else 0.0}; direction=max(probs,key=probs.get); edge=er-self.bundle["cost_rate"]; threshold=float(self.bundle.get("decision_threshold",0.55)); uncertainty=float(1-max(probs.values())); abstain=direction=="flat" or max(probs.values())<threshold or edge<=0 or not np.isfinite([er,dn,vo]).all(); return {"trained":True,"abstain":abstain,"version":self.version,"decision":"NO_TRADE" if abstain else direction.upper(),"probabilities":probs,"expected_return":er,"expected_edge_after_cost":edge,"downside":dn,"volatility":vo,"regime":rg,"uncertainty":uncertainty,"abstention_probability":float(max(probs.values()) < threshold),"model_family":self.bundle["family"],"direction_inverted":bool(self.bundle.get("direction_inverted",False))}
     def manifest(self):
         if not self.manifest_path.exists(): return None
         try: return json.loads(self.manifest_path.read_text())
