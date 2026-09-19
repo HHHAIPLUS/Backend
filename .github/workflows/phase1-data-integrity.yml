@@ -1,0 +1,22 @@
+name: Phase 1 historical data integrity
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  phase1:
+    if: contains(github.event.head_commit.message, '[phase1]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: pytest -q tests/test_dataset_integrity.py tests/test_historical_dataset.py tests/test_historical_dataset_context_features.py tests/test_historical_enrichment.py tests/test_historical_sources.py tests/test_stage1a_truthfulness.py tests/test_phase1_data_integrity.py
+      - run: python scripts/phase1_data_integrity.py
+        env:
+          PHASE1_SYMBOL: BTCUSDT
+          PHASE1_INTERVAL: 1h
+          PHASE1_CANDLES: 10000
