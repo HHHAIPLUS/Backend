@@ -210,7 +210,7 @@ def fetch_binance_archive_klines(symbol: str, interval: str = "5m", limit: int =
 
 def fetch_historical_klines(symbol: str, interval: str = "5m", limit: int = 1500) -> tuple[list[list[Any]], str]:
     errors: list[str] = []
-    for provider, fetcher in (("binance", fetch_binance_klines), ("binance_archive", fetch_binance_archive_klines), ("bitget", fetch_bitget_klines)):
+    for provider, fetcher in (("bitget", fetch_bitget_klines), ("binance", fetch_binance_klines), ("binance_archive", fetch_binance_archive_klines)):
         try:
             return fetcher(symbol=symbol, interval=interval, limit=limit), provider
         except Exception as exc:
