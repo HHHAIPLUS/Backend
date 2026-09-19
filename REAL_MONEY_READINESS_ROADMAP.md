@@ -70,7 +70,17 @@ Prove that the historical data used to train and validate HHHAI is trustworthy, 
 **Phase 1 is COMPLETE only when every required item passes and the final data-integrity report is recorded here.**
 
 ### Evidence
-_Not complete yet._
+_Pending the first complete live Bitget historical-data audit run after the Phase 1 integrity hardening._
+
+### Additional Phase 1 controls added during implementation
+- [ ] Raw OHLCV candles are audited before supervised dataset construction.
+- [ ] Duplicate timestamps and interval gaps are hard failures.
+- [ ] Open/incomplete candles are excluded from training.
+- [ ] OHLC and volume validity are hard-gated.
+- [ ] Production training requires the intended Bitget USDT-futures historical source.
+- [ ] Predictive training uses only features with truthful historical reconstruction; live-only context is not fabricated as historical training data.
+- [ ] The full canonical feature state remains available to decision layers while the supervised model has an explicit historical feature subset.
+- [ ] A reproducible GitHub Actions live-data audit verifies the configured BTCUSDT 1h 10,000-candle dataset.
 
 ---
 
