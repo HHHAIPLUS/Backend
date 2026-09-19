@@ -16,7 +16,7 @@ from app.ml.predictive import FEATURES, predictive_model
 from app.ml.predictive_brain import HORIZONS
 from app.ml.validation import walk_forward, evaluate_predictions
 from app.ml.features import build_model_features
-from app.ml.dataset_integrity import require_production_ready, DatasetAudit
+from app.ml.dataset_integrity import audit_klines, require_production_ready, DatasetAudit
 
 BINANCE_KLINES_HOSTS = ["https://fapi.binance.com", "https://fapi1.binance.com", "https://fapi2.binance.com", "https://fapi3.binance.com", "https://fapi4.binance.com"]
 BINANCE_KLINES_PATH = "/fapi/v1/klines"
@@ -29,6 +29,24 @@ BITGET_GRANULARITY = {"1m":"1m","3m":"3m","5m":"5m","15m":"15m","30m":"30m","1h"
 HISTORICAL_REQUEST_DELAY = 0.25
 HTTP_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 CONTEXT_FEATURES = ("order_book_imbalance", "funding_rate", "open_interest_change", "news_risk", "news_sentiment", "liquidity_stress")
+
+INTERVAL_MS = {
+    "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000,
+    "30m": 1_800_000, "1h": 3_600_000, "4h": 14_400_000,
+    "6h": 21_600_000, "12h": 43_200_000, "1d": 86_400_000,
+}
+
+def _interval_ms(interval: str) -> int:
+    key = str(interval).strip().lower()
+    if key not in INTERVAL_MS:
+        raise ValueError(f"Unsupported historical interval: {interval}")
+    return INTERVAL_MS[key]
+
+def audit_historical_klines(klines: list[list[Any]], interval: str) -> dict[str, Any]:
+    audit = audit_klines(klines, interval_ms=_interval_ms(interval))
+    if not audit.production_ready:
+        raise RuntimeError("Historical candle integrity gate failed: " + audit.reason)
+    return audit.__dict__
 
 
 def _is_json_response(response: httpx.Response) -> bool:
@@ -224,10 +242,13 @@ def _candle_to_dict(row: list[Any]) -> dict[str, Any]:
     return {"observed_at": datetime.fromtimestamp(int(row[0]) / 1000, timezone.utc).isoformat(), "open": float(row[1]), "high": float(row[2]), "low": float(row[3]), "close": float(row[4]), "volume": max(0.0, float(row[5]))}
 
 
-def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 0.0025, take_profit: float = 0.004, stop_loss: float = 0.004) -> list[dict[str, Any]]:
+def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 0.0025, take_profit: float = 0.004, stop_loss: float = 0.004, *, symbol: str = "", interval: str = "", provider: str = ""):
     if horizon <= 0 or threshold <= 0 or take_profit <= 0 or stop_loss <= 0:
         raise ValueError("Horizon, threshold, take_profit and stop_loss must be greater than zero")
-    candles = [_candle_to_dict(row) for row in _deduplicate_klines(klines)]
+    raw = _deduplicate_klines(klines)
+    if interval:
+        audit_historical_klines(raw, interval)
+    candles = [_candle_to_dict(row) for row in raw]
     if len(candles) < 50:
         raise ValueError(f"Not enough valid OHLCV candles: {len(candles)}")
     lookback = 24
@@ -266,7 +287,7 @@ def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 
         label = 1 if future_trade_return > threshold else -1 if future_trade_return < -threshold else 0
         candle_rows = [[int(datetime.fromisoformat(c["observed_at"]).timestamp() * 1000), c["open"], c["high"], c["low"], c["close"], c["volume"]] for c in window]
         model_features = build_model_features(candle_rows)
-        rows.append({"observed_at": last["observed_at"], "features": model_features, "label": label, "outcome_return": future_trade_return, "outcome_horizon": horizon, "outcome_return_by_horizon": barrier_returns, "close_return_by_horizon": horizon_returns, "context_available": {name: False for name in CONTEXT_FEATURES}, "feature_provenance": {}, "data_source": "ohlcv_only"})
+        rows.append({"observed_at": last["observed_at"], "features": model_features, "label": label, "outcome_return": future_trade_return, "outcome_horizon": horizon, "outcome_return_by_horizon": barrier_returns, "close_return_by_horizon": horizon_returns, "context_available": {name: False for name in CONTEXT_FEATURES}, "feature_provenance": {}, "data_source": provider or "ohlcv_only", "symbol": symbol.upper(), "interval": interval, "candle": {"timestamp": int(datetime.fromisoformat(last["observed_at"]).timestamp() * 1000), "open": last["open"], "high": last["high"], "low": last["low"], "close": last["close"], "volume": last["volume"]}})
     return rows
 
 
