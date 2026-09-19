@@ -22,7 +22,7 @@ MODEL_FAMILIES = ("logistic_regression", "extra_trees", "hist_gradient_boosting"
 HORIZONS = (3, 6, 12)
 LABEL_THRESHOLDS = (0.0015, 0.0025, 0.0035)
 COST_RATE = 0.0008
-ARTIFACT_SCHEMA = 2
+ARTIFACT_SCHEMA = 3
 
 @dataclass
 class BrainReport:
