@@ -584,6 +584,20 @@ class PredictiveBrain:
             str(self.artifact_path),
         )
 
+    def manifest(self) -> dict[str, Any] | None:
+        """Return the persisted manifest only for a currently promoted artifact."""
+        if not self.manifest_path.exists() or self.bundle is None:
+            return None
+        try:
+            manifest = json.loads(self.manifest_path.read_text())
+            if manifest.get("schema_version") != ARTIFACT_SCHEMA:
+                return None
+            if manifest.get("promotion", {}).get("promoted") is not True:
+                return None
+            return manifest
+        except Exception:
+            return None
+
     @staticmethod
     def _fit_return_model(x, target, family):
         if family not in RETURN_FAMILIES:
