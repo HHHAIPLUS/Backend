@@ -21,7 +21,6 @@ from sklearn.ensemble import (
 from sklearn.frozen import FrozenEstimator
 from sklearn.linear_model import LogisticRegression, Ridge, SGDClassifier
 from sklearn.naive_bayes import GaussianNB
-from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_score, recall_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -36,7 +35,6 @@ MODEL_FAMILIES = (
     "random_forest",
     "gaussian_nb",
     "sgd_logistic",
-    "knn",
 )
 RETURN_FAMILIES = ("ridge", "extra_trees_regressor", "hist_gradient_boosting_regressor")
 HORIZONS = (3, 6, 12)
@@ -106,7 +104,7 @@ def _classifier(family):
         )
     if family == "random_forest":
         return RandomForestClassifier(
-            n_estimators=180, min_samples_leaf=12, max_features="sqrt",
+            n_estimators=120, min_samples_leaf=12, max_features="sqrt",
             class_weight="balanced_subsample", random_state=42, n_jobs=1
         )
     if family == "gaussian_nb":
@@ -118,14 +116,6 @@ def _classifier(family):
             "model", SGDClassifier(loss="log_loss", alpha=1e-4, class_weight="balanced",
                                    max_iter=2500, tol=1e-4, random_state=42, early_stopping=True,
                                    validation_fraction=0.12, n_iter_no_change=20),
-        )])
-    if family == "knn":
-        return Pipeline([(
-            "scale", StandardScaler(),
-        ), (
-            "model", KNeighborsClassifier(
-                n_neighbors=75, weights="distance", p=2,
-            ),
         )])
     raise ValueError(f"Unknown model family: {family}")
 
