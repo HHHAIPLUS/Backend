@@ -33,6 +33,7 @@ jobs:
           git add REAL_MONEY_READINESS_ROADMAP.md
           git commit -m "[phase2] Mark Phase 2 complete after verified OOS promotion"
           git push
+      # Authoritative 30k-candle OOS gate; evidence is uploaded even on failure.
       - name: Upload Phase 2 evidence
         if: always()
         uses: actions/upload-artifact@v4
