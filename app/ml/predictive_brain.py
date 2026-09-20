@@ -32,9 +32,6 @@ MODEL_FAMILIES = (
     "logistic_regression",
     "extra_trees",
     "hist_gradient_boosting",
-    "random_forest",
-    "gaussian_nb",
-    "sgd_logistic",
 )
 RETURN_FAMILIES = ("ridge", "extra_trees_regressor", "hist_gradient_boosting_regressor")
 HORIZONS = (3, 6, 12)
