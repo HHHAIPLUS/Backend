@@ -500,10 +500,10 @@ class PredictiveBrain:
         # trade sample and cannot inspect OOS.
         cal_pred, cal_prob = self._predict_selected(direction, _slice(x, ca), invert_direction, family)
         confidence = np.max(cal_prob, axis=1)
-        selection_threshold = 0.45
+        selection_threshold = 0.30
         threshold_candidates = []
         min_cal_trades = max(100, int(len(y_cal) * 0.20))
-        for threshold in np.arange(0.45, 0.71, 0.02):
+        for threshold in np.arange(0.30, 0.71, 0.02):
             selected = cal_pred.copy()
             if family in MODEL_FAMILIES:
                 selected[confidence < threshold] = 0
