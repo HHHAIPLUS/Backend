@@ -456,18 +456,26 @@ class PredictiveBrain:
             return BrainReport("REJECTED", version, {"validation_families": validation_scores},
                                "No valid model family was evaluated.")
 
-        best = max(candidates, key=lambda c: (c[0], c[1]))
+        # Model selection is validation-only. Classification quality is the
+        # primary objective because the independent OOS gate explicitly requires
+        # both accuracy and balanced accuracy. Trading expectancy is a secondary
+        # tie-breaker, not a reason to prefer a model with weaker classification.
+        # OOS observations are never consulted here.
+        best = max(
+            candidates,
+            key=lambda c: (
+                float(validation_scores[c[2]].get("balanced_accuracy", -1e99))
+                if not c[3]
+                else float(validation_scores[c[2] + "_inverse"].get("balanced_accuracy", -1e99)),
+                float(validation_scores[c[2]].get("accuracy", -1e99))
+                if not c[3]
+                else float(validation_scores[c[2] + "_inverse"].get("accuracy", -1e99)),
+                float(c[0]),
+                float(c[1]),
+            ),
+        )
         family = best[2]
         invert_direction = bool(best[3])
-
-        baseline_val = validation_scores.get("logistic_regression", {})
-        if family in MODEL_FAMILIES and family != "logistic_regression":
-            if (
-                float(best[0]) <= float(baseline_val.get("avg_trade_net_return", -1e99))
-                or float(best[1]) < float(baseline_val.get("balanced_accuracy", 0.0))
-            ):
-                family = "logistic_regression"
-                invert_direction = False
 
         # Fit the selected family on train+validation, then calibrate on a
         # completely separate calibration period. OOS remains untouched.
@@ -496,31 +504,43 @@ class PredictiveBrain:
         # trade sample and cannot inspect OOS.
         cal_pred, cal_prob = self._predict_selected(direction, _slice(x, ca), invert_direction, family)
         confidence = np.max(cal_prob, axis=1)
-        selection_threshold = 0.55
-        selection_score = -float("inf")
+        selection_threshold = 0.45
+        threshold_candidates = []
         min_cal_trades = max(100, int(len(y_cal) * 0.20))
         for threshold in np.arange(0.45, 0.71, 0.02):
             selected = cal_pred.copy()
             if family in MODEL_FAMILIES:
                 selected[confidence < threshold] = 0
             traded = selected != 0
-            if int(traded.sum()) < min_cal_trades:
+            trade_count = int(traded.sum())
+            trade_rate = trade_count / max(1, len(selected))
+            if trade_count < min_cal_trades or trade_rate < 0.20:
                 continue
             net = _net_returns(r_cal, selected)
             equity = np.cumsum(net)
             peak = np.maximum.accumulate(np.r_[0.0, equity])
             drawdown = float(np.max(peak[1:] - equity)) if len(equity) else 0.0
             avg_trade = float(net[traded].mean())
-            trade_count = int(traded.sum())
-            trade_rate = trade_count / max(1, len(selected))
-            # Prefer positive expectancy with stable participation. The
-            # calibration period alone determines this choice; OOS is untouched.
-            score = avg_trade - 0.25 * drawdown / max(1.0, np.sqrt(trade_count))
-            if trade_rate < 0.20:
-                continue
-            if score > selection_score:
-                selection_score = score
-                selection_threshold = float(threshold)
+            cal_metrics = _metrics(y_cal, selected, cal_prob, np.array([-1, 0, 1]), r_cal)
+            threshold_candidates.append((
+                float(cal_metrics["balanced_accuracy"]),
+                float(cal_metrics["accuracy"]),
+                float(avg_trade),
+                float(trade_rate),
+                -float(drawdown),
+                float(threshold),
+            ))
+
+        if family in MODEL_FAMILIES and not threshold_candidates:
+            return BrainReport(
+                "REJECTED", version, {"chosen_horizon": chosen_horizon, "chosen_threshold": chosen_threshold},
+                "Calibration produced no decision threshold with the required minimum trade coverage."
+            )
+        if threshold_candidates:
+            # Threshold is selected exclusively on the separate calibration
+            # period. Classification quality is primary; expectancy and stable
+            # participation are secondary. OOS remains completely untouched.
+            selection_threshold = max(threshold_candidates)[-1]
 
         candidate_pred, candidate_prob = self._predict_selected(direction, _slice(x, oo), invert_direction, family)
         baseline_pred = baseline.predict(_slice(x, oo))
