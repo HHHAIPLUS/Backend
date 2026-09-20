@@ -373,9 +373,13 @@ class PredictiveBrain:
             return BrainReport("REJECTED", version, {"horizon_selection": horizon_selection},
                                "No horizon/label threshold produced enough validation trades across the chronological selection folds.")
 
+        # Select the supervised target/horizon primarily by validation
+        # classification quality because the untouched OOS gate requires both
+        # accuracy and balanced accuracy. Trade expectancy remains the
+        # validation-only secondary criterion; OOS is never used here.
         chosen = max(
             viable,
-            key=lambda v: (float(v["avg_trade_net_return"]), float(v["balanced_accuracy"]))
+            key=lambda v: (float(v["balanced_accuracy"]), float(v["accuracy"]), float(v["avg_trade_net_return"]))
         )
         chosen_horizon = int(chosen["horizon"])
         chosen_threshold = float(chosen["label_threshold"])
