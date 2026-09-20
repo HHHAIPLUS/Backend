@@ -30,7 +30,9 @@ from app.ml.model_validation import promotion_gate
 
 MODEL_FAMILIES = (
     "logistic_regression",
+    "logistic_regression_unweighted",
     "extra_trees",
+    "random_forest_unweighted",
     "hist_gradient_boosting",
 )
 RETURN_FAMILIES = ("ridge", "extra_trees_regressor", "hist_gradient_boosting_regressor")
@@ -91,9 +93,16 @@ def _classifier(family):
             ("scale", StandardScaler()),
             ("model", LogisticRegression(max_iter=1500, class_weight="balanced", random_state=42)),
         ])
+    if family == "logistic_regression_unweighted":
+        return Pipeline([("scale", StandardScaler()), ("model", LogisticRegression(max_iter=1500, class_weight=None, random_state=42))])
     if family == "extra_trees":
         return ExtraTreesClassifier(
             n_estimators=100, min_samples_leaf=10, class_weight="balanced", random_state=42, n_jobs=1
+        )
+    if family == "random_forest_unweighted":
+        return RandomForestClassifier(
+            n_estimators=160, min_samples_leaf=12, max_features="sqrt",
+            class_weight=None, random_state=42, n_jobs=1
         )
     if family == "hist_gradient_boosting":
         return HistGradientBoostingClassifier(
