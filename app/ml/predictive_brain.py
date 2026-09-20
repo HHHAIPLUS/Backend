@@ -374,8 +374,21 @@ class PredictiveBrain:
                     probs = model.predict_proba(_slice(x, val_bounds))
                     fold_scores.append(_metrics(y_val_fold, pred, probs, model.classes_, val_returns))
                 if fold_scores:
+                    # Reject validation targets that are dominated by one class.
+                    # This prevents a high overall accuracy from coming mainly
+                    # from predicting the flat class and is determined entirely
+                    # before the untouched OOS period.
+                    validation_labels = np.concatenate([
+                        _direction_target(_slice(full_returns, val_bounds), threshold)
+                        for _, val_bounds in selection_folds
+                    ])
+                    counts = np.bincount(validation_labels + 1, minlength=3).astype(float)
+                    fractions = counts / max(1, len(validation_labels))
+                    if float(fractions.min()) < 0.10:
+                        continue
                     horizon_selection[f"{h}:{threshold:.4f}"] = {
-                        **aggregate_scores(fold_scores), "horizon": h, "label_threshold": threshold
+                        **aggregate_scores(fold_scores), "horizon": h, "label_threshold": threshold,
+                        "validation_class_fractions": fractions.tolist(),
                     }
 
         viable = [
