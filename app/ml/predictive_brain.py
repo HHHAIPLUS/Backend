@@ -259,7 +259,7 @@ def _slice(a, bounds):
 
 
 def _calibrate(model, x_cal, y_cal):
-    return CalibratedClassifierCV(FrozenEstimator(model), method="sigmoid").fit(x_cal, y_cal)
+    return CalibratedClassifierCV(FrozenEstimator(model), method="temperature").fit(x_cal, y_cal)
 
 
 class PredictiveBrain:
