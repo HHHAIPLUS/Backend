@@ -3,6 +3,10 @@ name: Phase 2 Gate
 permissions:
   contents: write
 
+concurrency:
+  group: phase2-gate
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
   push:
