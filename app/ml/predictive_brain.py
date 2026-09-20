@@ -33,7 +33,9 @@ MODEL_FAMILIES = (
     "logistic_regression_unweighted",
     "extra_trees",
     "random_forest_unweighted",
+    "random_forest_balanced",
     "hist_gradient_boosting",
+    "hist_gradient_boosting_balanced",
 )
 RETURN_FAMILIES = ("ridge", "extra_trees_regressor", "hist_gradient_boosting_regressor")
 HORIZONS = (3, 6, 12)
@@ -104,9 +106,18 @@ def _classifier(family):
             n_estimators=160, min_samples_leaf=12, max_features="sqrt",
             class_weight=None, random_state=42, n_jobs=1
         )
+    if family == "random_forest_balanced":
+        return RandomForestClassifier(
+            n_estimators=180, min_samples_leaf=10, max_features="sqrt",
+            class_weight="balanced_subsample", random_state=42, n_jobs=1
+        )
     if family == "hist_gradient_boosting":
         return HistGradientBoostingClassifier(
             max_iter=180, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
+        )
+    if family == "hist_gradient_boosting_balanced":
+        return HistGradientBoostingClassifier(
+            max_iter=220, learning_rate=.04, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
         )
     if family == "random_forest":
         return RandomForestClassifier(
@@ -410,7 +421,14 @@ class PredictiveBrain:
                 y_train_fold = _slice(y, train_bounds)
                 y_val_fold = _slice(y, val_bounds)
                 model = _classifier(family)
-                model.fit(_slice(x, train_bounds), y_train_fold)
+                x_train_fold = _slice(x, train_bounds)
+                if family == "hist_gradient_boosting_balanced":
+                    counts = np.bincount(y_train_fold + 1, minlength=3).astype(float)
+                    weights = np.asarray([1.0 / max(counts[label + 1], 1.0) for label in y_train_fold])
+                    weights *= len(weights) / max(weights.sum(), 1e-12)
+                    model.fit(x_train_fold, y_train_fold, sample_weight=weights)
+                else:
+                    model.fit(x_train_fold, y_train_fold)
                 pred = model.predict(_slice(x, val_bounds))
                 probs = model.predict_proba(_slice(x, val_bounds))
                 fold_scores.append(_metrics(y_val_fold, pred, probs, model.classes_, _slice(returns, val_bounds)))
@@ -480,7 +498,13 @@ class PredictiveBrain:
         y_fit = y[:fit_end]
         if family in MODEL_FAMILIES:
             raw_direction = _classifier(family)
-            raw_direction.fit(x_fit, y_fit)
+            if family == "hist_gradient_boosting_balanced":
+                counts = np.bincount(y_fit + 1, minlength=3).astype(float)
+                weights = np.asarray([1.0 / max(counts[label + 1], 1.0) for label in y_fit])
+                weights *= len(weights) / max(weights.sum(), 1e-12)
+                raw_direction.fit(x_fit, y_fit, sample_weight=weights)
+            else:
+                raw_direction.fit(x_fit, y_fit)
             baseline_raw = _classifier("logistic_regression")
             baseline_raw.fit(x_fit, y_fit)
             direction = _calibrate(raw_direction, _slice(x, ca), y_cal)
