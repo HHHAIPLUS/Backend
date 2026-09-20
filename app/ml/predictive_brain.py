@@ -24,6 +24,7 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_score, recall_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
 
 from app.ml.predictive import FEATURES
 from app.ml.model_validation import promotion_gate
@@ -33,6 +34,7 @@ MODEL_FAMILIES = (
     "logistic_regression_unweighted",
     "extra_trees",
     "random_forest_unweighted",
+    "svc_rbf",
     "hist_gradient_boosting",
 )
 RETURN_FAMILIES = ("ridge", "extra_trees_regressor", "hist_gradient_boosting_regressor")
@@ -104,6 +106,8 @@ def _classifier(family):
             n_estimators=160, min_samples_leaf=12, max_features="sqrt",
             class_weight=None, random_state=42, n_jobs=1
         )
+    if family == "svc_rbf":
+        return Pipeline([("scale", StandardScaler()), ("model", SVC(C=1.0, gamma="scale", probability=True, class_weight=None, random_state=42))])
     if family == "hist_gradient_boosting":
         return HistGradientBoostingClassifier(
             max_iter=180, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
