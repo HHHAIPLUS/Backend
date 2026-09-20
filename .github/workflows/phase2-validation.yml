@@ -2,9 +2,7 @@ name: Phase 2 Predictive Validation
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-  pull_request:
+  # Manual supplementary validation only; the authoritative Phase 2 gate is phase2-gate.yml.
 
 jobs:
   phase2:
