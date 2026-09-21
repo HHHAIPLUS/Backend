@@ -32,7 +32,7 @@ from app.ml.predictive import FEATURES
 from app.ml.model_validation import promotion_gate
 
 MODEL_FAMILIES = ("logistic_regression", "xgboost")
-RETURN_FAMILIES = ("ridge", "hist_gradient_boosting_regressor")
+RETURN_FAMILIES = ("ridge", "hist_gradient_boosting_regressor", "xgboost_regressor")
 HORIZONS = (1, 3, 6, 12)
 LABEL_THRESHOLDS = (0.0010, 0.0015, 0.0020, 0.0025)
 COST_RATE = 0.0014
@@ -188,6 +188,13 @@ def _regressor(family):
     if family == "hist_gradient_boosting_regressor":
         return HistGradientBoostingRegressor(
             max_iter=140, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
+        )
+    if family == "xgboost_regressor":
+        return XGBRegressor(
+            n_estimators=220, max_depth=4, learning_rate=0.03,
+            subsample=0.80, colsample_bytree=0.80, min_child_weight=12,
+            reg_alpha=0.10, reg_lambda=3.0, objective="reg:squarederror",
+            eval_metric="rmse", tree_method="hist", n_jobs=1, random_state=42
         )
     raise ValueError(f"Unknown return model family: {family}")
 
@@ -620,30 +627,50 @@ class PredictiveBrain:
         selection_threshold = 0.30
         threshold_candidates = []
         min_cal_trades = max(100, int(len(y_cal) * 0.05))
-        for threshold in np.arange(0.30, 0.71, 0.02):
-            selected = cal_pred.copy()
-            if family in MODEL_FAMILIES:
+        if family in MODEL_FAMILIES:
+            for threshold in np.arange(0.30, 0.71, 0.02):
+                selected = cal_pred.copy()
                 selected[confidence < threshold] = 0
-            traded = selected != 0
-            trade_count = int(traded.sum())
-            trade_rate = trade_count / max(1, len(selected))
-            if trade_count < min_cal_trades or trade_rate < 0.05:
-                continue
-            net = _net_returns(r_cal, selected)
-            equity = np.cumsum(net)
-            peak = np.maximum.accumulate(np.r_[0.0, equity])
-            drawdown = float(np.max(peak[1:] - equity)) if len(equity) else 0.0
-            avg_trade = float(net[traded].mean())
-            cal_metrics = _metrics(y_cal, selected, cal_prob, np.array([-1, 0, 1]), r_cal)
-            threshold_candidates.append((
-                float(avg_trade),
-                float(net.sum()),
-                -float(drawdown),
-                float(cal_metrics["balanced_accuracy"]),
-                float(cal_metrics["accuracy"]),
-                float(trade_rate),
-                float(threshold),
-            ))
+                traded = selected != 0
+                trade_count = int(traded.sum())
+                trade_rate = trade_count / max(1, len(selected))
+                if trade_count < min_cal_trades or trade_rate < 0.05:
+                    continue
+                net = _net_returns(r_cal, selected)
+                equity = np.cumsum(net)
+                peak = np.maximum.accumulate(np.r_[0.0, equity])
+                drawdown = float(np.max(peak[1:] - equity)) if len(equity) else 0.0
+                avg_trade = float(net[traded].mean())
+                cal_metrics = _metrics(y_cal, selected, cal_prob, np.array([-1, 0, 1]), r_cal)
+                threshold_candidates.append((
+                    float(avg_trade), float(net.sum()), -float(drawdown),
+                    float(cal_metrics["balanced_accuracy"]), float(cal_metrics["accuracy"]),
+                    float(trade_rate), float(threshold),
+                ))
+        else:
+            expected_cal = np.asarray(direction.predict(_slice(x, ca)), dtype=float)
+            for threshold in np.arange(COST_RATE, 0.00501, 0.0002):
+                selected = _regression_signal(expected_cal, float(threshold))
+                traded = selected != 0
+                trade_count = int(traded.sum())
+                trade_rate = trade_count / max(1, len(selected))
+                if trade_count < min_cal_trades or trade_rate < 0.05:
+                    continue
+                net = _net_returns(r_cal, selected)
+                equity = np.cumsum(net)
+                peak = np.maximum.accumulate(np.r_[0.0, equity])
+                drawdown = float(np.max(peak[1:] - equity)) if len(equity) else 0.0
+                probs = np.column_stack([
+                    np.where(selected == -1, 0.90, 0.05),
+                    np.where(selected == 0, 0.90, 0.05),
+                    np.where(selected == 1, 0.90, 0.05),
+                ])
+                cal_metrics = _metrics(y_cal, selected, probs, np.array([-1, 0, 1]), r_cal)
+                threshold_candidates.append((
+                    float(net[traded].mean()), float(net.sum()), -float(drawdown),
+                    float(cal_metrics["balanced_accuracy"]), float(cal_metrics["accuracy"]),
+                    float(trade_rate), float(threshold),
+                ))
 
         if family in MODEL_FAMILIES and not threshold_candidates:
             return BrainReport(
@@ -656,7 +683,7 @@ class PredictiveBrain:
             # participation are secondary. OOS remains completely untouched.
             selection_threshold = max(threshold_candidates)[-1]
 
-        candidate_pred, candidate_prob = self._predict_selected(direction, _slice(x, oo), invert_direction, family)
+        candidate_pred, candidate_prob = self._predict_selected(direction, _slice(x, oo), invert_direction, family, selection_threshold)
         baseline_pred = baseline.predict(_slice(x, oo))
         baseline_prob = baseline.predict_proba(_slice(x, oo))
         if family in MODEL_FAMILIES:
@@ -802,7 +829,7 @@ class PredictiveBrain:
         return model
 
     @staticmethod
-    def _predict_selected(model, x, invert_direction, family):
+    def _predict_selected(model, x, invert_direction, family, signal_threshold=COST_RATE):
         if family in MODEL_FAMILIES:
             probs = model.predict_proba(x)
             if family == "soft_voting":
@@ -820,7 +847,7 @@ class PredictiveBrain:
                     probs[:, mapping[-1]], probs[:, mapping[1]] = probs[:, mapping[1]], probs[:, mapping[-1]]
             return pred, probs
         expected = np.asarray(model.predict(x), dtype=float)
-        pred = _regression_signal(expected, COST_RATE)
+        pred = _regression_signal(expected, signal_threshold)
         probs = np.column_stack([
             np.where(pred == -1, 0.90, 0.05),
             np.where(pred == 0, 0.90, 0.05),
@@ -882,7 +909,7 @@ class PredictiveBrain:
             er = float(expected_model.predict(x)[0])
         else:
             er = float(model.predict(x)[0])
-            pred = _regression_signal([er], COST_RATE)
+            pred = _regression_signal([er], float(self.bundle.get("decision_threshold", COST_RATE)))
             probs = {
                 "short": 0.90 if pred[0] == -1 else 0.05,
                 "flat": 0.90 if pred[0] == 0 else 0.05,
