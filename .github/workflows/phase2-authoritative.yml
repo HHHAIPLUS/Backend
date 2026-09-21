@@ -1,8 +1,12 @@
 name: Phase 2 authoritative OOS
 
 on:
-  push:
+  pull_request:
+    types: [opened, synchronize, reopened]
     paths:
+      - "scripts/phase2_authoritative.py"
+      - "app/ml/**"
+      - "requirements.txt"
       - ".github/workflows/phase2-authoritative.yml"
   workflow_dispatch:
 
@@ -38,7 +42,6 @@ jobs:
             phase2_report.json
             artifacts/predictive_brain.joblib
             artifacts/predictive_brain_manifest.json
-
       - name: Preserve promoted artifact for verification
         if: success()
         run: |
