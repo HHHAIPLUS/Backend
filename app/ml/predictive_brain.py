@@ -16,6 +16,7 @@ from sklearn.ensemble import (
     HistGradientBoostingClassifier,
     HistGradientBoostingRegressor,
     RandomForestClassifier,
+    VotingClassifier,
     RandomForestRegressor,
 )
 from sklearn.frozen import FrozenEstimator
@@ -37,6 +38,7 @@ MODEL_FAMILIES = (
     "random_forest_balanced",
     "hist_gradient_boosting",
     "hist_gradient_boosting_balanced",
+    "soft_voting",
 )
 RETURN_FAMILIES = ("ridge", "extra_trees_regressor", "hist_gradient_boosting_regressor")
 HORIZONS = (1, 2, 3, 6, 12, 24)
@@ -121,6 +123,17 @@ def _classifier(family):
     if family == "hist_gradient_boosting_balanced":
         return HistGradientBoostingClassifier(
             max_iter=220, learning_rate=.04, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
+        )
+    if family == "soft_voting":
+        return VotingClassifier(
+            estimators=[
+                ("lr", Pipeline([("scale", StandardScaler()), ("model", LogisticRegression(max_iter=1500, class_weight="balanced", random_state=42))])),
+                ("et", ExtraTreesClassifier(n_estimators=120, min_samples_leaf=10, class_weight="balanced", random_state=42, n_jobs=1)),
+                ("rf", RandomForestClassifier(n_estimators=140, min_samples_leaf=10, max_features="sqrt", class_weight="balanced_subsample", random_state=42, n_jobs=1)),
+            ],
+            voting="soft",
+            weights=[2, 1, 1],
+            flatten_transform=True,
         )
     if family == "random_forest":
         return RandomForestClassifier(
@@ -273,7 +286,7 @@ def _slice(a, bounds):
 
 
 def _calibrate(model, x_cal, y_cal):
-    return CalibratedClassifierCV(FrozenEstimator(model), method="temperature").fit(x_cal, y_cal)
+    return CalibratedClassifierCV(FrozenEstimator(model), method="sigmoid").fit(x_cal, y_cal)
 
 
 class PredictiveBrain:
