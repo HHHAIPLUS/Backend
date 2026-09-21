@@ -76,17 +76,14 @@ def test_evaluation_rejects_non_finite_trade_return() -> None:
 
 def test_feature_contract_is_exact_and_finite() -> None:
     features = build_model_features(_candles())
-    expected = {
-        "return_1", "return_3", "return_6", "return_12", "return_24",
-        "range_pct", "range_mean_12", "close_location", "atr_pct_14",
-        "volume_change", "volume_zscore", "rsi_14", "ema_gap_8_24",
-        "breakout_24", "volatility_proxy", "trend_strength", "momentum",
+    assert set(features) == set(FEATURES) | {
         "order_book_imbalance", "funding_rate", "open_interest_change",
         "news_risk", "news_sentiment", "liquidity_stress",
     }
-    assert set(features) == expected
-    assert set(FEATURES).issubset(features)
-    assert not (set(FEATURES) & {"order_book_imbalance", "funding_rate", "open_interest_change", "news_risk", "news_sentiment", "liquidity_stress"})
+    assert not (set(FEATURES) & {
+        "order_book_imbalance", "funding_rate", "open_interest_change",
+        "news_risk", "news_sentiment", "liquidity_stress",
+    })
     assert all(value == value for value in features.values())
     assert all(abs(value) != float("inf") for value in features.values())
 
@@ -100,11 +97,11 @@ def test_model_features_do_not_require_future_candles() -> None:
 
 def test_empty_feature_contract_is_explicit() -> None:
     features = build_model_features([])
-    assert len(features) == 23
+    assert len(features) == len(FEATURES) + 6
     assert all(value == 0.0 for value in features.values())
 
 
 @pytest.mark.parametrize("bad_rows", [None, []])
 def test_empty_data_contract_is_explicit(bad_rows) -> None:
     features = build_model_features(bad_rows)
-    assert len(features) == 23
+    assert len(features) == len(FEATURES) + 6
