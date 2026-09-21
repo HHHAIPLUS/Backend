@@ -38,3 +38,12 @@ jobs:
             phase2_report.json
             artifacts/predictive_brain.joblib
             artifacts/predictive_brain_manifest.json
+
+      - name: Preserve promoted artifact for verification
+        if: success()
+        run: |
+          git config user.name "HHHAI Phase 2"
+          git config user.email "actions@github.com"
+          git add phase2_report.json artifacts/predictive_brain.joblib artifacts/predictive_brain_manifest.json
+          git diff --cached --quiet || git commit -m "[phase2] Preserve authoritative promoted artifact"
+          git push
