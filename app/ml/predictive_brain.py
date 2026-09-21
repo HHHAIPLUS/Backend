@@ -5,6 +5,7 @@ from pathlib import Path
 import hashlib
 import json
 import platform
+import os
 from typing import Any
 
 import joblib
@@ -24,22 +25,17 @@ from sklearn.linear_model import LogisticRegression, Ridge, SGDClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_score, recall_score
 from sklearn.pipeline import Pipeline
+from xgboost import XGBClassifier
 from sklearn.preprocessing import StandardScaler
 
 from app.ml.predictive import FEATURES
 from app.ml.model_validation import promotion_gate
 
-MODEL_FAMILIES = (
-    # Final pre-registered Phase 2 set: transparent linear baseline,
-    # tree boosting, and a fixed soft-voting ensemble. The set is deliberately
-    # small so the research design is reproducible on constrained compute.
-    "logistic_regression",
-    "hist_gradient_boosting",
-    "soft_voting",
-)
+MODEL_FAMILIES = ("logistic_regression", "xgboost")
 RETURN_FAMILIES = ("ridge", "hist_gradient_boosting_regressor")
-HORIZONS = (6,)
-LABEL_THRESHOLDS = (0.0012, 0.0015, 0.0020)
+HORIZONS = (1, 3, 6, 12)
+LABEL_THRESHOLDS = (0.0010, 0.0015, 0.0020, 0.0025)
+COST_RATE = 0.0014
 COST_RATE = 0.0008
 ARTIFACT_SCHEMA = 4
 MAX_LABEL_HORIZON = max(HORIZONS)
@@ -90,6 +86,8 @@ def _direction_target(values, threshold=COST_RATE):
 
 
 def _classifier(family):
+    if family == "xgboost":
+        return XGBClassifier(n_estimators=160, max_depth=4, learning_rate=0.04, subsample=0.80, colsample_bytree=0.80, min_child_weight=8, reg_alpha=0.10, reg_lambda=2.0, objective="multi:softprob", num_class=3, eval_metric="mlogloss", tree_method="hist", n_jobs=1, random_state=42)
     if family == "logistic_regression":
         return Pipeline([
             ("scale", StandardScaler()),
@@ -231,10 +229,20 @@ def _purged_time_splits(rows, test_fraction=.20):
     unique_times = sorted(set(timestamps))
     if len(unique_times) < 40:
         raise ValueError("Not enough unique timestamps for chronological evaluation.")
-    oos_time_pos = int(len(unique_times) * (1.0 - test_fraction))
-    oos_time_pos = max(1, min(len(unique_times) - 1, oos_time_pos))
-    oos_start_time = unique_times[oos_time_pos]
-    oos_start = next(i for i, t in enumerate(timestamps) if t >= oos_start_time)
+    fixed_start = os.getenv("PHASE2_OOS_START", "").strip()
+    fixed_end = os.getenv("PHASE2_OOS_END", "").strip()
+    if fixed_start:
+        if not fixed_end or not (unique_times[0] <= fixed_start < fixed_end <= unique_times[-1]):
+            raise ValueError("Configured historical OOS window is outside available data.")
+        oos_start_time = fixed_start
+        oos_start = next(i for i, t in enumerate(timestamps) if t >= oos_start_time)
+        oos_end = next((i for i, t in enumerate(timestamps) if t >= fixed_end), len(rows))
+    else:
+        oos_time_pos = int(len(unique_times) * (1.0 - test_fraction))
+        oos_time_pos = max(1, min(len(unique_times) - 1, oos_time_pos))
+        oos_start_time = unique_times[oos_time_pos]
+        oos_start = next(i for i, t in enumerate(timestamps) if t >= oos_start_time)
+        oos_end = len(rows)
 
     pre_times = sorted(set(timestamps[:oos_start]))
     if len(pre_times) < 30:
@@ -257,14 +265,14 @@ def _purged_time_splits(rows, test_fraction=.20):
     val_end = max(val_start, cal_start - purge)
     cal_end = max(cal_start, oos_start - purge)
 
-    if train_end < 600 or val_end - val_start < 100 or cal_end - cal_start < 100 or len(rows) - oos_start < 100:
+    if train_end < 600 or val_end - val_start < 100 or cal_end - cal_start < 100 or oos_end - oos_start < 100:
         raise ValueError("Purged train/validation/calibration/OOS partitions are too small.")
 
     return {
         "train": (0, train_end),
         "validation": (val_start, val_end),
         "calibration": (cal_start, cal_end),
-        "oos": (oos_start, len(rows)),
+        "oos": (oos_start, oos_end),
         "purge_rows": purge,
         "timestamps": {
             "train_end": timestamps[train_end - 1],
@@ -273,7 +281,7 @@ def _purged_time_splits(rows, test_fraction=.20):
             "calibration_start": timestamps[cal_start],
             "calibration_end": timestamps[cal_end - 1],
             "oos_start": timestamps[oos_start],
-            "oos_end": timestamps[-1],
+            "oos_end": timestamps[oos_end - 1],
         },
     }
 
