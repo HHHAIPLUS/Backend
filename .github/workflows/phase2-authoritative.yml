@@ -43,7 +43,15 @@ jobs:
             phase2_report.json
             artifacts/predictive_brain.joblib
             artifacts/predictive_brain_manifest.json
-      - name: Preserve promoted artifact for verification
+      - name: Mark Phase 2 complete
+        if: success()
+        env:
+          PHASE2_REPORT_PATH: phase2_report.json
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: python scripts/mark_phase2_complete.py
+
+      - name: Preserve promoted artifact and roadmap evidence
         if: success()
         run: |
           git config user.name "HHHAI Phase 2"
