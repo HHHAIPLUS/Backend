@@ -504,11 +504,11 @@ class PredictiveBrain:
             dd = float(v.get("max_drawdown", 1e99))
             return (
                 1 if economically_viable else 0,
+                bal,
+                acc,
                 exp if economically_viable else -1e99,
                 total if economically_viable else -1e99,
                 -dd if economically_viable else -1e99,
-                bal,
-                acc,
                 float(v.get("trade_rate", 0.0)),
             )
 
@@ -607,11 +607,11 @@ class PredictiveBrain:
             dd = float(score.get("max_drawdown", 1e99))
             return (
                 1 if viable_validation else 0,
+                bal,
+                acc,
                 exp if viable_validation else -1e99,
                 total if viable_validation else -1e99,
                 -dd if viable_validation else -1e99,
-                bal,
-                acc,
                 float(c[0]),
                 float(c[1]),
             )
