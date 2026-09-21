@@ -67,7 +67,7 @@ services:
       - key: HHHAI_MAX_POSITION_REVIEWS_PER_CYCLE
         value: "20"
       - key: HHHAI_AUTO_BOOTSTRAP_BRAIN
-        value: "true"
+        value: "false"
       - key: HHHAI_FORCE_BOOTSTRAP_BRAIN
         value: "false"
       - key: HHHAI_BRAIN_BOOTSTRAP_SYMBOLS
