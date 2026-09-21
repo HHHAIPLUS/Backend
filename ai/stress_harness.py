@@ -2,7 +2,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Any
 import random
-import time
 
 
 @dataclass
@@ -37,13 +36,19 @@ class StressHarness:
                     violations.append("Execution authority became enabled during stress test.")
                 if value.get("live_exchange_order") is True:
                     violations.append("A live exchange order was reported during stress test.")
+                if value.get("safe_state") in {"UNSAFE", "LIVE", "EXECUTING"}:
+                    violations.append("Stress operation reported an unsafe execution state.")
             observations.append("Operation completed without an uncaught exception.")
             safe = "SAFE" if not violations else "UNSAFE"
             return StressResult(scenario, not violations, safe, violations, observations)
         except Exception as exc:
-            # A controlled exception is acceptable if the caller remains in a safe state.
+            safe_proof = bool(getattr(exc, "safe_fail_closed", False))
             observations.append(f"Controlled failure: {type(exc).__name__}")
-            return StressResult(scenario, True, "SAFE_FAIL_CLOSED", violations, observations)
+            if safe_proof:
+                observations.append("Exception explicitly declared fail-closed safety.")
+                return StressResult(scenario, True, "SAFE_FAIL_CLOSED", violations, observations)
+            violations.append("Operation raised without an explicit fail-closed safety proof.")
+            return StressResult(scenario, False, "UNKNOWN_AFTER_FAILURE", violations, observations)
 
     def duplicate_order_guard(self, order_ids: list[str]) -> StressResult:
         duplicates = len(order_ids) != len(set(order_ids))
