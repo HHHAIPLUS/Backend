@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def main() -> int:
-    report_path = Path(os.getenv("PHASE2_REPORT_PATH", "artifacts/phase2_oos_report.json"))
+    report_path = Path(os.getenv("PHASE2_REPORT_PATH", "phase2_report.json"))
     roadmap_path = Path("REAL_MONEY_READINESS_ROADMAP.md")
     report = json.loads(report_path.read_text())
 
