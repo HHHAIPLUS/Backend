@@ -41,6 +41,21 @@ MAX_LABEL_HORIZON = max(HORIZONS)
 MIN_OOS_TRADES = 100
 
 
+class DirectionalXGBClassifier(XGBClassifier):
+    """XGBoost adapter that trains on 0/1/2 while exposing -1/0/1 directions."""
+    def fit(self, X, y, *args, **kwargs):
+        y_arr = np.asarray(y, dtype=int)
+        if not np.isin(y_arr, (-1, 0, 1)).all():
+            raise ValueError("Directional XGBoost expects labels -1, 0, 1")
+        result = super().fit(X, y_arr + 1, *args, **kwargs)
+        self.classes_ = np.asarray([-1, 0, 1], dtype=int)
+        return result
+
+    def predict(self, X, *args, **kwargs):
+        encoded = super().predict(X, *args, **kwargs)
+        return np.asarray(encoded, dtype=int) - 1
+
+
 @dataclass
 class BrainReport:
     status: str
@@ -86,7 +101,7 @@ def _direction_target(values, threshold=COST_RATE):
 
 def _classifier(family):
     if family == "xgboost":
-        return XGBClassifier(n_estimators=160, max_depth=4, learning_rate=0.04, subsample=0.80, colsample_bytree=0.80, min_child_weight=8, reg_alpha=0.10, reg_lambda=2.0, objective="multi:softprob", num_class=3, eval_metric="mlogloss", tree_method="hist", n_jobs=1, random_state=42)
+        return DirectionalXGBClassifier(n_estimators=160, max_depth=4, learning_rate=0.04, subsample=0.80, colsample_bytree=0.80, min_child_weight=8, reg_alpha=0.10, reg_lambda=2.0, objective="multi:softprob", num_class=3, eval_metric="mlogloss", tree_method="hist", n_jobs=1, random_state=42)
     if family == "logistic_regression":
         return Pipeline([
             ("scale", StandardScaler()),
