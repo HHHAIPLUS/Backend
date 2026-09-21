@@ -31,8 +31,8 @@ from sklearn.preprocessing import StandardScaler
 from app.ml.predictive import FEATURES
 from app.ml.model_validation import promotion_gate
 
-MODEL_FAMILIES = ("logistic_regression", "xgboost")
-RETURN_FAMILIES = ("ridge", "hist_gradient_boosting_regressor", "xgboost_regressor")
+MODEL_FAMILIES = ("logistic_regression", "xgboost", "extra_trees", "random_forest_balanced", "hist_gradient_boosting", "soft_voting")
+RETURN_FAMILIES = ("ridge", "hist_gradient_boosting_regressor", "xgboost_regressor", "extra_trees_regressor", "random_forest_regressor")
 HORIZONS = (1, 3, 6, 12)
 LABEL_THRESHOLDS = (0.0010, 0.0015, 0.0020, 0.0025)
 COST_RATE = 0.0014
@@ -510,8 +510,8 @@ class PredictiveBrain:
                 y_val_fold = _slice(y, val_bounds)
                 model = _classifier(family)
                 x_train_fold = _slice(x, train_bounds)
-                if family == "hist_gradient_boosting_balanced":
-                    counts = np.bincount(y_train_fold + 1, minlength=3).astype(float)
+                counts = np.bincount(y_train_fold + 1, minlength=3).astype(float)
+                if family in {"xgboost", "hist_gradient_boosting"}:
                     weights = np.asarray([1.0 / max(counts[label + 1], 1.0) for label in y_train_fold])
                     weights *= len(weights) / max(weights.sum(), 1e-12)
                     model.fit(x_train_fold, y_train_fold, sample_weight=weights)
@@ -594,8 +594,8 @@ class PredictiveBrain:
         y_fit = y[:fit_end]
         if family in MODEL_FAMILIES:
             raw_direction = _classifier(family)
-            if family == "hist_gradient_boosting_balanced":
-                counts = np.bincount(y_fit + 1, minlength=3).astype(float)
+            counts = np.bincount(y_fit + 1, minlength=3).astype(float)
+            if family in {"xgboost", "hist_gradient_boosting"}:
                 weights = np.asarray([1.0 / max(counts[label + 1], 1.0) for label in y_fit])
                 weights *= len(weights) / max(weights.sum(), 1e-12)
                 raw_direction.fit(x_fit, y_fit, sample_weight=weights)
@@ -678,10 +678,24 @@ class PredictiveBrain:
                 "Calibration produced no decision threshold with the required minimum trade coverage."
             )
         if threshold_candidates:
-            # Threshold is selected exclusively on the separate calibration
-            # period. Classification quality is primary; expectancy and stable
-            # participation are secondary. OOS remains completely untouched.
-            selection_threshold = max(threshold_candidates)[-1]
+            # Calibration-only threshold selection. Prefer thresholds that
+            # simultaneously show balanced classification and positive net
+            # expectancy, then prefer stronger economics and lower drawdown.
+            # The untouched OOS is never consulted.
+            def _threshold_key(t):
+                exp, total, neg_dd, bal, acc, rate, threshold = t
+                viable = bal >= 0.50 and acc >= 0.52 and exp > 0.0
+                return (
+                    1 if viable else 0,
+                    exp if viable else -1e99,
+                    total if viable else -1e99,
+                    neg_dd if viable else -1e99,
+                    bal,
+                    acc,
+                    rate,
+                    threshold,
+                )
+            selection_threshold = max(threshold_candidates, key=_threshold_key)[-1]
 
         candidate_pred, candidate_prob = self._predict_selected(direction, _slice(x, oo), invert_direction, family, selection_threshold)
         baseline_pred = baseline.predict(_slice(x, oo))
