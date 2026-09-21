@@ -25,7 +25,7 @@ from sklearn.linear_model import LogisticRegression, Ridge, SGDClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_score, recall_score
 from sklearn.pipeline import Pipeline
-from xgboost import XGBClassifier
+from xgboost import XGBClassifier, XGBRegressor
 from sklearn.preprocessing import StandardScaler
 
 from app.ml.predictive import FEATURES
