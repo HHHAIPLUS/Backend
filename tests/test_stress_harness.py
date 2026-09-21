@@ -30,3 +30,24 @@ def test_stress_run_never_accepts_live_execution():
         lambda: {"execution_authority": False, "live_exchange_order": False},
     )
     assert result.passed is True
+
+
+def test_uncaught_exception_does_not_count_as_a_pass():
+    def broken():
+        raise RuntimeError("dependency failed")
+
+    result = StressHarness().run("dependency_failure", broken)
+    assert result.passed is False
+    assert result.safe_state == "UNKNOWN_AFTER_FAILURE"
+
+
+def test_explicit_fail_closed_exception_is_accepted():
+    class SafeFailure(RuntimeError):
+        safe_fail_closed = True
+
+    def broken_safely():
+        raise SafeFailure("blocked before execution")
+
+    result = StressHarness().run("safe_dependency_failure", broken_safely)
+    assert result.passed is True
+    assert result.safe_state == "SAFE_FAIL_CLOSED"
