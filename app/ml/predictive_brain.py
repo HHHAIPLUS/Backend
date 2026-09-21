@@ -30,19 +30,18 @@ from app.ml.predictive import FEATURES
 from app.ml.model_validation import promotion_gate
 
 MODEL_FAMILIES = (
+    # Pre-registered, compact candidate set. These families cover a linear
+    # baseline, bagging, boosting and a fixed ensemble without turning Phase 2
+    # into an unconstrained hyperparameter search.
     "logistic_regression",
-    "logistic_regression_unweighted",
-    "logistic_regression_directional",
     "extra_trees",
-    "random_forest_unweighted",
     "random_forest_balanced",
     "hist_gradient_boosting",
-    "hist_gradient_boosting_balanced",
     "soft_voting",
 )
-RETURN_FAMILIES = ("ridge", "extra_trees_regressor", "hist_gradient_boosting_regressor")
-HORIZONS = (1, 2, 3, 6, 12, 24)
-LABEL_THRESHOLDS = (0.0006, 0.0008, 0.0010, 0.0012, 0.0015, 0.0020, 0.0025, 0.0035)
+RETURN_FAMILIES = ("ridge", "hist_gradient_boosting_regressor")
+HORIZONS = (1, 2, 3, 6, 12)
+LABEL_THRESHOLDS = (0.0008, 0.0012, 0.0015, 0.0020)
 COST_RATE = 0.0008
 ARTIFACT_SCHEMA = 4
 MAX_LABEL_HORIZON = max(HORIZONS)
@@ -104,32 +103,32 @@ def _classifier(family):
         return Pipeline([("scale", StandardScaler()), ("model", LogisticRegression(max_iter=1800, class_weight={-1: 2.0, 0: 0.5, 1: 2.0}, random_state=42))])
     if family == "extra_trees":
         return ExtraTreesClassifier(
-            n_estimators=100, min_samples_leaf=10, class_weight="balanced", random_state=42, n_jobs=1
+            n_estimators=60, min_samples_leaf=10, class_weight="balanced", random_state=42, n_jobs=1
         )
     if family == "random_forest_unweighted":
         return RandomForestClassifier(
-            n_estimators=160, min_samples_leaf=12, max_features="sqrt",
+            n_estimators=80, min_samples_leaf=12, max_features="sqrt",
             class_weight=None, random_state=42, n_jobs=1
         )
     if family == "random_forest_balanced":
         return RandomForestClassifier(
-            n_estimators=180, min_samples_leaf=10, max_features="sqrt",
+            n_estimators=80, min_samples_leaf=10, max_features="sqrt",
             class_weight="balanced_subsample", random_state=42, n_jobs=1
         )
     if family == "hist_gradient_boosting":
         return HistGradientBoostingClassifier(
-            max_iter=180, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
+            max_iter=140, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
         )
     if family == "hist_gradient_boosting_balanced":
         return HistGradientBoostingClassifier(
-            max_iter=220, learning_rate=.04, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
+            max_iter=140, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
         )
     if family == "soft_voting":
         return VotingClassifier(
             estimators=[
                 ("lr", Pipeline([("scale", StandardScaler()), ("model", LogisticRegression(max_iter=1500, class_weight="balanced", random_state=42))])),
-                ("et", ExtraTreesClassifier(n_estimators=120, min_samples_leaf=10, class_weight="balanced", random_state=42, n_jobs=1)),
-                ("rf", RandomForestClassifier(n_estimators=140, min_samples_leaf=10, max_features="sqrt", class_weight="balanced_subsample", random_state=42, n_jobs=1)),
+                ("et", ExtraTreesClassifier(n_estimators=60, min_samples_leaf=10, class_weight="balanced", random_state=42, n_jobs=1)),
+                ("rf", RandomForestClassifier(n_estimators=70, min_samples_leaf=10, max_features="sqrt", class_weight="balanced_subsample", random_state=42, n_jobs=1)),
             ],
             voting="soft",
             weights=[2, 1, 1],
@@ -157,12 +156,12 @@ def _regressor(family):
     if family == "ridge":
         return Pipeline([("scale", StandardScaler()), ("model", Ridge(alpha=10.0))])
     if family == "extra_trees_regressor":
-        return ExtraTreesRegressor(n_estimators=100, min_samples_leaf=10, random_state=42, n_jobs=1)
+        return ExtraTreesRegressor(n_estimators=60, min_samples_leaf=10, random_state=42, n_jobs=1)
     if family == "random_forest_regressor":
-        return RandomForestRegressor(n_estimators=160, min_samples_leaf=12, max_features="sqrt", random_state=42, n_jobs=1)
+        return RandomForestRegressor(n_estimators=80, min_samples_leaf=12, max_features="sqrt", random_state=42, n_jobs=1)
     if family == "hist_gradient_boosting_regressor":
         return HistGradientBoostingRegressor(
-            max_iter=220, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
+            max_iter=140, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
         )
     raise ValueError(f"Unknown return model family: {family}")
 
