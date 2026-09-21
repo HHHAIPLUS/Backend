@@ -240,6 +240,18 @@ def _net_returns(returns, pred):
     return gross - costs
 
 
+def _apply_regime_filter(pred, x, threshold):
+    """Filter directional signals using the precomputed medium-term trend."""
+    pred = np.asarray(pred, dtype=int).copy()
+    if threshold is None:
+        return pred
+    idx = FEATURES.index("ema_gap_24_72")
+    gap = np.asarray(x, dtype=float)[:, idx]
+    pred[(pred == 1) & (gap <= float(threshold))] = 0
+    pred[(pred == -1) & (gap >= -float(threshold))] = 0
+    return pred
+
+
 def _metrics(y, pred, probs, classes, returns):
     net = _net_returns(returns, pred)
     traded = pred != 0
@@ -659,12 +671,15 @@ class PredictiveBrain:
         confidence = np.max(cal_prob, axis=1)
         selection_threshold = 0.30
         threshold_candidates = []
+        regime_thresholds = (None, 0.0, 0.0005, 0.0010, 0.0020, 0.0040)
         min_cal_trades = max(20, int(len(y_cal) * 0.01))
         for threshold in np.arange(0.30, 0.71, 0.02):
-            selected = cal_pred.copy()
+            selected_base = cal_pred.copy()
             if family in MODEL_FAMILIES:
-                selected[confidence < threshold] = 0
-            traded = selected != 0
+                selected_base[confidence < threshold] = 0
+            for regime_threshold in regime_thresholds:
+                selected = _apply_regime_filter(selected_base, _slice(x, ca), regime_threshold)
+                traded = selected != 0
             trade_count = int(traded.sum())
             trade_rate = trade_count / max(1, len(selected))
             if trade_count < min_cal_trades or trade_rate < 0.01:
@@ -690,17 +705,21 @@ class PredictiveBrain:
                 "REJECTED", version, {"chosen_horizon": chosen_horizon, "chosen_threshold": chosen_threshold},
                 "Calibration produced no decision threshold with the required minimum trade coverage."
             )
+        regime_filter_threshold = None
         if threshold_candidates:
             # Threshold is selected exclusively on the separate calibration
             # period. Classification quality is primary; expectancy and stable
             # participation are secondary. OOS remains completely untouched.
-            selection_threshold = max(threshold_candidates)[-1]
+            best_calibration = max(threshold_candidates)
+            selection_threshold = best_calibration[6]
+            regime_filter_threshold = None if best_calibration[8] < 0 else best_calibration[8]
 
         candidate_pred, candidate_prob = self._predict_selected(direction, _slice(x, oo), invert_direction, family)
         baseline_pred = baseline.predict(_slice(x, oo))
         baseline_prob = baseline.predict_proba(_slice(x, oo))
         if family in MODEL_FAMILIES:
             candidate_pred[candidate_prob.max(axis=1) < selection_threshold] = 0
+        candidate_pred = _apply_regime_filter(candidate_pred, _slice(x, oo), regime_filter_threshold)
         else:
             # _predict_selected already converts the expected return into a
             # {-1,0,1} signal. Do not threshold the discrete signal again.
@@ -739,6 +758,7 @@ class PredictiveBrain:
             "chosen_horizon": chosen_horizon,
             "chosen_label_threshold": chosen_threshold,
             "decision_threshold": selection_threshold,
+            "regime_filter_threshold": regime_filter_threshold,
             "cost_rate": COST_RATE,
         }
         if not all(absolute_gate.values()):
@@ -761,6 +781,7 @@ class PredictiveBrain:
             "family": family,
             "direction_inverted": invert_direction,
             "decision_threshold": selection_threshold,
+            "regime_filter_threshold": regime_filter_threshold,
             "feature_hash": _feature_hash(),
             "features": FEATURES,
             "cost_rate": COST_RATE,
