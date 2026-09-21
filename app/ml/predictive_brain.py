@@ -659,7 +659,7 @@ class PredictiveBrain:
         confidence = np.max(cal_prob, axis=1)
         selection_threshold = 0.30
         threshold_candidates = []
-        min_cal_trades = max(100, int(len(y_cal) * 0.05))
+        min_cal_trades = max(20, int(len(y_cal) * 0.01))
         for threshold in np.arange(0.30, 0.71, 0.02):
             selected = cal_pred.copy()
             if family in MODEL_FAMILIES:
@@ -667,7 +667,7 @@ class PredictiveBrain:
             traded = selected != 0
             trade_count = int(traded.sum())
             trade_rate = trade_count / max(1, len(selected))
-            if trade_count < min_cal_trades or trade_rate < 0.05:
+            if trade_count < min_cal_trades or trade_rate < 0.01:
                 continue
             net = _net_returns(r_cal, selected)
             equity = np.cumsum(net)
