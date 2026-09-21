@@ -31,7 +31,7 @@ from sklearn.preprocessing import StandardScaler
 from app.ml.predictive import FEATURES
 from app.ml.model_validation import promotion_gate
 
-MODEL_FAMILIES = ("logistic_regression", "xgboost", "extra_trees", "random_forest_balanced", "hist_gradient_boosting", "soft_voting")
+MODEL_FAMILIES = ("logistic_regression", "logistic_regression_directional", "sgd_logistic", "xgboost", "extra_trees", "random_forest_balanced", "hist_gradient_boosting", "soft_voting")
 RETURN_FAMILIES = ("ridge", "hist_gradient_boosting_regressor", "xgboost_regressor", "extra_trees_regressor", "random_forest_regressor")
 HORIZONS = (1, 3, 6, 12)
 LABEL_THRESHOLDS = (0.0010, 0.0015, 0.0020, 0.0025)
@@ -626,15 +626,15 @@ class PredictiveBrain:
         confidence = np.max(cal_prob, axis=1)
         selection_threshold = 0.30
         threshold_candidates = []
-        min_cal_trades = max(100, int(len(y_cal) * 0.05))
+        min_cal_trades = max(100, int(len(y_cal) * 0.02))
         if family in MODEL_FAMILIES:
-            for threshold in np.arange(0.30, 0.71, 0.02):
+            for threshold in np.arange(0.30, 0.96, 0.02):
                 selected = cal_pred.copy()
                 selected[confidence < threshold] = 0
                 traded = selected != 0
                 trade_count = int(traded.sum())
                 trade_rate = trade_count / max(1, len(selected))
-                if trade_count < min_cal_trades or trade_rate < 0.05:
+                if trade_count < min_cal_trades or trade_rate < 0.02:
                     continue
                 net = _net_returns(r_cal, selected)
                 equity = np.cumsum(net)
@@ -649,7 +649,7 @@ class PredictiveBrain:
                 ))
         else:
             expected_cal = np.asarray(direction.predict(_slice(x, ca)), dtype=float)
-            for threshold in np.arange(COST_RATE, 0.00501, 0.0002):
+            for threshold in np.arange(COST_RATE, 0.02001, 0.0002):
                 selected = _regression_signal(expected_cal, float(threshold))
                 traded = selected != 0
                 trade_count = int(traded.sum())
