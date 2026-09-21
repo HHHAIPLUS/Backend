@@ -30,18 +30,16 @@ from app.ml.predictive import FEATURES
 from app.ml.model_validation import promotion_gate
 
 MODEL_FAMILIES = (
-    # Pre-registered, compact candidate set. These families cover a linear
-    # baseline, bagging, boosting and a fixed ensemble without turning Phase 2
-    # into an unconstrained hyperparameter search.
+    # Final pre-registered Phase 2 set: transparent linear baseline,
+    # tree boosting, and a fixed soft-voting ensemble. The set is deliberately
+    # small so the research design is reproducible on constrained compute.
     "logistic_regression",
-    "extra_trees",
-    "random_forest_balanced",
     "hist_gradient_boosting",
     "soft_voting",
 )
 RETURN_FAMILIES = ("ridge", "hist_gradient_boosting_regressor")
-HORIZONS = (1, 2, 3, 6, 12)
-LABEL_THRESHOLDS = (0.0008, 0.0012, 0.0015, 0.0020)
+HORIZONS = (6,)
+LABEL_THRESHOLDS = (0.0012, 0.0015, 0.0020)
 COST_RATE = 0.0008
 ARTIFACT_SCHEMA = 4
 MAX_LABEL_HORIZON = max(HORIZONS)
