@@ -162,11 +162,17 @@ def _regressor(family):
 
 
 def _net_returns(returns, pred):
-    traded = pred != 0
-    return (
-        returns * np.where(pred == 1, 1.0, np.where(pred == -1, -1.0, 0.0))
-        - np.where(traded, COST_RATE, 0.0)
-    )
+    """Apply returns to held positions and charge cost only when position changes."""
+    returns = np.asarray(returns, dtype=float)
+    pred = np.asarray(pred, dtype=int)
+    position = np.where(pred == 1, 1.0, np.where(pred == -1, -1.0, 0.0))
+    prev = np.r_[0.0, position[:-1]]
+    gross = position * returns
+    change = np.abs(position - prev)
+    costs = (COST_RATE / 2.0) * change
+    if len(costs) and position[-1] != 0.0:
+        costs[-1] += COST_RATE / 2.0
+    return gross - costs
 
 
 def _metrics(y, pred, probs, classes, returns):
