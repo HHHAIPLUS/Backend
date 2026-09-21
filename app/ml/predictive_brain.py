@@ -48,8 +48,11 @@ class DirectionalXGBClassifier(XGBClassifier):
         if not np.isin(y_arr, (-1, 0, 1)).all():
             raise ValueError("Directional XGBoost expects labels -1, 0, 1")
         result = super().fit(X, y_arr + 1, *args, **kwargs)
-        self.classes_ = np.asarray([-1, 0, 1], dtype=int)
         return result
+
+    @property
+    def classes_(self):
+        return np.asarray([-1, 0, 1], dtype=int)
 
     def predict(self, X, *args, **kwargs):
         encoded = super().predict(X, *args, **kwargs)
