@@ -573,22 +573,28 @@ class PredictiveBrain:
             candidates.append((score["avg_trade_net_return"], score["balanced_accuracy"], family, False))
             candidates.append((inv_score["avg_trade_net_return"], inv_score["balanced_accuracy"], family, True))
 
+        # Cost-aware regression candidates are evaluated across a fixed,
+        # pre-registered forecast-magnitude grid. This is still validation-only:
+        # the untouched OOS is not used to choose the threshold.
+        regression_thresholds = (0.0014, 0.0020, 0.0030, 0.0040, 0.0050, 0.0075, 0.0100, 0.0150, 0.0200)
         for family in RETURN_FAMILIES:
-            fold_scores = []
-            for train_bounds, val_bounds in selection_folds:
-                reg = _regressor(family)
-                reg.fit(_slice(x, train_bounds), _slice(returns, train_bounds))
-                expected = reg.predict(_slice(x, val_bounds))
-                pred = _regression_signal(expected, COST_RATE)
-                probs = np.column_stack([
-                    np.where(pred == -1, 0.90, 0.05),
-                    np.where(pred == 0, 0.90, 0.05),
-                    np.where(pred == 1, 0.90, 0.05),
-                ])
-                fold_scores.append(_metrics(_slice(y, val_bounds), pred, probs, np.array([-1, 0, 1]), _slice(returns, val_bounds)))
-            score = aggregate_scores(fold_scores)
-            validation_scores[family] = score
-            candidates.append((score["avg_trade_net_return"], score["balanced_accuracy"], family, False))
+            for regression_threshold in regression_thresholds:
+                fold_scores = []
+                for train_bounds, val_bounds in selection_folds:
+                    reg = _regressor(family)
+                    reg.fit(_slice(x, train_bounds), _slice(returns, train_bounds))
+                    expected = reg.predict(_slice(x, val_bounds))
+                    pred = _regression_signal(expected, regression_threshold)
+                    probs = np.column_stack([
+                        np.where(pred == -1, 0.90, 0.05),
+                        np.where(pred == 0, 0.90, 0.05),
+                        np.where(pred == 1, 0.90, 0.05),
+                    ])
+                    fold_scores.append(_metrics(_slice(y, val_bounds), pred, probs, np.array([-1, 0, 1]), _slice(returns, val_bounds)))
+                score = aggregate_scores(fold_scores)
+                key = f"{family}@{regression_threshold:.4f}"
+                validation_scores[key] = score | {"regression_threshold": regression_threshold, "family": family}
+                candidates.append((score["avg_trade_net_return"], score["balanced_accuracy"], key, False))
 
         if not candidates:
             return BrainReport("REJECTED", version, {"validation_families": validation_scores},
