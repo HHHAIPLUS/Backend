@@ -756,8 +756,15 @@ class PredictiveBrain:
     @staticmethod
     def _predict_selected(model, x, invert_direction, family):
         if family in MODEL_FAMILIES:
-            pred = model.predict(x).astype(int)
             probs = model.predict_proba(x)
+            if family == "soft_voting":
+                # Use the calibrated probability argmax for the ensemble.
+                # VotingClassifier.predict() can collapse to the flat class even
+                # when the directional probability is the strongest class.
+                classes = np.asarray(getattr(model, "classes_", [-1, 0, 1]), dtype=int)
+                pred = classes[np.argmax(probs, axis=1)].astype(int)
+            else:
+                pred = model.predict(x).astype(int)
             if invert_direction:
                 pred = np.where(pred == 1, -1, np.where(pred == -1, 1, 0))
                 mapping = {int(c): i for i, c in enumerate(model.classes_)}
