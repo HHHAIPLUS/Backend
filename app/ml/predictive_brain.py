@@ -41,22 +41,35 @@ MAX_LABEL_HORIZON = max(HORIZONS)
 MIN_OOS_TRADES = 100
 
 
-class DirectionalXGBClassifier(XGBClassifier):
-    """XGBoost adapter that trains on 0/1/2 while exposing -1/0/1 directions."""
+class DirectionalXGBClassifier:
+    """Sklearn-compatible XGBoost wrapper with directional labels -1/0/1."""
+    def __init__(self, **params):
+        self.params = dict(params)
+        self.model = XGBClassifier(**self.params)
+
     def fit(self, X, y, *args, **kwargs):
         y_arr = np.asarray(y, dtype=int)
         if not np.isin(y_arr, (-1, 0, 1)).all():
             raise ValueError("Directional XGBoost expects labels -1, 0, 1")
-        result = super().fit(X, y_arr + 1, *args, **kwargs)
-        return result
-
-    @property
-    def classes_(self):
-        return np.asarray([-1, 0, 1], dtype=int)
+        self.model.fit(X, y_arr + 1, *args, **kwargs)
+        self.classes_ = np.asarray([-1, 0, 1], dtype=int)
+        self.n_classes_ = 3
+        return self
 
     def predict(self, X, *args, **kwargs):
-        encoded = super().predict(X, *args, **kwargs)
+        encoded = self.model.predict(X, *args, **kwargs)
         return np.asarray(encoded, dtype=int) - 1
+
+    def predict_proba(self, X, *args, **kwargs):
+        return self.model.predict_proba(X, *args, **kwargs)
+
+    def get_params(self, deep=True):
+        return dict(self.params)
+
+    def set_params(self, **params):
+        self.params.update(params)
+        self.model.set_params(**params)
+        return self
 
 
 @dataclass
