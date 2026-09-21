@@ -673,12 +673,24 @@ class PredictiveBrain:
         cal_pred, cal_prob = self._predict_selected(direction, _slice(x, ca), invert_direction, family)
         confidence = np.max(cal_prob, axis=1)
         selection_threshold = 0.30
+        decision_margin = 0.0
         threshold_candidates = []
         min_cal_trades = max(100, int(len(y_cal) * 0.02))
         if family in MODEL_FAMILIES:
-            for threshold in np.arange(0.30, 0.96, 0.02):
-                selected = cal_pred.copy()
-                selected[confidence < threshold] = 0
+            # Selective directional margin: only trade when the winning
+            # directional probability clears the flat probability by a fixed
+            # margin. This avoids the common failure mode where a classifier
+            # predicts the flat class with high confidence and then still
+            # produces weak directional trades.
+            for margin in np.arange(0.00, 0.41, 0.02):
+                p_short, p_flat, p_long = cal_prob[:, 0], cal_prob[:, 1], cal_prob[:, 2]
+                selected = np.where(
+                    (p_long >= p_short) & ((p_long - p_flat) >= margin),
+                    1,
+                    np.where((p_short > p_long) & ((p_short - p_flat) >= margin), -1, 0),
+                ).astype(int)
+                confidence = np.max(cal_prob, axis=1)
+                selected[confidence < selection_threshold] = 0
                 traded = selected != 0
                 trade_count = int(traded.sum())
                 trade_rate = trade_count / max(1, len(selected))
@@ -743,12 +755,22 @@ class PredictiveBrain:
                     rate,
                     threshold,
                 )
-            selection_threshold = max(threshold_candidates, key=_threshold_key)[-1]
+            best_threshold = max(threshold_candidates, key=_threshold_key)
+            if family in MODEL_FAMILIES:
+                decision_margin = float(best_threshold[-1])
+            else:
+                selection_threshold = float(best_threshold[-1])
 
         candidate_pred, candidate_prob = self._predict_selected(direction, _slice(x, oo), invert_direction, family, selection_threshold)
         baseline_pred = baseline.predict(_slice(x, oo))
         baseline_prob = baseline.predict_proba(_slice(x, oo))
         if family in MODEL_FAMILIES:
+            p_short, p_flat, p_long = candidate_prob[:, 0], candidate_prob[:, 1], candidate_prob[:, 2]
+            candidate_pred = np.where(
+                (p_long >= p_short) & ((p_long - p_flat) >= decision_margin),
+                1,
+                np.where((p_short > p_long) & ((p_short - p_flat) >= decision_margin), -1, 0),
+            ).astype(int)
             candidate_pred[candidate_prob.max(axis=1) < selection_threshold] = 0
         else:
             # _predict_selected already converts the expected return into a
@@ -788,6 +810,7 @@ class PredictiveBrain:
             "chosen_horizon": chosen_horizon,
             "chosen_label_threshold": chosen_threshold,
             "decision_threshold": selection_threshold,
+            "decision_margin": decision_margin,
             "cost_rate": COST_RATE,
         }
         if not all(absolute_gate.values()):
@@ -810,6 +833,7 @@ class PredictiveBrain:
             "family": family,
             "direction_inverted": invert_direction,
             "decision_threshold": selection_threshold,
+            "decision_margin": decision_margin,
             "feature_hash": _feature_hash(),
             "features": FEATURES,
             "cost_rate": COST_RATE,
@@ -966,7 +990,12 @@ class PredictiveBrain:
             direction = max(probs, key=probs.get)
             confidence = max(probs.values())
             threshold = float(self.bundle.get("decision_threshold", 0.55))
+            margin = float(self.bundle.get("decision_margin", 0.0))
             abstain = direction == "flat" or confidence < threshold
+            if margin > 0.0:
+                directional_margin = max(probs["long"], probs["short"]) - probs["flat"]
+                if directional_margin < margin:
+                    abstain = True
             expected_model = self.bundle["expected_return_model"]
             er = float(expected_model.predict(x)[0])
         else:
@@ -1002,6 +1031,7 @@ class PredictiveBrain:
             "abstention_probability": float(1.0 - confidence),
             "model_family": family,
             "direction_inverted": bool(self.bundle.get("direction_inverted", False)),
+            "decision_margin": float(self.bundle.get("decision_margin", 0.0)),
         }
 
 predictive_brain = PredictiveBrain()
