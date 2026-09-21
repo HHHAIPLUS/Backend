@@ -200,15 +200,51 @@ def _regressor(family):
 
 
 def _net_returns(returns, pred):
-    traded = pred != 0
-    return (
-        returns * np.where(pred == 1, 1.0, np.where(pred == -1, -1.0, 0.0))
-        - np.where(traded, COST_RATE, 0.0)
-    )
+    """Mark-to-market returns with costs charged only when position changes.
+
+    A position is held until the signal changes. Entry, exit and reversal costs
+    are charged on the position delta rather than on every hourly bar. The final
+    non-flat position is explicitly closed at the end of the evaluation window.
+    """
+    returns = np.asarray(returns, dtype=float)
+    pred = np.asarray(pred, dtype=int)
+    prev = np.r_[0, pred[:-1]]
+    position = np.where(pred == 1, 1.0, np.where(pred == -1, -1.0, 0.0))
+    costs = COST_RATE * np.abs(position - prev.astype(float))
+    if len(costs) and position[-1] != 0.0:
+        costs[-1] += COST_RATE * abs(position[-1])
+    return position * returns - costs
+
+
+def _trade_pnls(returns, pred):
+    """Return one net PnL value per held position segment, including costs."""
+    returns = np.asarray(returns, dtype=float)
+    pred = np.asarray(pred, dtype=int)
+    if len(pred) == 0:
+        return np.asarray([], dtype=float)
+    pnls = []
+    current = 0
+    pnl = 0.0
+    for ret, pos in zip(returns, pred):
+        if pos != current:
+            if current != 0:
+                pnl -= COST_RATE * abs(current)
+                pnls.append(pnl)
+                pnl = 0.0
+            if pos != 0:
+                pnl -= COST_RATE * abs(pos)
+            current = int(pos)
+        if current != 0:
+            pnl += float(current) * float(ret)
+    if current != 0:
+        pnl -= COST_RATE * abs(current)
+        pnls.append(pnl)
+    return np.asarray(pnls, dtype=float)
 
 
 def _metrics(y, pred, probs, classes, returns):
     net = _net_returns(returns, pred)
+    trade_pnls = _trade_pnls(returns, pred)
     traded = pred != 0
     mapping = {int(c): i for i, c in enumerate(classes)}
     if all(c in mapping for c in (-1, 0, 1)):
@@ -232,14 +268,14 @@ def _metrics(y, pred, probs, classes, returns):
         }
     return {
         "samples": int(len(y)),
-        "trades": int(traded.sum()),
-        "trade_rate": float(traded.mean()),
+        "trades": int(len(trade_pnls)),
+        "trade_rate": float(len(trade_pnls) / max(1, len(y))),
         "accuracy": float(accuracy_score(y, pred)),
         "balanced_accuracy": float(balanced_accuracy_score(y, pred)),
         "precision_macro": float(precision_score(y, pred, average="macro", zero_division=0)),
         "recall_macro": float(recall_score(y, pred, average="macro", zero_division=0)),
         "avg_net_return": float(net.mean()),
-        "avg_trade_net_return": float(net[traded].mean()) if traded.any() else 0.0,
+        "avg_trade_net_return": float(trade_pnls.mean()) if len(trade_pnls) else 0.0,
         "total_net_return": float(net.sum()),
         "max_drawdown": dd,
         "calibration_brier": brier,
