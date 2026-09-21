@@ -553,7 +553,11 @@ class PredictiveBrain:
                 raw_direction.fit(x_fit, y_fit)
             baseline_raw = _classifier("logistic_regression")
             baseline_raw.fit(x_fit, y_fit)
-            direction = _calibrate(raw_direction, _slice(x, ca), y_cal)
+            # The fixed soft-voting ensemble already averages calibrated
+            # component probabilities structurally; wrapping the whole voter in
+            # a second post-hoc calibrator can collapse its directional signal.
+            # Keep the pre-registered ensemble probabilities intact.
+            direction = raw_direction if family == "soft_voting" else _calibrate(raw_direction, _slice(x, ca), y_cal)
             baseline = _calibrate(baseline_raw, _slice(x, ca), y_cal)
         else:
             # Regression candidates are fit on train+validation and use the
