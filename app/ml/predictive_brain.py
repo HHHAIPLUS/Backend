@@ -626,8 +626,14 @@ class PredictiveBrain:
             )
 
         best = max(candidates, key=_candidate_score)
-        family = best[2]
+        selected_key = str(best[2])
         invert_direction = bool(best[3])
+        preselected_regression_threshold = None
+        if "@" in selected_key and selected_key.split("@", 1)[0] in RETURN_FAMILIES:
+            family, raw_threshold = selected_key.split("@", 1)
+            preselected_regression_threshold = float(raw_threshold)
+        else:
+            family = selected_key
 
         # Fit the selected family on train+validation, then calibrate on a
         # completely separate calibration period. OOS remains untouched.
