@@ -31,8 +31,25 @@ from sklearn.preprocessing import StandardScaler
 from app.ml.predictive import FEATURES
 from app.ml.model_validation import promotion_gate
 
-MODEL_FAMILIES = ("logistic_regression", "xgboost")
-RETURN_FAMILIES = ("ridge", "hist_gradient_boosting_regressor")
+MODEL_FAMILIES = (
+    "logistic_regression",
+    "logistic_regression_unweighted",
+    "logistic_regression_directional",
+    "extra_trees",
+    "random_forest_unweighted",
+    "random_forest_balanced",
+    "hist_gradient_boosting",
+    "soft_voting",
+    "random_forest",
+    "gaussian_nb",
+    "sgd_logistic",
+)
+RETURN_FAMILIES = (
+    "ridge",
+    "extra_trees_regressor",
+    "random_forest_regressor",
+    "hist_gradient_boosting_regressor",
+)
 HORIZONS = (1, 3, 6, 12)
 LABEL_THRESHOLDS = (0.0010, 0.0015, 0.0020, 0.0025)
 COST_RATE = 0.0014
