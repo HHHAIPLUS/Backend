@@ -66,3 +66,13 @@ services:
         value: "5"
       - key: HHHAI_MAX_POSITION_REVIEWS_PER_CYCLE
         value: "20"
+      - key: HHHAI_AUTO_BOOTSTRAP_BRAIN
+        value: "true"
+      - key: HHHAI_FORCE_BOOTSTRAP_BRAIN
+        value: "false"
+      - key: HHHAI_BRAIN_BOOTSTRAP_SYMBOLS
+        value: "BTCUSDT"
+      - key: HHHAI_BRAIN_BOOTSTRAP_CANDLES
+        value: "5000"
+      - key: HHHAI_BRAIN_BOOTSTRAP_INTERVAL
+        value: "1h"
