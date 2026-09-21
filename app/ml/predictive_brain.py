@@ -425,9 +425,13 @@ class PredictiveBrain:
             acc = float(v.get("accuracy", -1e99))
             exp = float(v.get("avg_trade_net_return", -1e99))
             economically_viable = bal >= 0.50 and acc >= 0.52 and exp > 0.0
+            total = float(v.get("total_net_return", -1e99))
+            dd = float(v.get("max_drawdown", 1e99))
             return (
                 1 if economically_viable else 0,
-                exp if economically_viable else bal,
+                exp if economically_viable else -1e99,
+                total if economically_viable else -1e99,
+                -dd if economically_viable else -1e99,
                 bal,
                 acc,
                 float(v.get("trade_rate", 0.0)),
@@ -523,10 +527,14 @@ class PredictiveBrain:
             bal = float(score.get("balanced_accuracy", -1e99))
             acc = float(score.get("accuracy", -1e99))
             exp = float(score.get("avg_trade_net_return", -1e99))
-            viable_validation = bal >= 0.50 and acc >= 0.52 and exp > 0.0
+            viable_validation = exp > 0.0 and int(score.get("trades", 0)) >= MIN_OOS_TRADES
+            total = float(score.get("total_net_return", -1e99))
+            dd = float(score.get("max_drawdown", 1e99))
             return (
                 1 if viable_validation else 0,
-                exp if viable_validation else bal,
+                exp if viable_validation else -1e99,
+                total if viable_validation else -1e99,
+                -dd if viable_validation else -1e99,
                 bal,
                 acc,
                 float(c[0]),
@@ -576,7 +584,7 @@ class PredictiveBrain:
         confidence = np.max(cal_prob, axis=1)
         selection_threshold = 0.30
         threshold_candidates = []
-        min_cal_trades = max(100, int(len(y_cal) * 0.20))
+        min_cal_trades = max(100, int(len(y_cal) * 0.05))
         for threshold in np.arange(0.30, 0.71, 0.02):
             selected = cal_pred.copy()
             if family in MODEL_FAMILIES:
@@ -584,7 +592,7 @@ class PredictiveBrain:
             traded = selected != 0
             trade_count = int(traded.sum())
             trade_rate = trade_count / max(1, len(selected))
-            if trade_count < min_cal_trades or trade_rate < 0.20:
+            if trade_count < min_cal_trades or trade_rate < 0.05:
                 continue
             net = _net_returns(r_cal, selected)
             equity = np.cumsum(net)
@@ -593,11 +601,12 @@ class PredictiveBrain:
             avg_trade = float(net[traded].mean())
             cal_metrics = _metrics(y_cal, selected, cal_prob, np.array([-1, 0, 1]), r_cal)
             threshold_candidates.append((
+                float(avg_trade),
+                float(net.sum()),
+                -float(drawdown),
                 float(cal_metrics["balanced_accuracy"]),
                 float(cal_metrics["accuracy"]),
-                float(avg_trade),
                 float(trade_rate),
-                -float(drawdown),
                 float(threshold),
             ))
 
