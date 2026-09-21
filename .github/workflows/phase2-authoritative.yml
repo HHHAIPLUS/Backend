@@ -1,0 +1,40 @@
+name: Phase 2 authoritative OOS
+
+on:
+  push:
+    paths:
+      - ".github/workflows/phase2-authoritative.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PHASE2_OOS_START: "2025-01-01T00:00:00+00:00"
+      PHASE2_OOS_END: "2026-01-01T00:00:00+00:00"
+      HHHAI_BRAIN_BOOTSTRAP_SYMBOLS: "BTCUSDT"
+      HHHAI_BRAIN_BOOTSTRAP_CANDLES: "30000"
+      HHHAI_BRAIN_BOOTSTRAP_INTERVAL: "1h"
+      HHHAI_BRAIN_LABEL_THRESHOLD: "0.0015"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run authoritative Phase 2
+        run: python scripts/phase2_authoritative.py
+      - name: Upload Phase 2 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-authoritative-evidence
+          path: |
+            phase2_report.json
+            artifacts/predictive_brain.joblib
+            artifacts/predictive_brain_manifest.json
