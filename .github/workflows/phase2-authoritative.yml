@@ -3,6 +3,9 @@ name: Phase 2 authoritative OOS
 on:
   push:
     paths:
+      - "scripts/phase2_authoritative.py"
+      - "app/ml/**"
+      - "requirements.txt"
       - ".github/workflows/phase2-authoritative.yml"
   workflow_dispatch:
 
@@ -14,8 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      PHASE2_OOS_START: "2025-01-01T00:00:00+00:00"
-      PHASE2_OOS_END: "2026-01-01T00:00:00+00:00"
+      # Fresh holdout: the previous authoritative OOS ended at 2026-09-01.
+      PHASE2_OOS_START: "2026-09-01T00:00:00+00:00"
+      PHASE2_OOS_END: "2026-09-21T00:00:00+00:00"
+      PHASE2_VERSION: "phase2-authoritative-fresh-2026-09"
       HHHAI_BRAIN_BOOTSTRAP_SYMBOLS: "BTCUSDT"
       HHHAI_BRAIN_BOOTSTRAP_CANDLES: "30000"
       HHHAI_BRAIN_BOOTSTRAP_INTERVAL: "1h"
@@ -38,7 +43,6 @@ jobs:
             phase2_report.json
             artifacts/predictive_brain.joblib
             artifacts/predictive_brain_manifest.json
-
       - name: Preserve promoted artifact for verification
         if: success()
         run: |
