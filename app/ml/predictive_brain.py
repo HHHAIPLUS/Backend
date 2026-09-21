@@ -45,11 +45,17 @@ MODEL_FAMILIES = (
     "gaussian_nb",
     "sgd_logistic",
 )
-RETURN_FAMILIES = (
+RETURN_BASE_FAMILIES = (
     "ridge",
     "extra_trees_regressor",
     "random_forest_regressor",
     "hist_gradient_boosting_regressor",
+)
+RETURN_SIGNAL_THRESHOLDS = (0.0005, 0.0008, 0.0010, 0.0012, 0.0014, 0.0018, 0.0022, 0.0030, 0.0040, 0.0050)
+RETURN_FAMILIES = tuple(
+    f"{family}@{threshold:.4f}"
+    for family in RETURN_BASE_FAMILIES
+    for threshold in RETURN_SIGNAL_THRESHOLDS
 )
 HORIZONS = (1, 3, 6, 12)
 LABEL_THRESHOLDS = (0.0010, 0.0015, 0.0020, 0.0025)
@@ -201,17 +207,23 @@ def _classifier(family):
 
 
 def _regressor(family):
-    if family == "ridge":
+    base = family.split("@", 1)[0]
+    if base == "ridge":
         return Pipeline([("scale", StandardScaler()), ("model", Ridge(alpha=10.0))])
-    if family == "extra_trees_regressor":
+    if base == "extra_trees_regressor":
         return ExtraTreesRegressor(n_estimators=60, min_samples_leaf=10, random_state=42, n_jobs=1)
-    if family == "random_forest_regressor":
+    if base == "random_forest_regressor":
         return RandomForestRegressor(n_estimators=80, min_samples_leaf=12, max_features="sqrt", random_state=42, n_jobs=1)
-    if family == "hist_gradient_boosting_regressor":
+    if base == "hist_gradient_boosting_regressor":
         return HistGradientBoostingRegressor(
             max_iter=140, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
         )
     raise ValueError(f"Unknown return model family: {family}")
+
+def _return_signal_threshold(family):
+    if "@" not in family:
+        return COST_RATE
+    return float(family.rsplit("@", 1)[1])
 
 
 def _net_returns(returns, pred):
@@ -564,7 +576,7 @@ class PredictiveBrain:
                 reg = _regressor(family)
                 reg.fit(_slice(x, train_bounds), _slice(returns, train_bounds))
                 expected = reg.predict(_slice(x, val_bounds))
-                pred = _regression_signal(expected, COST_RATE)
+                pred = _regression_signal(expected, _return_signal_threshold(family))
                 probs = np.column_stack([
                     np.where(pred == -1, 0.90, 0.05),
                     np.where(pred == 0, 0.90, 0.05),
@@ -848,7 +860,7 @@ class PredictiveBrain:
                     probs[:, mapping[-1]], probs[:, mapping[1]] = probs[:, mapping[1]], probs[:, mapping[-1]]
             return pred, probs
         expected = np.asarray(model.predict(x), dtype=float)
-        pred = _regression_signal(expected, COST_RATE)
+        pred = _regression_signal(expected, _return_signal_threshold(family))
         probs = np.column_stack([
             np.where(pred == -1, 0.90, 0.05),
             np.where(pred == 0, 0.90, 0.05),
