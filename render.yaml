@@ -73,6 +73,11 @@ services:
       - key: HHHAI_BRAIN_BOOTSTRAP_SYMBOLS
         value: "BTCUSDT"
       - key: HHHAI_BRAIN_BOOTSTRAP_CANDLES
-        value: "5000"
+        value: "30000"
       - key: HHHAI_BRAIN_BOOTSTRAP_INTERVAL
         value: "1h"
+
+      - key: PHASE2_OOS_START
+        value: "2025-01-01T00:00:00+00:00"
+      - key: PHASE2_OOS_END
+        value: "2026-01-01T00:00:00+00:00"
