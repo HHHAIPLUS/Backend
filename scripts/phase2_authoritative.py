@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
+
+# When executing a script directly, Python puts scripts/ on sys.path rather
+# than the repository root. Add the root explicitly so package imports work
+# identically on GitHub Actions, Render and local execution.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from app.ml.bootstrap import fetch_historical_klines, build_dataset, audit_historical_klines
 from app.ml.predictive_brain import predictive_brain
