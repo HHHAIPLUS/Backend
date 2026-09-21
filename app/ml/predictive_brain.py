@@ -40,7 +40,7 @@ MODEL_FAMILIES = (
 )
 RETURN_FAMILIES = ("ridge", "extra_trees_regressor", "hist_gradient_boosting_regressor")
 HORIZONS = (1, 2, 3, 6, 12, 24)
-LABEL_THRESHOLDS = (0.0009, 0.0012, 0.0015, 0.0025, 0.0035)
+LABEL_THRESHOLDS = (0.0006, 0.0008, 0.0010, 0.0012, 0.0015, 0.0020, 0.0025, 0.0035)
 COST_RATE = 0.0008
 ARTIFACT_SCHEMA = 4
 MAX_LABEL_HORIZON = max(HORIZONS)
@@ -404,10 +404,23 @@ class PredictiveBrain:
         # classification quality because the untouched OOS gate requires both
         # accuracy and balanced accuracy. Trade expectancy remains the
         # validation-only secondary criterion; OOS is never used here.
-        chosen = max(
-            viable,
-            key=lambda v: (float(v["balanced_accuracy"]), float(v["accuracy"]), float(v["avg_trade_net_return"]))
-        )
+        def _selection_key(v):
+            # Fixed, pre-OOS selection hierarchy: require meaningful validation
+            # classification and economic quality when available; otherwise
+            # fail over to the strongest balanced classification result.
+            bal = float(v.get("balanced_accuracy", -1e99))
+            acc = float(v.get("accuracy", -1e99))
+            exp = float(v.get("avg_trade_net_return", -1e99))
+            economically_viable = bal >= 0.50 and acc >= 0.52 and exp > 0.0
+            return (
+                1 if economically_viable else 0,
+                exp if economically_viable else bal,
+                bal,
+                acc,
+                float(v.get("trade_rate", 0.0)),
+            )
+
+        chosen = max(viable, key=_selection_key)
         chosen_horizon = int(chosen["horizon"])
         chosen_threshold = float(chosen["label_threshold"])
 
@@ -491,19 +504,23 @@ class PredictiveBrain:
         # both accuracy and balanced accuracy. Trading expectancy is a secondary
         # tie-breaker, not a reason to prefer a model with weaker classification.
         # OOS observations are never consulted here.
-        best = max(
-            candidates,
-            key=lambda c: (
-                float(validation_scores[c[2]].get("balanced_accuracy", -1e99))
-                if not c[3]
-                else float(validation_scores[c[2] + "_inverse"].get("balanced_accuracy", -1e99)),
-                float(validation_scores[c[2]].get("accuracy", -1e99))
-                if not c[3]
-                else float(validation_scores[c[2] + "_inverse"].get("accuracy", -1e99)),
+        def _candidate_score(c):
+            key = c[2] + "_inverse" if c[3] else c[2]
+            score = validation_scores[key]
+            bal = float(score.get("balanced_accuracy", -1e99))
+            acc = float(score.get("accuracy", -1e99))
+            exp = float(score.get("avg_trade_net_return", -1e99))
+            viable_validation = bal >= 0.50 and acc >= 0.52 and exp > 0.0
+            return (
+                1 if viable_validation else 0,
+                exp if viable_validation else bal,
+                bal,
+                acc,
                 float(c[0]),
                 float(c[1]),
-            ),
-        )
+            )
+
+        best = max(candidates, key=_candidate_score)
         family = best[2]
         invert_direction = bool(best[3])
 
