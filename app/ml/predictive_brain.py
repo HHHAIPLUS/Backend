@@ -33,6 +33,7 @@ from app.ml.model_validation import promotion_gate
 
 MODEL_FAMILIES = (
     "logistic_regression",
+    "xgboost",
     "logistic_regression_unweighted",
     "logistic_regression_directional",
     "extra_trees",
@@ -56,6 +57,41 @@ COST_RATE = 0.0014
 ARTIFACT_SCHEMA = 4
 MAX_LABEL_HORIZON = max(HORIZONS)
 MIN_OOS_TRADES = 100
+
+
+class XGBDirectionalClassifier:
+    """XGBoost wrapper that preserves the {-1, 0, 1} public class contract."""
+    def __init__(self):
+        self.model_ = XGBClassifier(
+            n_estimators=220,
+            max_depth=4,
+            learning_rate=0.03,
+            subsample=0.80,
+            colsample_bytree=0.80,
+            min_child_weight=12,
+            reg_alpha=0.10,
+            reg_lambda=3.0,
+            objective="multi:softprob",
+            num_class=3,
+            eval_metric="mlogloss",
+            tree_method="hist",
+            n_jobs=1,
+            random_state=42,
+        )
+        self.classes_ = np.asarray([-1, 0, 1], dtype=int)
+
+    def fit(self, x, y, sample_weight=None):
+        mapping = {-1: 0, 0: 1, 1: 2}
+        encoded = np.asarray([mapping[int(v)] for v in y], dtype=int)
+        self.model_.fit(x, encoded, sample_weight=sample_weight)
+        return self
+
+    def predict(self, x):
+        encoded = np.asarray(self.model_.predict(x), dtype=int)
+        return self.classes_[encoded]
+
+    def predict_proba(self, x):
+        return np.asarray(self.model_.predict_proba(x), dtype=float)
 
 
 @dataclass
@@ -103,7 +139,7 @@ def _direction_target(values, threshold=COST_RATE):
 
 def _classifier(family):
     if family == "xgboost":
-        return XGBClassifier(n_estimators=160, max_depth=4, learning_rate=0.04, subsample=0.80, colsample_bytree=0.80, min_child_weight=8, reg_alpha=0.10, reg_lambda=2.0, objective="multi:softprob", num_class=3, eval_metric="mlogloss", tree_method="hist", n_jobs=1, random_state=42)
+        return XGBDirectionalClassifier()
     if family == "logistic_regression":
         return Pipeline([
             ("scale", StandardScaler()),
