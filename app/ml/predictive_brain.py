@@ -678,27 +678,30 @@ class PredictiveBrain:
             if family in MODEL_FAMILIES:
                 selected_base[confidence < threshold] = 0
             for regime_threshold in regime_thresholds:
-                selected = _apply_regime_filter(selected_base, _slice(x, ca), regime_threshold)
+                selected = _apply_regime_filter(
+                    selected_base, _slice(x, ca), regime_threshold
+                )
                 traded = selected != 0
-            trade_count = int(traded.sum())
-            trade_rate = trade_count / max(1, len(selected))
-            if trade_count < min_cal_trades or trade_rate < 0.01:
-                continue
-            net = _net_returns(r_cal, selected)
-            equity = np.cumsum(net)
-            peak = np.maximum.accumulate(np.r_[0.0, equity])
-            drawdown = float(np.max(peak[1:] - equity)) if len(equity) else 0.0
-            avg_trade = float(net[traded].mean())
-            cal_metrics = _metrics(y_cal, selected, cal_prob, np.array([-1, 0, 1]), r_cal)
-            threshold_candidates.append((
-                float(avg_trade),
-                float(net.sum()),
-                -float(drawdown),
-                float(cal_metrics["balanced_accuracy"]),
-                float(cal_metrics["accuracy"]),
-                float(trade_rate),
-                float(threshold),
-            ))
+                trade_count = int(traded.sum())
+                trade_rate = trade_count / max(1, len(selected))
+                if trade_count < min_cal_trades or trade_rate < 0.01:
+                    continue
+                net = _net_returns(r_cal, selected)
+                equity = np.cumsum(net)
+                peak = np.maximum.accumulate(np.r_[0.0, equity])
+                drawdown = float(np.max(peak[1:] - equity)) if len(equity) else 0.0
+                avg_trade = float(net[traded].mean())
+                cal_metrics = _metrics(y_cal, selected, cal_prob, np.array([-1, 0, 1]), r_cal)
+                threshold_candidates.append((
+                    float(avg_trade),
+                    float(net.sum()),
+                    -float(drawdown),
+                    float(cal_metrics["balanced_accuracy"]),
+                    float(cal_metrics["accuracy"]),
+                    float(trade_rate),
+                    float(threshold),
+                    regime_threshold,
+                ))
 
         if family in MODEL_FAMILIES and not threshold_candidates:
             return BrainReport(
@@ -712,18 +715,18 @@ class PredictiveBrain:
             # participation are secondary. OOS remains completely untouched.
             best_calibration = max(threshold_candidates)
             selection_threshold = best_calibration[6]
-            regime_filter_threshold = None if best_calibration[8] < 0 else best_calibration[8]
+            regime_filter_threshold = best_calibration[7]
 
         candidate_pred, candidate_prob = self._predict_selected(direction, _slice(x, oo), invert_direction, family)
         baseline_pred = baseline.predict(_slice(x, oo))
         baseline_prob = baseline.predict_proba(_slice(x, oo))
         if family in MODEL_FAMILIES:
             candidate_pred[candidate_prob.max(axis=1) < selection_threshold] = 0
-        candidate_pred = _apply_regime_filter(candidate_pred, _slice(x, oo), regime_filter_threshold)
         else:
             # _predict_selected already converts the expected return into a
             # {-1,0,1} signal. Do not threshold the discrete signal again.
             candidate_pred = candidate_pred.astype(int)
+        candidate_pred = _apply_regime_filter(candidate_pred, _slice(x, oo), regime_filter_threshold)
 
         candidate_metrics = _metrics(y_oos, candidate_pred, candidate_prob, np.array([-1, 0, 1]), r_oos)
         baseline_metrics = _metrics(y_oos, baseline_pred, baseline_prob, baseline.classes_, r_oos)
