@@ -26,7 +26,8 @@ jobs:
       HHHAI_BRAIN_BOOTSTRAP_INTERVAL: "1h"
       HHHAI_BRAIN_LABEL_THRESHOLD: "0.0015"
       HHHAI_PHASE2_TRAIN_FILTER_MULTIPLIER: "1.0"
-      HHHAI_PHASE2_FIXED_LABEL_THRESHOLD: "0.0010"
+      HHHAI_PHASE2_FIXED_LABEL_THRESHOLD: ""
+      HHHAI_PHASE2_FIXED_MODEL_FAMILY: "short_only_xgboost"
       # Side-specific XGBoost candidate uses its fixed point-in-time entry floor.
       HHHAI_PHASE2_SIDE_SIGNAL_FLOOR: "0.35"
     steps:
