@@ -614,14 +614,14 @@ class PredictiveBrain:
                 model = _classifier(family)
                 x_train_fold = _slice(x, train_bounds)
                 r_train_fold = _slice(returns, train_bounds)
-                if family == "binary_logistic_selective":
-                    binary_mask = y_train_fold != 0
-                    x_train_fold = x_train_fold[binary_mask]
-                    y_train_fold = y_train_fold[binary_mask]
                 filter_mask = _training_filter_mask(r_train_fold, float(chosen_threshold))
                 if filter_mask.sum() >= 300 and len(set(y_train_fold[filter_mask].tolist())) == 3:
                     x_train_fold = x_train_fold[filter_mask]
                     y_train_fold = y_train_fold[filter_mask]
+                if family == "binary_logistic_selective":
+                    binary_mask = y_train_fold != 0
+                    x_train_fold = x_train_fold[binary_mask]
+                    y_train_fold = y_train_fold[binary_mask]
                 if family == "hist_gradient_boosting_balanced":
                     counts = np.bincount(y_train_fold + 1, minlength=3).astype(float)
                     weights = np.asarray([1.0 / max(counts[label + 1], 1.0) for label in y_train_fold])
