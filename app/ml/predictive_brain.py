@@ -35,6 +35,7 @@ from app.ml.model_validation import promotion_gate
 MODEL_FAMILIES = (
     "logistic_regression",
     "binary_logistic_selective",
+    "trend_regime",
     "long_only_xgboost",
     "short_only_xgboost",
     "xgboost",
@@ -131,6 +132,37 @@ class SideOnlyXGBClassifier(ClassifierMixin, BaseEstimator):
         p = self.predict_proba(x)[:, 2 if self.side == 1 else 0]
         # Lower entry boundary is fixed at 0.35; calibration still controls confidence/abstention.
         return np.where(p >= 0.35, self.side, 0).astype(int)
+
+
+class TrendRegimeClassifier(ClassifierMixin, BaseEstimator):
+    """Deterministic, point-in-time trend/regime baseline used as a registered candidate."""
+    def __init__(self, strength=0.0, momentum=0.0, ema=0.0):
+        self.strength = float(strength)
+        self.momentum = float(momentum)
+        self.ema = float(ema)
+        self.classes_ = np.asarray([-1, 0, 1], dtype=int)
+
+    def fit(self, x, y, sample_weight=None):
+        return self
+
+    def _pred(self, x):
+        ts = x[:, FEATURES.index("trend_strength_72")]
+        mom = x[:, FEATURES.index("momentum")]
+        ema = x[:, FEATURES.index("ema_gap_24_72")]
+        long_mask = (ts > self.strength) & (mom > self.momentum) & (ema > self.ema)
+        short_mask = (ts < -self.strength) & (mom < -self.momentum) & (ema < -self.ema)
+        return np.where(long_mask, 1, np.where(short_mask, -1, 0)).astype(int)
+
+    def predict(self, x):
+        return self._pred(np.asarray(x, dtype=float))
+
+    def predict_proba(self, x):
+        pred = self.predict(x)
+        out = np.full((len(pred), 3), 0.05, dtype=float)
+        out[:, 1] = 0.90
+        out[pred == -1] = (0.90, 0.05, 0.05)
+        out[pred == 1] = (0.05, 0.05, 0.90)
+        return out
 
 
 class XGBDirectionalClassifier(ClassifierMixin, BaseEstimator):
@@ -244,6 +276,8 @@ def _direction_target(values, threshold=COST_RATE, bounds=None):
 
 
 def _classifier(family):
+    if family == "trend_regime":
+        return TrendRegimeClassifier(strength=0.0, momentum=0.0, ema=0.0)
     if family == "binary_logistic_selective":
         return BinaryDirectionalClassifier()
     if family == "long_only_xgboost":
