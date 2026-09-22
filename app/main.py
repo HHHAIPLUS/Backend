@@ -111,27 +111,6 @@ async def lifespan(app):
 
     brain_task = asyncio.create_task(bootstrap_predictive_brain())
     phase2_task = None
-    if os.getenv("HHHAI_RUN_PHASE2_AUTHORITATIVE_ON_START", "false").lower() == "true":
-        async def run_phase2_authoritative():
-            try:
-                log.warning("PHASE2_AUTHORITATIVE_START")
-                proc = await asyncio.to_thread(
-                    subprocess.run,
-                    [sys.executable, "scripts/phase2_authoritative.py"],
-                    capture_output=True,
-                    text=True,
-                    timeout=110 * 60,
-                    check=False,
-                )
-                log.warning("PHASE2_AUTHORITATIVE_EXIT code=%s", proc.returncode)
-                output = (proc.stdout or "")[-30000:]
-                errors = (proc.stderr or "")[-10000:]
-                log.warning("PHASE2_AUTHORITATIVE_STDOUT\\n%s", output)
-                if errors:
-                    log.warning("PHASE2_AUTHORITATIVE_STDERR\\n%s", errors)
-            except Exception as exc:
-                log.exception("PHASE2_AUTHORITATIVE_FAILED %s", exc)
-        phase2_task = asyncio.create_task(run_phase2_authoritative())
     await hydrate_learning()
     await hydrate_adaptive()
     await hydrate_research()
@@ -183,12 +162,6 @@ async def lifespan(app):
             brain_task.cancel()
             try:
                 await brain_task
-            except asyncio.CancelledError:
-                pass
-        if phase2_task is not None and not phase2_task.done():
-            phase2_task.cancel()
-            try:
-                await phase2_task
             except asyncio.CancelledError:
                 pass
 
