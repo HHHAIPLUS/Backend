@@ -44,6 +44,7 @@ MODEL_FAMILIES = (
     "random_forest_unweighted",
     "random_forest_balanced",
     "hist_gradient_boosting",
+    "hist_gradient_boosting_balanced",
     "soft_voting",
     "random_forest",
     "gaussian_nb",
@@ -280,7 +281,8 @@ def _classifier(family):
         )
     if family == "hist_gradient_boosting_balanced":
         return HistGradientBoostingClassifier(
-            max_iter=140, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
+            max_iter=140, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0,
+            class_weight="balanced", random_state=42
         )
     if family == "soft_voting":
         return VotingClassifier(
