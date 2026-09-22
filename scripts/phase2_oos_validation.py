@@ -12,7 +12,7 @@ from app.ml.predictive_brain import predictive_brain
 def main() -> int:
     symbol = os.getenv("PHASE2_SYMBOL", "BTCUSDT").upper()
     interval = os.getenv("PHASE2_INTERVAL", "1h")
-    candles = int(os.getenv("PHASE2_CANDLES", "30000"))
+    candles = int(os.getenv("PHASE2_CANDLES", "10000"))
     threshold = float(os.getenv("HHHAI_BRAIN_LABEL_THRESHOLD", "0.0015"))
 
     raw, provider = fetch_historical_klines(symbol, interval, candles)
