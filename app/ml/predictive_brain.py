@@ -26,7 +26,7 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_score, recall_score
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.pipeline import Pipeline
-from xgboost import XGBClassifier
+from xgboost import XGBClassifier, XGBRegressor
 from sklearn.preprocessing import StandardScaler
 
 from app.ml.predictive import FEATURES
@@ -56,6 +56,7 @@ RETURN_BASE_FAMILIES = (
     "extra_trees_regressor",
     "random_forest_regressor",
     "hist_gradient_boosting_regressor",
+    "xgboost_regressor",
 )
 RETURN_SIGNAL_THRESHOLDS = (0.0005, 0.0008, 0.0010, 0.0012, 0.0014, 0.0018, 0.0022, 0.0030, 0.0040, 0.0050)
 RETURN_FAMILIES = tuple(
@@ -358,6 +359,13 @@ def _regressor(family):
     if base == "hist_gradient_boosting_regressor":
         return HistGradientBoostingRegressor(
             max_iter=140, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
+        )
+    if base == "xgboost_regressor":
+        return XGBRegressor(
+            n_estimators=320, max_depth=4, learning_rate=0.03,
+            subsample=0.85, colsample_bytree=0.85, min_child_weight=12,
+            reg_alpha=0.10, reg_lambda=3.0, objective="reg:squarederror",
+            eval_metric="rmse", tree_method="hist", n_jobs=1, random_state=42,
         )
     raise ValueError(f"Unknown return model family: {family}")
 
