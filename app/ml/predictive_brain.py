@@ -125,6 +125,16 @@ def _x(rows):
 
 
 TARGET_RETURN_FIELD = os.getenv("HHHAI_PHASE2_TARGET_RETURN", "close")
+TRAIN_FILTER_MULTIPLIER = max(1.0, float(os.getenv("HHHAI_PHASE2_TRAIN_FILTER_MULTIPLIER", "1.0")))
+
+def _training_filter_mask(returns, threshold):
+    """Keep sufficiently large training outcomes for filtered-label learning."""
+    if TRAIN_FILTER_MULTIPLIER <= 1.0:
+        return np.ones(len(returns), dtype=bool)
+    r = np.asarray(returns, dtype=float)
+    mask = np.abs(r) >= float(threshold) * TRAIN_FILTER_MULTIPLIER
+    return mask
+
 
 
 def _future_return(rows, horizon):
@@ -581,6 +591,11 @@ class PredictiveBrain:
                 y_val_fold = _slice(y, val_bounds)
                 model = _classifier(family)
                 x_train_fold = _slice(x, train_bounds)
+                r_train_fold = _slice(returns, train_bounds)
+                filter_mask = _training_filter_mask(r_train_fold, float(chosen_threshold))
+                if filter_mask.sum() >= 300 and len(set(y_train_fold[filter_mask].tolist())) == 3:
+                    x_train_fold = x_train_fold[filter_mask]
+                    y_train_fold = y_train_fold[filter_mask]
                 if family == "hist_gradient_boosting_balanced":
                     counts = np.bincount(y_train_fold + 1, minlength=3).astype(float)
                     weights = np.asarray([1.0 / max(counts[label + 1], 1.0) for label in y_train_fold])
@@ -665,11 +680,18 @@ class PredictiveBrain:
         y_fit = y[:fit_end]
         if family in MODEL_FAMILIES:
             raw_direction = _classifier(family)
+            fit_mask = _training_filter_mask(_slice(returns, (0, fit_end)), float(chosen_threshold))
+            if fit_mask.sum() >= 300 and len(set(y_fit[fit_mask].tolist())) == 3:
+                x_fit_direction = x_fit[fit_mask]
+                y_fit_direction = y_fit[fit_mask]
+            else:
+                x_fit_direction = x_fit
+                y_fit_direction = y_fit
             if family == "hist_gradient_boosting_balanced":
-                counts = np.bincount(y_fit + 1, minlength=3).astype(float)
-                weights = np.asarray([1.0 / max(counts[label + 1], 1.0) for label in y_fit])
+                counts = np.bincount(y_fit_direction + 1, minlength=3).astype(float)
+                weights = np.asarray([1.0 / max(counts[label + 1], 1.0) for label in y_fit_direction])
                 weights *= len(weights) / max(weights.sum(), 1e-12)
-                raw_direction.fit(x_fit, y_fit, sample_weight=weights)
+                raw_direction.fit(x_fit_direction, y_fit_direction, sample_weight=weights)
             else:
                 raw_direction.fit(x_fit, y_fit)
             baseline_raw = _classifier("logistic_regression")
