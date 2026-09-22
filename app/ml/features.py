@@ -142,7 +142,7 @@ def build_model_features(candles: Iterable[Any] | None = None, context: Any | No
     mean_return_72 = sum(recent_returns_72)/max(1,len(recent_returns_72))
     variance_72 = sum((r-mean_return_72)**2 for r in recent_returns_72)/max(1,len(recent_returns_72)-1)
     volatility_72 = math.sqrt(max(0.0, variance_72))
-    momentum = max(-1.0, min(1.0, 0.50*ret(6) + 0.30*ret(12) + 0.20*ret(24)))
+    momentum_raw = 0.35*ret(6) + 0.25*ret(12) + 0.20*ret(24) + 0.12*ret(48) + 0.08*ret(72)\n    momentum_scale = max(volatility_72, 1e-5)\n    momentum = max(-1.0, min(1.0, momentum_raw / (momentum_scale * 8.0)))
 
     trend_window=closes[-24:]
     trend_strength=0.0
