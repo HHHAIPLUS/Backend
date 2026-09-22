@@ -757,78 +757,95 @@ class PredictiveBrain:
         # same chronological folds. OOS is not inspected during selection.
         validation_scores = {}
         candidates = []
+        # Recent-market adaptation is evaluated only on the pre-OOS validation
+        # folds.  A rolling training window is a legitimate time-series
+        # hyperparameter: it lets the model forget stale regimes without ever
+        # looking at the untouched OOS period.
+        TRAIN_WINDOW_CANDIDATES = (0, 1500, 2500, 4000)
         for family in MODEL_FAMILIES:
-            fold_scores = []
-            inverse_fold_scores = []
-            for train_bounds, val_bounds in selection_folds:
-                y_train_fold = _slice(y, train_bounds)
-                y_val_fold = _slice(y, val_bounds)
-                model = _classifier(family)
-                x_train_fold = _slice(x, train_bounds)
-                r_train_fold = _slice(returns, train_bounds)
-                filter_mask = _training_filter_mask(r_train_fold, float(chosen_threshold))
-                if filter_mask.sum() >= 300 and len(set(y_train_fold[filter_mask].tolist())) == 3:
-                    x_train_fold = x_train_fold[filter_mask]
-                    y_train_fold = y_train_fold[filter_mask]
-                if family == "binary_logistic_selective":
-                    binary_mask = y_train_fold != 0
-                    x_train_fold = x_train_fold[binary_mask]
-                    y_train_fold = y_train_fold[binary_mask]
-                if family == "hist_gradient_boosting_balanced":
-                    counts = np.bincount(y_train_fold + 1, minlength=3).astype(float)
-                    weights = np.asarray([1.0 / max(counts[label + 1], 1.0) for label in y_train_fold])
-                    weights *= len(weights) / max(weights.sum(), 1e-12)
-                    model.fit(x_train_fold, y_train_fold, sample_weight=weights)
-                else:
-                    model.fit(x_train_fold, y_train_fold)
-                pred = model.predict(_slice(x, val_bounds))
-                probs = model.predict_proba(_slice(x, val_bounds))
-                fold_scores.append(_metrics(y_val_fold, pred, probs, model.classes_, _slice(returns, val_bounds)))
-                inv_pred = np.where(pred == 1, -1, np.where(pred == -1, 1, 0))
-                inv_probs = probs.copy()
-                mapping = {int(c): i for i, c in enumerate(model.classes_)}
-                if all(c in mapping for c in (-1, 0, 1)):
-                    inv_probs[:, mapping[-1]], inv_probs[:, mapping[1]] = (
-                        probs[:, mapping[1]], probs[:, mapping[-1]]
+            for train_window in TRAIN_WINDOW_CANDIDATES:
+                fold_scores = []
+                inverse_fold_scores = []
+                for base_train_bounds, val_bounds in selection_folds:
+                    train_end = base_train_bounds[1]
+                    train_start = max(0, train_end - train_window) if train_window else base_train_bounds[0]
+                    train_bounds = (train_start, train_end)
+                    y_train_fold = _slice(y, train_bounds)
+                    y_val_fold = _slice(y, val_bounds)
+                    model = _classifier(family)
+                    x_train_fold = _slice(x, train_bounds)
+                    r_train_fold = _slice(returns, train_bounds)
+                    filter_mask = _training_filter_mask(r_train_fold, float(chosen_threshold))
+                    if filter_mask.sum() >= 300 and len(set(y_train_fold[filter_mask].tolist())) == 3:
+                        x_train_fold = x_train_fold[filter_mask]
+                        y_train_fold = y_train_fold[filter_mask]
+                    if family == "binary_logistic_selective":
+                        binary_mask = y_train_fold != 0
+                        x_train_fold = x_train_fold[binary_mask]
+                        y_train_fold = y_train_fold[binary_mask]
+                    if family == "hist_gradient_boosting_balanced":
+                        counts = np.bincount(y_train_fold + 1, minlength=3).astype(float)
+                        weights = np.asarray([1.0 / max(counts[label + 1], 1.0) for label in y_train_fold])
+                        weights *= len(weights) / max(weights.sum(), 1e-12)
+                        model.fit(x_train_fold, y_train_fold, sample_weight=weights)
+                    else:
+                        model.fit(x_train_fold, y_train_fold)
+                    pred = model.predict(_slice(x, val_bounds))
+                    probs = model.predict_proba(_slice(x, val_bounds))
+                    fold_scores.append(_metrics(y_val_fold, pred, probs, model.classes_, _slice(returns, val_bounds)))
+                    inv_pred = np.where(pred == 1, -1, np.where(pred == -1, 1, 0))
+                    inv_probs = probs.copy()
+                    mapping = {int(c): i for i, c in enumerate(model.classes_)}
+                    if all(c in mapping for c in (-1, 0, 1)):
+                        inv_probs[:, mapping[-1]], inv_probs[:, mapping[1]] = (
+                            probs[:, mapping[1]], probs[:, mapping[-1]]
+                        )
+                    inverse_fold_scores.append(
+                        _metrics(y_val_fold, inv_pred, inv_probs, model.classes_, _slice(returns, val_bounds))
                     )
-                inverse_fold_scores.append(
-                    _metrics(y_val_fold, inv_pred, inv_probs, model.classes_, _slice(returns, val_bounds))
-                )
-            score = aggregate_scores(fold_scores)
-            inv_score = aggregate_scores(inverse_fold_scores)
-            validation_scores[family] = score
-            validation_scores[family + "_inverse"] = inv_score
-            candidates.append((score["avg_trade_net_return"], score["balanced_accuracy"], family, False))
-            candidates.append((inv_score["avg_trade_net_return"], inv_score["balanced_accuracy"], family, True))
+                score = aggregate_scores(fold_scores)
+                inv_score = aggregate_scores(inverse_fold_scores)
+                key = f"{family}@window={train_window}"
+                validation_scores[key] = score
+                validation_scores[key + "_inverse"] = inv_score
+                if score.get("status") != "UNAVAILABLE":
+                    candidates.append((score["avg_trade_net_return"], score["balanced_accuracy"], family, False, train_window))
+                if inv_score.get("status") != "UNAVAILABLE":
+                    candidates.append((inv_score["avg_trade_net_return"], inv_score["balanced_accuracy"], family, True, train_window))
 
         for family in RETURN_FAMILIES:
-            fold_scores = []
-            for train_bounds, val_bounds in selection_folds:
-                reg = _regressor(family)
-                reg.fit(_slice(x, train_bounds), _slice(returns, train_bounds))
-                expected = reg.predict(_slice(x, val_bounds))
-                pred = _regression_signal(expected, _return_signal_threshold(family))
-                probs = np.column_stack([
-                    np.where(pred == -1, 0.90, 0.05),
-                    np.where(pred == 0, 0.90, 0.05),
-                    np.where(pred == 1, 0.90, 0.05),
-                ])
-                fold_scores.append(_metrics(_slice(y, val_bounds), pred, probs, np.array([-1, 0, 1]), _slice(returns, val_bounds)))
-            score = aggregate_scores(fold_scores)
-            validation_scores[family] = score
-            candidates.append((score["avg_trade_net_return"], score["balanced_accuracy"], family, False))
+            for train_window in TRAIN_WINDOW_CANDIDATES:
+                fold_scores = []
+                for base_train_bounds, val_bounds in selection_folds:
+                    train_end = base_train_bounds[1]
+                    train_start = max(0, train_end - train_window) if train_window else base_train_bounds[0]
+                    train_bounds = (train_start, train_end)
+                    reg = _regressor(family)
+                    reg.fit(_slice(x, train_bounds), _slice(returns, train_bounds))
+                    expected = reg.predict(_slice(x, val_bounds))
+                    pred = _regression_signal(expected, _return_signal_threshold(family))
+                    probs = np.column_stack([
+                        np.where(pred == -1, 0.90, 0.05),
+                        np.where(pred == 0, 0.90, 0.05),
+                        np.where(pred == 1, 0.90, 0.05),
+                    ])
+                    fold_scores.append(_metrics(_slice(y, val_bounds), pred, probs, np.array([-1, 0, 1]), _slice(returns, val_bounds)))
+                score = aggregate_scores(fold_scores)
+                key = f"{family}@window={train_window}"
+                validation_scores[key] = score
+                if score.get("status") != "UNAVAILABLE":
+                    candidates.append((score["avg_trade_net_return"], score["balanced_accuracy"], family, False, train_window))
 
         if not candidates:
             return BrainReport("REJECTED", version, {"validation_families": validation_scores},
                                "No valid model family was evaluated.")
 
-        # Model selection is validation-only. Classification quality is the
-        # primary objective because the independent OOS gate explicitly requires
-        # both accuracy and balanced accuracy. Trading expectancy is a secondary
-        # tie-breaker, not a reason to prefer a model with weaker classification.
-        # OOS observations are never consulted here.
+        # Model selection is validation-only. Prefer candidates that already
+        # demonstrate positive validation expectancy and sufficient coverage.
         def _candidate_score(c):
-            key = c[2] + "_inverse" if c[3] else c[2]
+            family_name = c[2]
+            window = int(c[4])
+            key = f"{family_name}@window={window}" + ("_inverse" if c[3] else "")
             score = validation_scores[key]
             bal = float(score.get("balanced_accuracy", -1e99))
             acc = float(score.get("accuracy", -1e99))
@@ -848,24 +865,29 @@ class PredictiveBrain:
             )
 
         fixed_family = os.getenv("HHHAI_PHASE2_FIXED_MODEL_FAMILY", "").strip()
+        fixed_window = int(os.getenv("HHHAI_PHASE2_FIXED_TRAIN_WINDOW", "0") or "0")
         if fixed_family:
-            fixed = [candidate for candidate in candidates if candidate[2] == fixed_family]
+            fixed = [candidate for candidate in candidates if candidate[2] == fixed_family and candidate[4] == fixed_window]
             if not fixed:
-                return BrainReport("REJECTED", version, {"validation_families": validation_scores}, f"Requested fixed model family unavailable: {fixed_family}")
+                return BrainReport("REJECTED", version, {"validation_families": validation_scores},
+                                   f"Requested fixed model family/window unavailable: {fixed_family}@{fixed_window}")
             best = fixed[0]
         else:
             best = max(candidates, key=_candidate_score)
         family = best[2]
         invert_direction = bool(best[3])
+        train_window = int(best[4])
 
         # Fit the selected family on train+validation, then calibrate on a
         # completely separate calibration period. OOS remains untouched.
         fit_end = va[1]
-        x_fit = x[:fit_end]
-        y_fit = y[:fit_end]
+        fit_start = max(0, fit_end - train_window) if train_window else 0
+        fit_bounds = (fit_start, fit_end)
+        x_fit = _slice(x, fit_bounds)
+        y_fit = _slice(y, fit_bounds)
         if family in MODEL_FAMILIES:
             raw_direction = _classifier(family)
-            fit_mask = _training_filter_mask(_slice(returns, (0, fit_end)), float(chosen_threshold))
+            fit_mask = _training_filter_mask(_slice(returns, fit_bounds), float(chosen_threshold))
             if fit_mask.sum() >= 300 and len(set(y_fit[fit_mask].tolist())) == 3:
                 x_fit_direction = x_fit[fit_mask]
                 y_fit_direction = y_fit[fit_mask]
@@ -1033,6 +1055,7 @@ class PredictiveBrain:
             "split_evidence": splits,
             "chosen_horizon": chosen_horizon,
             "chosen_label_threshold": chosen_threshold,
+            "train_window": train_window,
             "decision_threshold": selection_threshold,
             "regime_filter_threshold": regime_filter_threshold,
             "execution_profile": execution_profile,
