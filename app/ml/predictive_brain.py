@@ -66,6 +66,7 @@ LABEL_MODE = os.getenv("HHHAI_PHASE2_LABEL_MODE", "fixed").strip().lower()
 COST_RATE = 0.0014
 ARTIFACT_SCHEMA = 4
 MAX_LABEL_HORIZON = max(HORIZONS)
+FIXED_HORIZON = int(os.getenv("HHHAI_PHASE2_FIXED_HORIZON", "0") or "0")
 MIN_OOS_TRADES = 100
 EXECUTION_PROFILES = ("confidence", "trend", "volatility", "momentum", "long_only")
 
@@ -89,6 +90,15 @@ class BinaryDirectionalClassifier:
     def predict_proba(self, x):
         return np.asarray(self.model_.predict_proba(x), dtype=float)
 
+def _balanced_weights(y):
+    y = np.asarray(y, dtype=int)
+    labels, counts = np.unique(y, return_counts=True)
+    total = float(len(y))
+    k = float(len(labels))
+    weights = {int(label): total / max(k * float(count), 1.0) for label, count in zip(labels, counts)}
+    return np.asarray([weights[int(label)] for label in y], dtype=float)
+
+
 class SideOnlyXGBClassifier:
     """Binary directional learner exposed as long/flat or short/flat probabilities."""
     def __init__(self, side: int):
@@ -104,7 +114,8 @@ class SideOnlyXGBClassifier:
 
     def fit(self, x, y, sample_weight=None):
         target = (np.asarray(y, dtype=int) == self.side).astype(int)
-        self.model_.fit(x, target, sample_weight=sample_weight)
+        weights = _balanced_weights(target) if sample_weight is None else np.asarray(sample_weight, dtype=float)
+        self.model_.fit(x, target, sample_weight=weights)
         return self
 
     def predict_proba(self, x):
@@ -144,7 +155,8 @@ class XGBDirectionalClassifier:
     def fit(self, x, y, sample_weight=None):
         mapping = {-1: 0, 0: 1, 1: 2}
         encoded = np.asarray([mapping[int(v)] for v in y], dtype=int)
-        self.model_.fit(x, encoded, sample_weight=sample_weight)
+        weights = _balanced_weights(encoded) if sample_weight is None else np.asarray(sample_weight, dtype=float)
+        self.model_.fit(x, encoded, sample_weight=weights)
         return self
 
     def predict(self, x):
@@ -571,7 +583,8 @@ class PredictiveBrain:
             return out
 
         horizon_selection = {}
-        for h in HORIZONS:
+        horizons_to_test = (FIXED_HORIZON,) if FIXED_HORIZON in HORIZONS else HORIZONS
+        for h in horizons_to_test:
             full_returns = _future_return(rows, h)
             for threshold in LABEL_THRESHOLDS:
                 fold_scores = []
