@@ -761,6 +761,19 @@ class PredictiveBrain:
 
         candidate_metrics = _metrics(y_oos, candidate_pred, candidate_prob, np.array([-1, 0, 1]), r_oos)
         baseline_metrics = _metrics(y_oos, baseline_pred, baseline_prob, baseline.classes_, r_oos)
+        # Research-only diagnostic: evaluate all five frozen execution profiles
+        # on this already-observed development OOS period. These diagnostics
+        # are never used by promotion or model selection.
+        execution_oos_profiles = {}
+        for profile in EXECUTION_PROFILES:
+            profile_pred = self._predict_selected(direction, _slice(x, oo), invert_direction, family)[0]
+            if family in MODEL_FAMILIES:
+                profile_pred[candidate_prob.max(axis=1) < selection_threshold] = 0
+            profile_pred = _apply_execution_profile(profile_pred, _slice(x, oo), profile)
+            profile_pred = _apply_regime_filter(profile_pred, _slice(x, oo), regime_filter_threshold)
+            execution_oos_profiles[profile] = _metrics(
+                y_oos, profile_pred, candidate_prob, np.array([-1, 0, 1]), r_oos
+            )
 
         # Statistical comparison is calculated once, after all choices are
         # frozen. It is evidence, never a tuning signal.
@@ -794,6 +807,7 @@ class PredictiveBrain:
             "decision_threshold": selection_threshold,
             "regime_filter_threshold": regime_filter_threshold,
             "execution_profile": execution_profile,
+            "execution_oos_profiles": execution_oos_profiles,
             "cost_rate": COST_RATE,
         }
         if not all(absolute_gate.values()):
