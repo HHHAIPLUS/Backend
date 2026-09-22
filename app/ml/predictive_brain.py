@@ -732,7 +732,14 @@ class PredictiveBrain:
                 float(c[1]),
             )
 
-        best = max(candidates, key=_candidate_score)
+        fixed_family = os.getenv("HHHAI_PHASE2_FIXED_MODEL_FAMILY", "").strip()
+        if fixed_family:
+            fixed = [candidate for candidate in candidates if candidate[2] == fixed_family]
+            if not fixed:
+                return BrainReport("REJECTED", version, {"validation_families": validation_scores}, f"Requested fixed model family unavailable: {fixed_family}")
+            best = fixed[0]
+        else:
+            best = max(candidates, key=_candidate_score)
         family = best[2]
         invert_direction = bool(best[3])
 
