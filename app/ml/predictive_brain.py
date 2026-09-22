@@ -63,6 +63,7 @@ COST_RATE = 0.0014
 ARTIFACT_SCHEMA = 4
 MAX_LABEL_HORIZON = max(HORIZONS)
 MIN_OOS_TRADES = 100
+EXECUTION_PROFILES = ("confidence", "trend", "volatility", "momentum", "long_only")
 
 
 class XGBDirectionalClassifier:
@@ -239,6 +240,28 @@ def _net_returns(returns, pred):
         costs[-1] += COST_RATE / 2.0
     return gross - costs
 
+
+def _apply_execution_profile(pred, x, profile):
+    """Apply one of five pre-registered execution filters using only point-in-time features."""
+    pred = np.asarray(pred, dtype=int).copy()
+    if profile == "confidence":
+        return pred
+    if profile == "trend":
+        trend = np.asarray(x, dtype=float)[:, FEATURES.index("trend_strength_72")]
+        pred[(pred == 1) & (trend <= 0.0)] = 0
+        pred[(pred == -1) & (trend >= 0.0)] = 0
+    elif profile == "volatility":
+        vol = np.asarray(x, dtype=float)[:, FEATURES.index("volatility_72")]
+        # Avoid the highest-volatility tail where hourly execution costs and reversals are largest.
+        cutoff = float(np.quantile(vol, 0.85)) if len(vol) else 1.0
+        pred[vol > cutoff] = 0
+    elif profile == "momentum":
+        momentum = np.asarray(x, dtype=float)[:, FEATURES.index("momentum")]
+        pred[(pred == 1) & (momentum <= 0.0)] = 0
+        pred[(pred == -1) & (momentum >= 0.0)] = 0
+    elif profile == "long_only":
+        pred[pred == -1] = 0
+    return pred
 
 def _apply_regime_filter(pred, x, threshold):
     """Filter directional signals using the precomputed medium-term trend."""
@@ -677,9 +700,13 @@ class PredictiveBrain:
             selected_base = cal_pred.copy()
             if family in MODEL_FAMILIES:
                 selected_base[confidence < threshold] = 0
-            for regime_threshold in regime_thresholds:
+            for profile in EXECUTION_PROFILES:
+              for regime_threshold in regime_thresholds:
+                selected = _apply_execution_profile(
+                    selected_base, _slice(x, ca), profile
+                )
                 selected = _apply_regime_filter(
-                    selected_base, _slice(x, ca), regime_threshold
+                    selected, _slice(x, ca), regime_threshold
                 )
                 traded = selected != 0
                 trade_count = int(traded.sum())
@@ -701,6 +728,7 @@ class PredictiveBrain:
                     float(trade_rate),
                     float(threshold),
                     regime_threshold,
+                    profile,
                 ))
 
         if family in MODEL_FAMILIES and not threshold_candidates:
@@ -709,6 +737,7 @@ class PredictiveBrain:
                 "Calibration produced no decision threshold with the required minimum trade coverage."
             )
         regime_filter_threshold = None
+        execution_profile = "confidence"
         if threshold_candidates:
             # Threshold is selected exclusively on the separate calibration
             # period. Classification quality is primary; expectancy and stable
@@ -716,6 +745,7 @@ class PredictiveBrain:
             best_calibration = max(threshold_candidates)
             selection_threshold = best_calibration[6]
             regime_filter_threshold = best_calibration[7]
+            execution_profile = best_calibration[8]
 
         candidate_pred, candidate_prob = self._predict_selected(direction, _slice(x, oo), invert_direction, family)
         baseline_pred = baseline.predict(_slice(x, oo))
@@ -726,6 +756,7 @@ class PredictiveBrain:
             # _predict_selected already converts the expected return into a
             # {-1,0,1} signal. Do not threshold the discrete signal again.
             candidate_pred = candidate_pred.astype(int)
+        candidate_pred = _apply_execution_profile(candidate_pred, _slice(x, oo), execution_profile)
         candidate_pred = _apply_regime_filter(candidate_pred, _slice(x, oo), regime_filter_threshold)
 
         candidate_metrics = _metrics(y_oos, candidate_pred, candidate_prob, np.array([-1, 0, 1]), r_oos)
@@ -762,6 +793,7 @@ class PredictiveBrain:
             "chosen_label_threshold": chosen_threshold,
             "decision_threshold": selection_threshold,
             "regime_filter_threshold": regime_filter_threshold,
+            "execution_profile": execution_profile,
             "cost_rate": COST_RATE,
         }
         if not all(absolute_gate.values()):
@@ -785,6 +817,7 @@ class PredictiveBrain:
             "direction_inverted": invert_direction,
             "decision_threshold": selection_threshold,
             "regime_filter_threshold": regime_filter_threshold,
+            "execution_profile": execution_profile,
             "feature_hash": _feature_hash(),
             "features": FEATURES,
             "cost_rate": COST_RATE,
