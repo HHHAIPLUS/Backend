@@ -1,4 +1,4 @@
-name: Phase 2 authoritative OOS
+name: Phase 2 authoritative OOS # five-approach execution evaluation
 
 on:
   push:
