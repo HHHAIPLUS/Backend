@@ -34,6 +34,8 @@ from app.ml.model_validation import promotion_gate
 MODEL_FAMILIES = (
     "logistic_regression",
     "binary_logistic_selective",
+    "long_only_xgboost",
+    "short_only_xgboost",
     "xgboost",
     "logistic_regression_unweighted",
     "logistic_regression_directional",
@@ -85,6 +87,36 @@ class BinaryDirectionalClassifier:
 
     def predict_proba(self, x):
         return np.asarray(self.model_.predict_proba(x), dtype=float)
+
+class SideOnlyXGBClassifier:
+    """Binary directional learner exposed as long/flat or short/flat probabilities."""
+    def __init__(self, side: int):
+        self.side = int(side)
+        self.other = -self.side
+        self.model_ = XGBClassifier(
+            n_estimators=260, max_depth=4, learning_rate=0.035,
+            subsample=0.85, colsample_bytree=0.85, min_child_weight=10,
+            reg_alpha=0.10, reg_lambda=3.0, objective="binary:logistic",
+            eval_metric="logloss", tree_method="hist", n_jobs=1, random_state=42,
+        )
+        self.classes_ = np.asarray([-1, 0, 1], dtype=int)
+
+    def fit(self, x, y, sample_weight=None):
+        target = (np.asarray(y, dtype=int) == self.side).astype(int)
+        self.model_.fit(x, target, sample_weight=sample_weight)
+        return self
+
+    def predict_proba(self, x):
+        p = np.asarray(self.model_.predict_proba(x), dtype=float)[:, 1]
+        out = np.zeros((len(p), 3), dtype=float)
+        out[:, 1] = 1.0 - p
+        out[:, 2 if self.side == 1 else 0] = p
+        return out
+
+    def predict(self, x):
+        p = self.predict_proba(x)[:, 2 if self.side == 1 else 0]
+        return np.where(p >= 0.5, self.side, 0).astype(int)
+
 
 class XGBDirectionalClassifier:
     """XGBoost wrapper that preserves the {-1, 0, 1} public class contract."""
@@ -180,6 +212,10 @@ def _direction_target(values, threshold=COST_RATE):
 def _classifier(family):
     if family == "binary_logistic_selective":
         return BinaryDirectionalClassifier()
+    if family == "long_only_xgboost":
+        return SideOnlyXGBClassifier(1)
+    if family == "short_only_xgboost":
+        return SideOnlyXGBClassifier(-1)
     if family == "xgboost":
         return XGBDirectionalClassifier()
     if family == "logistic_regression":
@@ -730,7 +766,7 @@ class PredictiveBrain:
             # component probabilities structurally; wrapping the whole voter in
             # a second post-hoc calibrator can collapse its directional signal.
             # Keep the pre-registered ensemble probabilities intact.
-            direction = raw_direction if family == "soft_voting" else _calibrate(raw_direction, _slice(x, ca), y_cal)
+            direction = raw_direction if family in ("soft_voting", "long_only_xgboost", "short_only_xgboost") else _calibrate(raw_direction, _slice(x, ca), y_cal)
             baseline = _calibrate(baseline_raw, _slice(x, ca), y_cal)
         else:
             # Regression candidates are fit on train+validation and use the
