@@ -77,7 +77,7 @@ class BinaryDirectionalClassifier:
         self.classes_ = np.asarray([-1, 1], dtype=int)
 
     def fit(self, x, y, sample_weight=None):
-        self.model_.fit(x, np.asarray(y, dtype=int), sample_weight=sample_weight)
+        self.model_.fit(x, np.asarray(y, dtype=int), **({"model__sample_weight": sample_weight} if sample_weight is not None else {}))
         return self
 
     def predict(self, x):
