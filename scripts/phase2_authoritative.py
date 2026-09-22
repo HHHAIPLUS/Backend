@@ -14,7 +14,7 @@ from app.ml.predictive_brain import predictive_brain
 
 SYMBOL = os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOLS", "BTCUSDT").split(",")[0].strip().upper()
 INTERVAL = os.getenv("HHHAI_BRAIN_BOOTSTRAP_INTERVAL", "1h").strip()
-LIMIT = max(5000, min(30000, int(os.getenv("HHHAI_BRAIN_BOOTSTRAP_CANDLES", "30000"))))
+LIMIT = max(5000, min(30000, int(os.getenv("HHHAI_BRAIN_BOOTSTRAP_CANDLES", "10000"))))
 THRESHOLD = float(os.getenv("HHHAI_BRAIN_LABEL_THRESHOLD", "0.0015"))
 VERSION = os.getenv("PHASE2_VERSION", "phase2-authoritative")
 
