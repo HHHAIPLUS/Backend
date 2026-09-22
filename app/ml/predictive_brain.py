@@ -115,7 +115,8 @@ class SideOnlyXGBClassifier:
 
     def predict(self, x):
         p = self.predict_proba(x)[:, 2 if self.side == 1 else 0]
-        # Lower entry boundary is fixed at 0.35; calibration still controls confidence/abstention.\n        return np.where(p >= 0.35, self.side, 0).astype(int)
+        # Lower entry boundary is fixed at 0.35; calibration still controls confidence/abstention.
+        return np.where(p >= 0.35, self.side, 0).astype(int)
 
 
 class XGBDirectionalClassifier:
