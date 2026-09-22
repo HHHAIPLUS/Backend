@@ -33,6 +33,7 @@ from app.ml.model_validation import promotion_gate
 
 MODEL_FAMILIES = (
     "logistic_regression",
+    "binary_logistic_selective",
     "xgboost",
     "logistic_regression_unweighted",
     "logistic_regression_directional",
@@ -65,6 +66,25 @@ MAX_LABEL_HORIZON = max(HORIZONS)
 MIN_OOS_TRADES = 100
 EXECUTION_PROFILES = ("confidence", "trend", "volatility", "momentum", "long_only")
 
+
+class BinaryDirectionalClassifier:
+    """Binary long/short learner; abstention supplies the third no-trade class."""
+    def __init__(self):
+        self.model_ = Pipeline([
+            ("scale", StandardScaler()),
+            ("model", LogisticRegression(max_iter=1800, class_weight="balanced", random_state=42)),
+        ])
+        self.classes_ = np.asarray([-1, 1], dtype=int)
+
+    def fit(self, x, y, sample_weight=None):
+        self.model_.fit(x, np.asarray(y, dtype=int), sample_weight=sample_weight)
+        return self
+
+    def predict(self, x):
+        return self.model_.predict(x).astype(int)
+
+    def predict_proba(self, x):
+        return np.asarray(self.model_.predict_proba(x), dtype=float)
 
 class XGBDirectionalClassifier:
     """XGBoost wrapper that preserves the {-1, 0, 1} public class contract."""
@@ -158,6 +178,8 @@ def _direction_target(values, threshold=COST_RATE):
 
 
 def _classifier(family):
+    if family == "binary_logistic_selective":
+        return BinaryDirectionalClassifier()
     if family == "xgboost":
         return XGBDirectionalClassifier()
     if family == "logistic_regression":
@@ -592,6 +614,10 @@ class PredictiveBrain:
                 model = _classifier(family)
                 x_train_fold = _slice(x, train_bounds)
                 r_train_fold = _slice(returns, train_bounds)
+                if family == "binary_logistic_selective":
+                    binary_mask = y_train_fold != 0
+                    x_train_fold = x_train_fold[binary_mask]
+                    y_train_fold = y_train_fold[binary_mask]
                 filter_mask = _training_filter_mask(r_train_fold, float(chosen_threshold))
                 if filter_mask.sum() >= 300 and len(set(y_train_fold[filter_mask].tolist())) == 3:
                     x_train_fold = x_train_fold[filter_mask]
@@ -687,6 +713,10 @@ class PredictiveBrain:
             else:
                 x_fit_direction = x_fit
                 y_fit_direction = y_fit
+            if family == "binary_logistic_selective":
+                binary_mask = y_fit_direction != 0
+                x_fit_direction = x_fit_direction[binary_mask]
+                y_fit_direction = y_fit_direction[binary_mask]
             if family == "hist_gradient_boosting_balanced":
                 counts = np.bincount(y_fit_direction + 1, minlength=3).astype(float)
                 weights = np.asarray([1.0 / max(counts[label + 1], 1.0) for label in y_fit_direction])
@@ -953,6 +983,17 @@ class PredictiveBrain:
     def _predict_selected(model, x, invert_direction, family):
         if family in MODEL_FAMILIES:
             probs = model.predict_proba(x)
+            if family == "binary_logistic_selective":
+                raw = model.predict(x).astype(int)
+                classes = np.asarray(model.classes_, dtype=int)
+                mapping = {int(v): i for i, v in enumerate(classes)}
+                directional = np.column_stack([probs[:, mapping[-1]], probs[:, mapping[1]]])
+                confidence = np.max(directional, axis=1)
+                pred = np.where(raw == 1, 1, -1).astype(int)
+                # Flat probability is the residual uncertainty; calibration threshold
+                # later converts low-confidence directional calls into NO_TRADE.
+                probs = np.column_stack([directional[:, 0], 1.0 - confidence, directional[:, 1]])
+                return pred, probs
             if family == "soft_voting":
                 # Use the calibrated probability argmax for the ensemble.
                 # VotingClassifier.predict() can collapse to the flat class even
