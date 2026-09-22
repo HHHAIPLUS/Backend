@@ -25,7 +25,6 @@ jobs:
       HHHAI_BRAIN_BOOTSTRAP_CANDLES: "30000"
       HHHAI_BRAIN_BOOTSTRAP_INTERVAL: "1h"
       HHHAI_BRAIN_LABEL_THRESHOLD: "0.0015"
-      HHHAI_PHASE2_TARGET_RETURN: "barrier"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
