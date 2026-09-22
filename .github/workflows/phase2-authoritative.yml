@@ -18,13 +18,13 @@ jobs:
     timeout-minutes: 120
     env:
       # Fresh holdout: the previous authoritative OOS ended at 2026-09-01.
-      PHASE2_OOS_START: "2020-01-01T00:00:00+00:00"
-      PHASE2_OOS_END: "2021-01-01T00:00:00+00:00"
-      PHASE2_VERSION: "phase2-validation-gated-4h-2020"
+      PHASE2_OOS_START: "2026-09-01T00:00:00+00:00"
+      PHASE2_OOS_END: "2026-09-21T00:00:00+00:00"
+      PHASE2_VERSION: "phase2-validation-gated-1h-2026"
       HHHAI_BRAIN_BOOTSTRAP_SYMBOLS: "BTCUSDT"
-      HHHAI_BRAIN_BOOTSTRAP_CANDLES: "15000"
-      HHHAI_BRAIN_BOOTSTRAP_INTERVAL: "4h"
-      HHHAI_BRAIN_LABEL_THRESHOLD: "0.0030"
+      HHHAI_BRAIN_BOOTSTRAP_CANDLES: "30000"
+      HHHAI_BRAIN_BOOTSTRAP_INTERVAL: "1h"
+      HHHAI_BRAIN_LABEL_THRESHOLD: "0.0015"
       HHHAI_PHASE2_TRAIN_FILTER_MULTIPLIER: "1.0"
     steps:
       - uses: actions/checkout@v4
