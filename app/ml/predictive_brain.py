@@ -124,10 +124,13 @@ def _x(rows):
     return x
 
 
+TARGET_RETURN_FIELD = os.getenv("HHHAI_PHASE2_TARGET_RETURN", "close")
+
+
 def _future_return(rows, horizon):
     values = []
     for row in rows:
-        by = row.get("outcome_return_by_horizon", {})
+        by = row.get("barrier_return_by_horizon", {}) if TARGET_RETURN_FIELD == "barrier" else row.get("outcome_return_by_horizon", {})
         value = by.get(str(horizon), by.get(horizon))
         if value is None and horizon == int(row.get("outcome_horizon", 6)):
             value = row.get("outcome_return")
