@@ -800,13 +800,16 @@ class PredictiveBrain:
             def _calibration_key(c):
                 avg_trade, total, neg_dd, bal, acc, trade_rate, threshold, regime, profile = c
                 dd = -float(neg_dd)
+                classification_ok = float(bal) >= 0.50 and float(acc) >= 0.52
+                economic_ok = float(total) > 0.0 and dd <= 0.15
                 return (
-                    1 if float(total) > 0.0 and dd <= 0.15 else 0,
+                    1 if classification_ok else 0,
+                    1 if economic_ok else 0,
+                    float(bal),
+                    float(acc),
                     float(total),
                     float(avg_trade),
                     float(neg_dd),
-                    float(bal),
-                    float(acc),
                     float(trade_rate),
                 )
             best_calibration = max(threshold_candidates, key=_calibration_key)
