@@ -36,6 +36,7 @@ MODEL_FAMILIES = (
     "logistic_regression",
     "binary_logistic_selective",
     "trend_regime",
+    "binary_xgb_selective",
     "long_only_xgboost",
     "short_only_xgboost",
     "xgboost",
@@ -133,6 +134,35 @@ class SideOnlyXGBClassifier(ClassifierMixin, BaseEstimator):
         p = self.predict_proba(x)[:, 2 if self.side == 1 else 0]
         # Lower entry boundary is fixed at 0.35; calibration still controls confidence/abstention.
         return np.where(p >= 0.35, self.side, 0).astype(int)
+
+
+class BinaryXGBSelectiveClassifier(ClassifierMixin, BaseEstimator):
+    """Binary long/short XGBoost trained only on actionable labels; low confidence is flat."""
+    def __init__(self):
+        self.model_ = XGBClassifier(
+            n_estimators=320, max_depth=3, learning_rate=0.03,
+            subsample=0.85, colsample_bytree=0.85, min_child_weight=12,
+            reg_alpha=0.15, reg_lambda=4.0, objective="binary:logistic",
+            eval_metric="logloss", tree_method="hist", n_jobs=1, random_state=42,
+        )
+        self.classes_ = np.asarray([-1, 0, 1], dtype=int)
+
+    def fit(self, x, y, sample_weight=None):
+        y = np.asarray(y, dtype=int)
+        mask = y != 0
+        target = (y[mask] == 1).astype(int)
+        weights = _balanced_weights(target) if sample_weight is None else np.asarray(sample_weight, dtype=float)[mask]
+        self.model_.fit(np.asarray(x)[mask], target, sample_weight=weights)
+        return self
+
+    def predict_proba(self, x):
+        p = np.asarray(self.model_.predict_proba(x), dtype=float)[:, 1]
+        out = np.column_stack([1.0-p, np.zeros(len(p)), p])
+        return out
+
+    def predict(self, x):
+        p = self.predict_proba(x)[:, 2]
+        return np.where(p >= 0.5, 1, -1).astype(int)
 
 
 class TrendRegimeClassifier(ClassifierMixin, BaseEstimator):
@@ -279,6 +309,8 @@ def _direction_target(values, threshold=COST_RATE, bounds=None):
 def _classifier(family):
     if family == "trend_regime":
         return TrendRegimeClassifier(strength=0.0, momentum=0.0, ema=0.0)
+    if family == "binary_xgb_selective":
+        return BinaryXGBSelectiveClassifier()
     if family == "binary_logistic_selective":
         return BinaryDirectionalClassifier()
     if family == "long_only_xgboost":
