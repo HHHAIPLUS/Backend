@@ -26,8 +26,7 @@ jobs:
       HHHAI_BRAIN_LABEL_THRESHOLD: "0.0015"
       HHHAI_PHASE2_TRAIN_FILTER_MULTIPLIER: "1.0"
       HHHAI_PHASE2_FIXED_LABEL_THRESHOLD: ""
-      HHHAI_PHASE2_LABEL_MODE: "quantile"
-      HHHAI_PHASE2_TARGET_RETURN: "barrier"
+      HHHAI_PHASE2_LABEL_MODE: "fixed"
       HHHAI_PHASE2_SIDE_SIGNAL_FLOOR: "0.35"
     steps:
       - uses: actions/checkout@v4
