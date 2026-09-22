@@ -1,0 +1,60 @@
+name: Phase 2 five-approach verification
+
+on:
+  push:
+    paths:
+      - "app/ml/predictive_brain.py"
+      - "app/ml/predictive.py"
+      - "scripts/phase2_authoritative.py"
+      - "requirements.txt"
+      - ".github/workflows/phase2-five-approaches.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  phase2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PHASE2_OOS_START: "2024-01-01T00:00:00+00:00"
+      PHASE2_OOS_END: "2025-01-01T00:00:00+00:00"
+      PHASE2_VERSION: "phase2-five-approaches-2024"
+      HHHAI_BRAIN_BOOTSTRAP_SYMBOLS: "BTCUSDT"
+      HHHAI_BRAIN_BOOTSTRAP_CANDLES: "30000"
+      HHHAI_BRAIN_BOOTSTRAP_INTERVAL: "1h"
+      HHHAI_BRAIN_LABEL_THRESHOLD: "0.0015"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run Phase 2
+        run: python scripts/phase2_authoritative.py
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-five-approaches-evidence
+          path: |
+            phase2_report.json
+            artifacts/predictive_brain.joblib
+            artifacts/predictive_brain_manifest.json
+      - name: Mark Phase 2 complete
+        if: success()
+        env:
+          PHASE2_REPORT_PATH: phase2_report.json
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: python scripts/mark_phase2_complete.py
+      - name: Preserve evidence
+        if: success()
+        run: |
+          git config user.name "HHHAI Phase 2"
+          git config user.email "actions@github.com"
+          git add phase2_report.json artifacts/predictive_brain.joblib artifacts/predictive_brain_manifest.json
+          git diff --cached --quiet || git commit -m "[phase2] Preserve authoritative promoted artifact"
+          git push
