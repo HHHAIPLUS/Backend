@@ -188,7 +188,7 @@ def build_model_features(candles: Iterable[Any] | None = None, context: Any | No
         "news_risk": _value(context,"news_risk",context_or_live("news_risk")),
         "news_sentiment": _value(context,"news_sentiment",context_or_live("news_sentiment")),
         "volatility_proxy": min(1.0,max(0.0,volatility*12.0)), "trend_strength": trend_strength,
-        "momentum": momentum, "liquidity_stress": context_or_live("liquidity_stress"),
+        "momentum": momentum, "trend_strength_72": trend_strength_72, "liquidity_stress": context_or_live("liquidity_stress"),
     }
     # Return the full canonical market feature state. PredictiveModel/Ensemble select
     # their explicit FEATURES subset, while decision layers can still consume
