@@ -742,10 +742,22 @@ class PredictiveBrain:
         regime_filter_threshold = None
         execution_profile = "confidence"
         if threshold_candidates:
-            # Threshold is selected exclusively on the separate calibration
-            # period. Classification quality is primary; expectancy and stable
-            # participation are secondary. OOS remains completely untouched.
-            best_calibration = max(threshold_candidates)
+            # Economic execution is selected only on the separate calibration
+            # period. Prefer positive total net return and controlled drawdown,
+            # then expectancy and classification quality. OOS remains untouched.
+            def _calibration_key(c):
+                avg_trade, total, neg_dd, bal, acc, trade_rate, threshold, regime, profile = c
+                dd = -float(neg_dd)
+                return (
+                    1 if float(total) > 0.0 and dd <= 0.15 else 0,
+                    float(total),
+                    float(avg_trade),
+                    float(neg_dd),
+                    float(bal),
+                    float(acc),
+                    float(trade_rate),
+                )
+            best_calibration = max(threshold_candidates, key=_calibration_key)
             selection_threshold = best_calibration[6]
             regime_filter_threshold = best_calibration[7]
             execution_profile = best_calibration[8]
