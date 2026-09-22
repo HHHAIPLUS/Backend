@@ -62,6 +62,7 @@ RETURN_FAMILIES = tuple(
 )
 HORIZONS = (1, 3, 6, 12)
 LABEL_THRESHOLDS = (0.0010, 0.0015, 0.0020, 0.0025)
+LABEL_MODE = os.getenv("HHHAI_PHASE2_LABEL_MODE", "fixed").strip().lower()
 COST_RATE = 0.0014
 ARTIFACT_SCHEMA = 4
 MAX_LABEL_HORIZON = max(HORIZONS)
@@ -206,7 +207,25 @@ def _future_return(rows, horizon):
     return result
 
 
-def _direction_target(values, threshold=COST_RATE):
+def _label_bounds(values):
+    values = np.asarray(values, dtype=float)
+    if LABEL_MODE != "quantile":
+        return None
+    if len(values) < 30:
+        raise ValueError("Not enough training returns for quantile labels.")
+    q1, q2 = np.quantile(values, [0.33, 0.67])
+    if not np.isfinite(q1) or not np.isfinite(q2) or q1 >= q2:
+        raise ValueError("Quantile label boundaries are invalid.")
+    return float(q1), float(q2)
+
+
+def _direction_target(values, threshold=COST_RATE, bounds=None):
+    values = np.asarray(values, dtype=float)
+    if LABEL_MODE == "quantile":
+        if bounds is None:
+            bounds = _label_bounds(values)
+        low, high = bounds
+        return np.where(values > high, 1, np.where(values < low, -1, 0))
     return np.where(values > threshold, 1, np.where(values < -threshold, -1, 0))
 
 
@@ -559,8 +578,9 @@ class PredictiveBrain:
                 for train_bounds, val_bounds in selection_folds:
                     train_returns = _slice(full_returns, train_bounds)
                     val_returns = _slice(full_returns, val_bounds)
-                    y_train_fold = _direction_target(train_returns, threshold)
-                    y_val_fold = _direction_target(val_returns, threshold)
+                    label_bounds = _label_bounds(train_returns)
+                    y_train_fold = _direction_target(train_returns, threshold, label_bounds)
+                    y_val_fold = _direction_target(val_returns, threshold, label_bounds)
                     if len(set(y_train_fold.tolist())) < 3 or len(set(y_val_fold.tolist())) < 3:
                         continue
                     model = _classifier("logistic_regression")
@@ -574,8 +594,12 @@ class PredictiveBrain:
                     # from predicting the flat class and is determined entirely
                     # before the untouched OOS period.
                     validation_labels = np.concatenate([
-                        _direction_target(_slice(full_returns, val_bounds), threshold)
-                        for _, val_bounds in selection_folds
+                        _direction_target(
+                            _slice(full_returns, val_bounds),
+                            threshold,
+                            _label_bounds(_slice(full_returns, train_bounds)),
+                        )
+                        for train_bounds, val_bounds in selection_folds
                     ])
                     counts = np.bincount(validation_labels + 1, minlength=3).astype(float)
                     fractions = counts / max(1, len(validation_labels))
@@ -624,7 +648,8 @@ class PredictiveBrain:
         chosen_threshold = float(chosen["label_threshold"])
 
         returns = _future_return(rows, chosen_horizon)
-        y = _direction_target(returns, chosen_threshold)
+        final_label_bounds = _label_bounds(r_train)
+        y = _direction_target(returns, chosen_threshold, final_label_bounds)
         y_train = _slice(y, tr)
         y_val = _slice(y, va)
         y_cal = _slice(y, ca)
@@ -923,6 +948,8 @@ class PredictiveBrain:
             "execution_profile": execution_profile,
             "execution_oos_profiles": execution_oos_profiles,
             "cost_rate": COST_RATE,
+            "label_mode": LABEL_MODE,
+            "label_bounds": final_label_bounds,
         }
         if not all(absolute_gate.values()):
             return BrainReport("REJECTED", version, metrics,
@@ -949,6 +976,8 @@ class PredictiveBrain:
             "feature_hash": _feature_hash(),
             "features": FEATURES,
             "cost_rate": COST_RATE,
+            "label_mode": LABEL_MODE,
+            "label_bounds": final_label_bounds,
             "horizons": HORIZONS,
             "chosen_horizon": chosen_horizon,
             "label_threshold": chosen_threshold,
