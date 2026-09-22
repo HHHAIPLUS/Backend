@@ -27,6 +27,7 @@ jobs:
         env:
           PHASE2_CANDLES: "10000"
           HHHAI_PHASE2_LABEL_MODE: "fixed"
+          HHHAI_PHASE2_TARGET_RETURN: "barrier"
           HHHAI_BRAIN_LABEL_THRESHOLD: "0.0015"
           PHASE2_OOS_START: "2026-07-01T00:00:00+00:00"
           PHASE2_OOS_END: "2026-09-21T00:00:00+00:00"
