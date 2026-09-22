@@ -24,6 +24,7 @@ from sklearn.frozen import FrozenEstimator
 from sklearn.linear_model import LogisticRegression, Ridge, SGDClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_score, recall_score
+from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
 from sklearn.preprocessing import StandardScaler
@@ -71,7 +72,7 @@ MIN_OOS_TRADES = 100
 EXECUTION_PROFILES = ("confidence", "trend", "volatility", "momentum", "long_only")
 
 
-class BinaryDirectionalClassifier:
+class BinaryDirectionalClassifier(ClassifierMixin, BaseEstimator):
     """Binary long/short learner; abstention supplies the third no-trade class."""
     def __init__(self):
         self.model_ = Pipeline([
@@ -99,7 +100,7 @@ def _balanced_weights(y):
     return np.asarray([weights[int(label)] for label in y], dtype=float)
 
 
-class SideOnlyXGBClassifier:
+class SideOnlyXGBClassifier(ClassifierMixin, BaseEstimator):
     """Binary directional learner exposed as long/flat or short/flat probabilities."""
     def __init__(self, side: int):
         self.side = int(side)
@@ -131,7 +132,7 @@ class SideOnlyXGBClassifier:
         return np.where(p >= 0.35, self.side, 0).astype(int)
 
 
-class XGBDirectionalClassifier:
+class XGBDirectionalClassifier(ClassifierMixin, BaseEstimator):
     """XGBoost wrapper that preserves the {-1, 0, 1} public class contract."""
     def __init__(self):
         self.model_ = XGBClassifier(
