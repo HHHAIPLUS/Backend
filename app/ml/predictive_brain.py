@@ -806,7 +806,7 @@ class PredictiveBrain:
                 weights *= len(weights) / max(weights.sum(), 1e-12)
                 raw_direction.fit(x_fit_direction, y_fit_direction, sample_weight=weights)
             else:
-                raw_direction.fit(x_fit, y_fit)
+                raw_direction.fit(x_fit_direction, y_fit_direction)
             baseline_raw = _classifier("logistic_regression")
             baseline_raw.fit(x_fit, y_fit)
             # The fixed soft-voting ensemble already averages calibrated
