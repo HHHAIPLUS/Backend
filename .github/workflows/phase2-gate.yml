@@ -31,7 +31,7 @@ jobs:
           HHHAI_BRAIN_LABEL_THRESHOLD: "0.0015"
           PHASE2_OOS_START: "2026-07-01T00:00:00+00:00"
           PHASE2_OOS_END: "2026-09-21T00:00:00+00:00"
-        run: python scripts/phase2_oos_validation.py
+        run: PYTHONPATH=. python scripts/phase2_oos_validation.py
       - name: Mark Phase 2 complete only after every fixed gate passes
         if: success()
         run: |
