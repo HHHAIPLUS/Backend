@@ -25,7 +25,9 @@ jobs:
       HHHAI_BRAIN_BOOTSTRAP_CANDLES: "30000"
       HHHAI_BRAIN_BOOTSTRAP_INTERVAL: "1h"
       HHHAI_BRAIN_LABEL_THRESHOLD: "0.0015"
-      HHHAI_PHASE2_TRAIN_FILTER_MULTIPLIER: "1.0"\n      # Side-specific XGBoost candidate uses its fixed point-in-time entry floor.\n      HHHAI_PHASE2_SIDE_SIGNAL_FLOOR: "0.35"
+      HHHAI_PHASE2_TRAIN_FILTER_MULTIPLIER: "1.0"
+      # Side-specific XGBoost candidate uses its fixed point-in-time entry floor.
+      HHHAI_PHASE2_SIDE_SIGNAL_FLOOR: "0.35"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
