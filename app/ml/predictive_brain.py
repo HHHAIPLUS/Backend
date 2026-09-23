@@ -40,6 +40,7 @@ MODEL_FAMILIES = (
     "long_only_xgboost",
     "short_only_xgboost",
     "xgboost",
+    "xgboost_directional_weighted",
     "logistic_regression_unweighted",
     "logistic_regression_directional",
     "extra_trees",
@@ -196,6 +197,35 @@ class TrendRegimeClassifier(ClassifierMixin, BaseEstimator):
         return out
 
 
+class DirectionalWeightedXGBClassifier(ClassifierMixin, BaseEstimator):
+    """Three-class XGBoost that explicitly penalizes missed directional moves."""
+    def __init__(self):
+        self.model_ = XGBClassifier(
+            n_estimators=320, max_depth=4, learning_rate=0.03,
+            subsample=0.85, colsample_bytree=0.85, min_child_weight=10,
+            reg_alpha=0.10, reg_lambda=3.0, objective="multi:softprob",
+            num_class=3, eval_metric="mlogloss", tree_method="hist",
+            n_jobs=1, random_state=43,
+        )
+        self.classes_ = np.asarray([-1, 0, 1], dtype=int)
+
+    def fit(self, x, y, sample_weight=None):
+        mapping = {-1: 0, 0: 1, 1: 2}
+        y_arr = np.asarray(y, dtype=int)
+        encoded = np.asarray([mapping[int(v)] for v in y_arr], dtype=int)
+        base = np.asarray([2.0 if v != 0 else 0.5 for v in y_arr], dtype=float)
+        weights = base if sample_weight is None else base * np.asarray(sample_weight, dtype=float)
+        self.model_.fit(x, encoded, sample_weight=weights)
+        return self
+
+    def predict(self, x):
+        encoded = np.asarray(self.model_.predict(x), dtype=int)
+        return self.classes_[encoded]
+
+    def predict_proba(self, x):
+        return np.asarray(self.model_.predict_proba(x), dtype=float)
+
+
 class XGBDirectionalClassifier(ClassifierMixin, BaseEstimator):
     """XGBoost wrapper that preserves the {-1, 0, 1} public class contract."""
     def __init__(self):
@@ -319,6 +349,8 @@ def _classifier(family):
         return SideOnlyXGBClassifier(-1)
     if family == "xgboost":
         return XGBDirectionalClassifier()
+    if family == "xgboost_directional_weighted":
+        return DirectionalWeightedXGBClassifier()
     if family == "logistic_regression":
         return Pipeline([
             ("scale", StandardScaler()),
