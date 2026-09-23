@@ -81,7 +81,7 @@ class BinaryDirectionalClassifier(ClassifierMixin, BaseEstimator):
     def __init__(self):
         self.model_ = Pipeline([
             ("scale", StandardScaler()),
-            ("model", LogisticRegression(max_iter=1800, class_weight="balanced", random_state=42)),
+            ("model", LogisticRegression(max_iter=1800, class_weight="balanced", early_stopping=False, random_state=42)),
         ])
         self.classes_ = np.asarray([-1, 1], dtype=int)
 
@@ -390,7 +390,7 @@ def _regressor(family):
         return RandomForestRegressor(n_estimators=80, min_samples_leaf=12, max_features="sqrt", random_state=42, n_jobs=1)
     if base == "hist_gradient_boosting_regressor":
         return HistGradientBoostingRegressor(
-            max_iter=140, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
+            max_iter=140, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0, early_stopping=False, random_state=42
         )
     if base == "xgboost_regressor":
         return XGBRegressor(
