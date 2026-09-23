@@ -1,3 +1,5 @@
+import os
+
 from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
