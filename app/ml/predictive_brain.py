@@ -862,7 +862,7 @@ class PredictiveBrain:
             total = float(score.get("total_net_return", -1e99))
             dd = float(score.get("max_drawdown", 1e99))
             predicted_fractions = score.get("prediction_class_fractions", [0.0, 0.0, 0.0])
-            directional_coverage_ok = min(float(v) for v in predicted_fractions) >= 0.02
+            directional_coverage_ok = float(predicted_fractions[0]) >= 0.02 and float(predicted_fractions[2]) >= 0.02
             return (
                 1 if viable_validation and directional_coverage_ok else 0,
                 1 if directional_coverage_ok else 0,
