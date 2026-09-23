@@ -948,6 +948,29 @@ class PredictiveBrain:
                 raw_direction.fit(x_fit_direction, y_fit_direction, sample_weight=weights)
             else:
                 raw_direction.fit(x_fit_direction, y_fit_direction)
+
+            # Pre-OOS collapse guard: a model selected on older validation
+            # history can become dominated by the flat class after the final
+            # train+validation fit. Detect that using the untouched-free
+            # calibration period and switch to a class-balanced logistic
+            # learner only when the selected model produces less than 2%
+            # long or short signals. This is model-stability protection, not
+            # an OOS tuning rule.
+            direction_fallback_family = None
+            if family in MODEL_FAMILIES:
+                raw_cal_pred = np.asarray(raw_direction.predict(_slice(x, ca)), dtype=int)
+                raw_counts = np.bincount(raw_cal_pred + 1, minlength=3).astype(float)
+                raw_fractions = raw_counts / max(1, len(raw_cal_pred))
+                if float(raw_fractions[0]) < 0.02 or float(raw_fractions[2]) < 0.02:
+                    fallback = _classifier("logistic_regression")
+                    fallback.fit(x_fit_direction, y_fit_direction)
+                    fallback_pred = np.asarray(fallback.predict(_slice(x, ca)), dtype=int)
+                    fallback_counts = np.bincount(fallback_pred + 1, minlength=3).astype(float)
+                    fallback_fractions = fallback_counts / max(1, len(fallback_pred))
+                    if float(fallback_fractions[0]) >= 0.02 and float(fallback_fractions[2]) >= 0.02:
+                        raw_direction = fallback
+                        direction_fallback_family = "logistic_regression"
+
             baseline_raw = _classifier("logistic_regression")
             baseline_raw.fit(x_fit, y_fit)
             # The fixed soft-voting ensemble already averages calibrated
