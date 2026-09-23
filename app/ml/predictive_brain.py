@@ -349,7 +349,7 @@ def _classifier(family):
     if family == "hist_gradient_boosting_balanced":
         return HistGradientBoostingClassifier(
             max_iter=140, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0,
-            class_weight="balanced", random_state=42
+            class_weight="balanced", early_stopping=False, random_state=42
         )
     if family == "soft_voting":
         return VotingClassifier(
@@ -374,7 +374,7 @@ def _classifier(family):
             "scale", StandardScaler(),
         ), (
             "model", SGDClassifier(loss="log_loss", alpha=1e-4, class_weight="balanced",
-                                   max_iter=2500, tol=1e-4, random_state=42, early_stopping=True,
+                                   max_iter=2500, tol=1e-4, random_state=42, early_stopping=False,
                                    validation_fraction=0.12, n_iter_no_change=20),
         )])
     raise ValueError(f"Unknown model family: {family}")
