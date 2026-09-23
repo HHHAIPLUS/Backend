@@ -1,11 +1,12 @@
+import os
+
 from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.api.admin import require_admin
 from app.ml.predictive import predictive_model
 from app.ml.predictive_brain import predictive_brain
-from app.ml.bootstrap import build_dataset, validate_and_promote
-from app.ml.binance_historical import fetch_binance_klines
+from app.ml.bootstrap import build_dataset, validate_and_promote, fetch_bitget_klines, fetch_binance_klines, fetch_binance_archive_klines
 from app.ml.model_persistence import persist_model
 from app.core.config import settings
 
@@ -57,11 +58,18 @@ def bootstrap(
     request = request or BootstrapRequest(symbol=symbol, interval=interval, limit=limit, horizon=horizon, threshold=threshold)
     try:
         effective_limit = max(5000, request.limit)
-        # Training must use the same venue as the live Binance execution path.
-        # Silent fallback to another exchange creates distribution shift between
-        # training and inference, so bootstrap is intentionally Binance-only.
-        raw = fetch_binance_klines(symbol=request.symbol, interval=request.interval, limit=effective_limit)
-        rows = build_dataset(raw, request.horizon, request.threshold)
+        training_provider = os.getenv("HHHAI_TRAINING_PROVIDER", os.getenv("HHHAI_EXECUTION_EXCHANGE", "binance")).strip().lower()
+        fetchers = {
+            "bitget": fetch_bitget_klines,
+            "binance": fetch_binance_klines,
+            "binance_archive": fetch_binance_archive_klines,
+        }
+        fetcher = fetchers.get(training_provider)
+        if fetcher is None:
+            raise HTTPException(status_code=500, detail=f"Unsupported HHHAI_TRAINING_PROVIDER: {training_provider}")
+        raw = fetcher(symbol=request.symbol, interval=request.interval, limit=effective_limit)
+        audit_provider = training_provider
+        rows = build_dataset(raw, request.horizon, request.threshold, symbol=request.symbol, interval=request.interval, provider=audit_provider)
         if len(rows) < 500:
             raise HTTPException(status_code=422, detail=f"Historical dataset contains only {len(rows)} usable rows; at least 500 are required.")
 
@@ -83,7 +91,7 @@ def bootstrap(
             result["status"] = "PROMOTED"
             result["version"] = brain_report.version
 
-        result.update({"data_provider": "binance", "symbol": request.symbol.upper(), "interval": request.interval, "requested_candles": request.limit, "effective_candles": effective_limit, "training_rows": len(rows)})
+        result.update({"data_provider": training_provider, "symbol": request.symbol.upper(), "interval": request.interval, "requested_candles": request.limit, "effective_candles": effective_limit, "training_rows": len(rows)})
         if result.get("status") == "PROMOTED":
             import asyncio
             asyncio.run(persist_model(result.get("metrics")))
