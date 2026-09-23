@@ -22,7 +22,7 @@ log = logging.getLogger("hhhai.bitget_central")
 
 WS_URL = "wss://ws.bitget.com/v2/ws/public"
 REST_URL = "https://api.bitget.com"
-MAX_CANDLES = 30
+MAX_CANDLES = 400
 STALE_SECONDS = 15
 BOOTSTRAP_INTERVAL = 300.0
 REST_MIN_INTERVAL = 1.0
@@ -58,7 +58,7 @@ class _State:
 class CentralBitgetMarketData:
     """Single in-process Bitget USDT-futures market-data source.
 
-    WebSocket carries ticker, level-5 book and 5m candles. REST is used only
+    WebSocket carries ticker, level-5 book and 1h candles. REST is used only
     for one-time/periodic candle bootstrap, not for continuous observation.
     """
 
@@ -110,7 +110,7 @@ class CentralBitgetMarketData:
                         "args": [
                             {"instType": "USDT-FUTURES", "channel": "ticker", "instId": state.symbol},
                             {"instType": "USDT-FUTURES", "channel": "books5", "instId": state.symbol},
-                            {"instType": "USDT-FUTURES", "channel": "candle5m", "instId": state.symbol},
+                            {"instType": "USDT-FUTURES", "channel": "candle1H", "instId": state.symbol},
                         ],
                     }
                     ws.send(json.dumps(subscribe, separators=(",", ":")))
@@ -208,7 +208,7 @@ class CentralBitgetMarketData:
         try:
             response = httpx.get(
                 f"{REST_URL}/api/v2/mix/market/candles",
-                params={"productType": "USDT-FUTURES", "symbol": state.symbol, "granularity": "5m", "limit": MAX_CANDLES},
+                params={"productType": "USDT-FUTURES", "symbol": state.symbol, "granularity": "1H", "limit": MAX_CANDLES},
                 timeout=8.0,
             )
             if response.status_code == 429:
@@ -323,7 +323,7 @@ class CentralBitgetMarketData:
             candles = list(state.candles)
             current = list(state.current_candle) if state.current_candle else None
         if len(candles) < 3:
-            raise RuntimeError(f"Waiting for Bitget 5m candle history for {symbol.upper()}: {len(candles)}/{MAX_CANDLES}")
+            raise RuntimeError(f"Waiting for Bitget 1h candle history for {symbol.upper()}: {len(candles)}/{MAX_CANDLES}")
         rows = candles[-MAX_CANDLES:]
         # The exchange candle stream can contain the still-forming candle. Do not
         # feed an open candle into the predictive model; training uses closed bars.
