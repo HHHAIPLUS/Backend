@@ -898,11 +898,17 @@ class PredictiveBrain:
             return (
                 1 if viable_validation and directional_coverage_ok else 0,
                 1 if directional_coverage_ok else 0,
+                # Among validation-viable models, prioritize realized economic
+                # quality before small classification-score differences. This
+                # prevents a slightly higher balanced-accuracy model on a
+                # shorter window from displacing a materially better-performing
+                # full-history model and then collapsing after the final refit.
+                total if viable_validation else -1e99,
+                exp if viable_validation else -1e99,
                 bal,
                 acc,
-                exp if viable_validation else -1e99,
-                total if viable_validation else -1e99,
                 -dd if viable_validation else -1e99,
+                -window,
                 float(c[0]),
                 float(c[1]),
             )
