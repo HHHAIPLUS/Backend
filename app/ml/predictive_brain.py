@@ -344,7 +344,7 @@ def _classifier(family):
         )
     if family == "hist_gradient_boosting":
         return HistGradientBoostingClassifier(
-            max_iter=140, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42
+            max_iter=140, learning_rate=.05, max_leaf_nodes=15, l2_regularization=1.0, early_stopping=False, random_state=42
         )
     if family == "hist_gradient_boosting_balanced":
         return HistGradientBoostingClassifier(
