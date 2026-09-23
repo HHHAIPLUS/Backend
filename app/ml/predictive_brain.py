@@ -81,7 +81,7 @@ class BinaryDirectionalClassifier(ClassifierMixin, BaseEstimator):
     def __init__(self):
         self.model_ = Pipeline([
             ("scale", StandardScaler()),
-            ("model", LogisticRegression(max_iter=1800, class_weight="balanced", early_stopping=False, random_state=42)),
+            ("model", LogisticRegression(max_iter=1800, class_weight="balanced", random_state=42)),
         ])
         self.classes_ = np.asarray([-1, 1], dtype=int)
 
