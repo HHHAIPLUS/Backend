@@ -36,7 +36,7 @@ from app.api.position_intelligence import router as position_intelligence_router
 from app.api.risk_capital import router as risk_capital_router
 from app.ml.model_persistence import hydrate_model, persist_brain
 from app.ml.predictive_brain import predictive_brain
-from app.ml.bootstrap import fetch_historical_klines
+from app.ml.bootstrap import fetch_historical_klines, fetch_bitget_klines, fetch_binance_klines, fetch_binance_archive_klines
 from app.ml.bootstrap import build_dataset, audit_historical_klines
 from ai.autonomous_trader import trader
 from ai.position_intelligence import install_stage6_position_intelligence
@@ -83,10 +83,18 @@ async def lifespan(app):
             combined_rows = []
             for symbol in symbols:
                 try:
-                    raw, provider = await asyncio.to_thread(fetch_historical_klines, symbol, interval, limit)
+                    training_provider = os.getenv("HHHAI_TRAINING_PROVIDER", os.getenv("HHHAI_EXECUTION_EXCHANGE", "binance")).strip().lower()
+                    fetchers = {
+                        "bitget": fetch_bitget_klines,
+                        "binance": fetch_binance_klines,
+                        "binance_archive": fetch_binance_archive_klines,
+                    }
+                    fetcher = fetchers.get(training_provider)
+                    if fetcher is None:
+                        raise RuntimeError(f"Unsupported HHHAI_TRAINING_PROVIDER={training_provider}")
+                    raw = await asyncio.to_thread(fetcher, symbol=symbol, interval=interval, limit=limit)
+                    provider = training_provider
                     log.warning("PREDICTIVE_BRAIN_DATA_PROVIDER symbol=%s interval=%s provider=%s candles=%s", symbol, interval, provider, len(raw))
-                    if provider != "bitget":
-                        raise RuntimeError(f"Production training requires Bitget USDT-futures history; received provider={provider}")
                     candle_audit = audit_historical_klines(raw, interval)
                     log.warning("PREDICTIVE_BRAIN_CANDLE_AUDIT symbol=%s audit=%s", symbol, candle_audit)
                     rows = build_dataset(raw, horizon=6, threshold=threshold, symbol=symbol, interval=interval, provider=provider)
