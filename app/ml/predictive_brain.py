@@ -468,6 +468,8 @@ def _metrics(y, pred, probs, classes, returns):
     equity = np.cumsum(net)
     peak = np.maximum.accumulate(np.r_[0.0, equity])
     dd = float(np.max(peak[1:] - equity)) if len(equity) else 0.0
+    pred_counts = np.bincount(pred + 1, minlength=3).astype(float)
+    prediction_class_fractions = (pred_counts / max(1, len(pred))).tolist()
     side = {}
     for label, name in ((-1, "short"), (1, "long")):
         mask = pred == label
@@ -482,6 +484,7 @@ def _metrics(y, pred, probs, classes, returns):
         "samples": int(len(y)),
         "trades": int(traded.sum()),
         "trade_rate": float(traded.mean()),
+        "prediction_class_fractions": prediction_class_fractions,
         "accuracy": float(accuracy_score(y, pred)),
         "balanced_accuracy": float(balanced_accuracy_score(y, pred)),
         "precision_macro": float(precision_score(y, pred, average="macro", zero_division=0)),
@@ -654,6 +657,11 @@ class PredictiveBrain:
             out = {key: float(np.mean([float(s[key]) for s in scores])) for key in numeric if key in scores[0]}
             out["samples"] = int(sum(int(s.get("samples", 0)) for s in scores))
             out["trades"] = int(sum(int(s.get("trades", 0)) for s in scores))
+            if all("prediction_class_fractions" in s for s in scores):
+                out["prediction_class_fractions"] = [
+                    float(np.mean([float(s["prediction_class_fractions"][i]) for s in scores]))
+                    for i in range(3)
+                ]
             out["total_net_return"] = float(sum(float(s.get("total_net_return", 0.0)) for s in scores))
             out["max_drawdown"] = float(max(float(s.get("max_drawdown", 0.0)) for s in scores))
             out["folds"] = scores
@@ -853,8 +861,11 @@ class PredictiveBrain:
             viable_validation = exp > 0.0 and int(score.get("trades", 0)) >= MIN_OOS_TRADES
             total = float(score.get("total_net_return", -1e99))
             dd = float(score.get("max_drawdown", 1e99))
+            predicted_fractions = score.get("prediction_class_fractions", [0.0, 0.0, 0.0])
+            directional_coverage_ok = min(float(v) for v in predicted_fractions) >= 0.02
             return (
-                1 if viable_validation else 0,
+                1 if viable_validation and directional_coverage_ok else 0,
+                1 if directional_coverage_ok else 0,
                 bal,
                 acc,
                 exp if viable_validation else -1e99,
@@ -931,7 +942,7 @@ class PredictiveBrain:
         selection_threshold = 0.30
         threshold_candidates = []
         regime_thresholds = (None, 0.0, 0.0005, 0.0010, 0.0020, 0.0040)
-        min_cal_trades = max(20, int(len(y_cal) * 0.01))
+        min_cal_trades = max(100, int(len(y_cal) * 0.05))
         for threshold in np.arange(0.30, 0.71, 0.02):
             selected_base = cal_pred.copy()
             if family in MODEL_FAMILIES:
