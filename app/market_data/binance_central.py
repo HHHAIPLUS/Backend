@@ -14,7 +14,7 @@ from app.ml.features import build_model_features
 log=logging.getLogger("hhhai.binance_central")
 MARKET_BASE="wss://fstream.binance.com/market"
 PUBLIC_BASE="wss://fstream.binance.com/public"
-MAX_CANDLES=30
+MAX_CANDLES=400
 STALE_SECONDS=15
 
 class _SymbolState:
@@ -40,7 +40,7 @@ class CentralBinanceMarketData:
             state.book_stop.clear(); state.book_thread=threading.Thread(target=cls._run_book,args=(state,),name=f"binance-book-{state.symbol}",daemon=True); state.book_thread.start()
     @classmethod
     def _run_market(cls,state):
-        streams="/".join([f"{state.symbol.lower()}@ticker",f"{state.symbol.lower()}@markPrice@1s",f"{state.symbol.lower()}@kline_5m"]); url=f"{MARKET_BASE}/stream?streams={streams}"; delay=2.0
+        streams="/".join([f"{state.symbol.lower()}@ticker",f"{state.symbol.lower()}@markPrice@1s",f"{state.symbol.lower()}@kline_1h"]); url=f"{MARKET_BASE}/stream?streams={streams}"; delay=2.0
         while not state.market_stop.is_set():
             try:
                 with websocket_connect(url,proxy=None,open_timeout=10,close_timeout=5,ping_interval=20,ping_timeout=60,max_size=2**20) as websocket:
@@ -162,7 +162,7 @@ class CentralBinanceMarketData:
     def model_features(cls,symbol:str)->dict[str,float]:
         state=cls._state(symbol)
         with state.lock: candles=list(state.candles); current=list(state.current_candle) if state.current_candle else None; price_change=state.price_change_24h
-        if len(candles)<3: raise RuntimeError(f"Waiting for Binance WebSocket 5m candle history for {symbol.upper()}: {len(candles)}/{MAX_CANDLES} closed candles cached")
+        if len(candles)<3: raise RuntimeError(f"Waiting for Binance WebSocket 1h candle history for {symbol.upper()}: {len(candles)}/{MAX_CANDLES} closed candles cached")
         rows=candles[-MAX_CANDLES:]
         # current_candle is the still-forming bar and must not enter prediction.
         features=build_model_features(rows); required=("return_1","range_pct","volume_change","volatility_proxy","trend_strength","momentum"); missing=[name for name in required if name not in features]
