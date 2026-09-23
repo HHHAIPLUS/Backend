@@ -974,7 +974,13 @@ class PredictiveBrain:
         selection_threshold = 0.30
         threshold_candidates = []
         regime_thresholds = (None, 0.0, 0.0005, 0.0010, 0.0020, 0.0040)
-        min_cal_trades = max(100, int(len(y_cal) * 0.05))
+        # Calibration coverage is a model-selection constraint, not an OOS
+        # promotion gate. Requiring 5% of the entire calibration window can
+        # reject otherwise valid selective models before their untouched OOS
+        # performance is even measured. Keep a small, stable floor here while
+        # the authoritative OOS gate remains >= MIN_OOS_TRADES.
+        min_cal_trades = max(50, int(len(y_cal) * 0.02))
+        min_cal_trade_rate = 0.005
         for threshold in np.arange(0.30, 0.71, 0.02):
             selected_base = cal_pred.copy()
             if family in MODEL_FAMILIES:
@@ -990,7 +996,7 @@ class PredictiveBrain:
                 traded = selected != 0
                 trade_count = int(traded.sum())
                 trade_rate = trade_count / max(1, len(selected))
-                if trade_count < min_cal_trades or trade_rate < 0.01:
+                if trade_count < min_cal_trades or trade_rate < min_cal_trade_rate:
                     continue
                 net = _net_returns(r_cal, selected)
                 equity = np.cumsum(net)
