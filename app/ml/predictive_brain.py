@@ -67,7 +67,14 @@ RETURN_FAMILIES = tuple(
     for threshold in RETURN_SIGNAL_THRESHOLDS
 )
 HORIZONS = (1, 3, 6, 12)
-LABEL_THRESHOLDS = (0.0010, 0.0015, 0.0020, 0.0025)
+_configured_label_threshold = os.getenv(
+    "HHHAI_PHASE2_FIXED_LABEL_THRESHOLD",
+    os.getenv("HHHAI_BRAIN_LABEL_THRESHOLD", ""),
+).strip()
+if _configured_label_threshold:
+    LABEL_THRESHOLDS = (float(_configured_label_threshold),)
+else:
+    LABEL_THRESHOLDS = (0.0010, 0.0015, 0.0020, 0.0025)
 LABEL_MODE = os.getenv("HHHAI_PHASE2_LABEL_MODE", "fixed").strip().lower()
 COST_RATE = 0.0014
 ARTIFACT_SCHEMA = 4
