@@ -611,7 +611,15 @@ def _slice(a, bounds):
 
 
 def _calibrate(model, x_cal, y_cal):
-    return CalibratedClassifierCV(FrozenEstimator(model), method="sigmoid").fit(x_cal, y_cal)
+    # Calibration is a separate pre-OOS stage. Balance the calibration
+    # objective so a flat-heavy target prior cannot turn a useful directional
+    # learner into an almost-always-flat predictor merely through probability
+    # recalibration. The calibration rows themselves remain strictly
+    # chronological and disjoint from train/validation/OOS.
+    weights = _balanced_weights(y_cal)
+    return CalibratedClassifierCV(FrozenEstimator(model), method="sigmoid").fit(
+        x_cal, y_cal, sample_weight=weights
+    )
 
 
 class PredictiveBrain:
