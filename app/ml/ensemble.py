@@ -103,17 +103,17 @@ class PredictiveEnsemble:
         # supported replacement for the removed cv="prefit" API in sklearn 1.9.
         split = int(len(train_rows) * 0.80)
         split = max(300, min(split, len(train_rows) - 100))
-        nonlinear = HistGradientBoostingClassifier(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42).fit(x[:split], y[:split])
+        nonlinear = HistGradientBoostingClassifier(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, l2_regularization=1.0, early_stopping=False, random_state=42).fit(x[:split], y[:split])
         calibration = FrozenEstimator(nonlinear)
         self.direction = CalibratedClassifierCV(calibration, method="sigmoid").fit(x[split:], y[split:])
 
-        self.return_model = HistGradientBoostingRegressor(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=42).fit(x, returns)
-        self.risk_model = HistGradientBoostingRegressor(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=43).fit(x, np.maximum(0.0, -returns))
-        self.vol_model = HistGradientBoostingRegressor(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, l2_regularization=1.0, random_state=44).fit(x, np.abs(returns))
+        self.return_model = HistGradientBoostingRegressor(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, l2_regularization=1.0, early_stopping=False, random_state=42).fit(x, returns)
+        self.risk_model = HistGradientBoostingRegressor(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, l2_regularization=1.0, early_stopping=False, random_state=43).fit(x, np.maximum(0.0, -returns))
+        self.vol_model = HistGradientBoostingRegressor(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, l2_regularization=1.0, early_stopping=False, random_state=44).fit(x, np.abs(returns))
         regime = np.asarray([1 if float(r["features"].get("trend_strength", 0.0) or 0.0) > 0.5 else 2 if abs(float(r["features"].get("volatility_proxy", 0.0) or 0.0)) > 0.05 else 0 for r in train_rows], dtype=int)
-        self.regime_model = HistGradientBoostingClassifier(max_iter=150, random_state=45).fit(x, regime)
+        self.regime_model = HistGradientBoostingClassifier(max_iter=150, early_stopping=False, random_state=45).fit(x, regime)
         cutoff = max(1e-8, float(np.quantile(np.abs(returns), 0.30)))
-        self.abstention_model = HistGradientBoostingClassifier(max_iter=150, random_state=46).fit(x, (np.abs(returns) <= cutoff).astype(int))
+        self.abstention_model = HistGradientBoostingClassifier(max_iter=150, early_stopping=False, random_state=46).fit(x, (np.abs(returns) <= cutoff).astype(int))
 
     def save(self, validation_metrics: dict[str, Any]) -> None:
         if self.baseline is None or self.direction is None:
