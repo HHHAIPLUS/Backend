@@ -13,6 +13,10 @@ def main() -> int:
     if report.get("status") != "PROMOTED":
         raise SystemExit("Refusing to mark Phase 2 complete: validation report is not PROMOTED.")
 
+    persistence = report.get("persistence", {})
+    if persistence.get("persisted") is not True or persistence.get("hydrated") is not True:
+        raise SystemExit("Refusing to mark Phase 2 complete: Supabase persistence and production hydration were not both verified.")
+
     metrics = report.get("metrics", {})
     gate = metrics.get("absolute_gate", {})
     required = {"enough_samples": True, "accuracy_ok": True, "balanced_accuracy_ok": True, "positive_trade_expectancy": True, "positive_total_net_return": True, "drawdown_ok": True}
