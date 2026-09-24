@@ -29,7 +29,7 @@ def test_all_project_modules_import():
 
 def test_model_feature_compatibility_contract():
     from app.ml.features import build_model_features
-    from app.ml.predictive import FEATURES
+    from app.ml.features import FEATURES
 
     features = build_model_features(
         [
