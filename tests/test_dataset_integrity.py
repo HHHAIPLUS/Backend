@@ -6,7 +6,7 @@ from app.ml.dataset_integrity import audit_dataset, require_production_ready
 
 
 def _row(ts: str, complete: bool = True) -> dict:
-    from app.ml.predictive import FEATURES
+    from app.ml.features import FEATURES
     features = {name: 0.1 for name in FEATURES}
     features.update({"return_1": 0.01, "range_pct": 0.02, "volume_change": 0.1, "volatility_proxy": 0.1, "trend_strength": 0.2, "momentum": 0.3})
     provenance = {key: complete for key in (
