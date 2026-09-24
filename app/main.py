@@ -34,10 +34,8 @@ from app.api.market_intelligence import router as market_intelligence_router
 from app.api.stage5 import router as stage5_router
 from app.api.position_intelligence import router as position_intelligence_router
 from app.api.risk_capital import router as risk_capital_router
-from app.ml.model_persistence import hydrate_model, persist_brain
+from app.ml.model_persistence import hydrate_model
 from app.ml.predictive_brain import predictive_brain
-from app.ml.bootstrap import fetch_historical_klines, fetch_bitget_klines, fetch_binance_klines, fetch_binance_archive_klines
-from app.ml.bootstrap import build_dataset, audit_historical_klines
 from ai.autonomous_trader import trader
 from ai.position_intelligence import install_stage6_position_intelligence
 from ai.stage6_hydration import install_stage6_hydration
@@ -66,58 +64,6 @@ install_multi_coin_selection(trader)
 @asynccontextmanager
 async def lifespan(app):
     await hydrate_model()
-    async def bootstrap_predictive_brain():
-        try:
-            auto_bootstrap = os.getenv("HHHAI_AUTO_BOOTSTRAP_BRAIN", "false").lower() == "true"
-            force_bootstrap = os.getenv("HHHAI_FORCE_BOOTSTRAP_BRAIN", "false").lower() == "true"
-            log.warning("PREDICTIVE_BRAIN_BOOTSTRAP_CONFIG auto=%s force=%s existing_bundle=%s", auto_bootstrap, force_bootstrap, predictive_brain.bundle is not None)
-            if not auto_bootstrap or (predictive_brain.bundle is not None and not force_bootstrap):
-                return
-            symbols = [x.strip().upper() for x in os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOLS", os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOL", "BTCUSDT,ETHUSDT")).split(",") if x.strip()]
-            # Allow the configured verified-history window to exceed 10k candles.
-            # Phase 2 benefits from a materially larger chronological training
-            # sample while keeping the value bounded for predictable startup cost.
-            limit = max(5000, min(30000, int(os.getenv("HHHAI_BRAIN_BOOTSTRAP_CANDLES", "10000"))))
-            interval = os.getenv("HHHAI_BRAIN_BOOTSTRAP_INTERVAL", "1h").strip()
-            threshold = float(os.getenv("HHHAI_BRAIN_LABEL_THRESHOLD", "0.0015"))
-            combined_rows = []
-            for symbol in symbols:
-                try:
-                    training_provider = os.getenv("HHHAI_TRAINING_PROVIDER", os.getenv("HHHAI_EXECUTION_EXCHANGE", "binance")).strip().lower()
-                    fetchers = {
-                        "bitget": fetch_bitget_klines,
-                        "binance": fetch_binance_klines,
-                        "binance_archive": fetch_binance_archive_klines,
-                    }
-                    fetcher = fetchers.get(training_provider)
-                    if fetcher is None:
-                        raise RuntimeError(f"Unsupported HHHAI_TRAINING_PROVIDER={training_provider}")
-                    raw = await asyncio.to_thread(fetcher, symbol=symbol, interval=interval, limit=limit)
-                    provider = training_provider
-                    log.warning("PREDICTIVE_BRAIN_DATA_PROVIDER symbol=%s interval=%s provider=%s candles=%s", symbol, interval, provider, len(raw))
-                    candle_audit = audit_historical_klines(raw, interval)
-                    log.warning("PREDICTIVE_BRAIN_CANDLE_AUDIT symbol=%s audit=%s", symbol, candle_audit)
-                    rows = build_dataset(raw, horizon=6, threshold=threshold, symbol=symbol, interval=interval, provider=provider)
-                    for row in rows:
-                        row["symbol"] = symbol
-                    combined_rows.extend(rows)
-                except Exception as symbol_exc:
-                    log.warning("PREDICTIVE_BRAIN_SYMBOL_FAILED symbol=%s interval=%s error=%s", symbol, interval, symbol_exc)
-            if combined_rows:
-                combined_rows.sort(key=lambda r: (str(r.get("observed_at","")), str(r.get("symbol",""))))
-                log.warning("PREDICTIVE_BRAIN_DATASET rows=%s symbols=%s interval=%s", len(combined_rows), sorted({r.get("symbol") for r in combined_rows}), interval)
-                report = await asyncio.to_thread(predictive_brain.train, combined_rows, f"brain-multi-{interval}")
-                log.warning("PREDICTIVE_BRAIN_BOOTSTRAP status=%s version=%s reason=%s metrics=%s", report.status, report.version, report.reason, report.metrics)
-                if report.status == "PROMOTED":
-                    try:
-                        await persist_brain(report.metrics)
-                        log.warning("PREDICTIVE_BRAIN_PERSISTED version=%s", predictive_brain.version)
-                    except Exception as persist_exc:
-                        log.error("PREDICTIVE_BRAIN_PERSIST_FAILED error=%s", persist_exc)
-        except Exception as exc:
-            log.exception("PREDICTIVE_BRAIN_BOOTSTRAP_FAILED %s", exc)
-
-    brain_task = asyncio.create_task(bootstrap_predictive_brain())
     phase2_task = None
     await hydrate_learning()
     await hydrate_adaptive()
@@ -166,12 +112,6 @@ async def lifespan(app):
         if trader.running:
             await trader.stop()
         binance_user_stream.stop()
-        if brain_task is not None and not brain_task.done():
-            brain_task.cancel()
-            try:
-                await brain_task
-            except asyncio.CancelledError:
-                pass
 
 app = FastAPI(title=settings.app_name, version='1.0.0', description='HHHAI backend — cumulative Stage 8', lifespan=lifespan)
 allowed_origins = [x.strip() for x in (os.getenv('HHHAI_CORS_ORIGINS') or settings.cors_origins).split(',') if x.strip()]
