@@ -142,9 +142,10 @@ def build_model_features(candles: Iterable[Any] | None = None, context: Any | No
     mean_return_72 = sum(recent_returns_72)/max(1,len(recent_returns_72))
     variance_72 = sum((r-mean_return_72)**2 for r in recent_returns_72)/max(1,len(recent_returns_72)-1)
     volatility_72 = math.sqrt(max(0.0, variance_72))
-    momentum_raw = 0.35*ret(6) + 0.25*ret(12) + 0.20*ret(24) + 0.12*ret(48) + 0.08*ret(72)
+    momentum_raw = 0.30*ret(6) + 0.22*ret(12) + 0.20*ret(24) + 0.14*ret(48) + 0.09*ret(72) + 0.05*ret(96)
     momentum_scale = max(volatility_72, 1e-5)
     momentum = max(-1.0, min(1.0, momentum_raw / (momentum_scale * 8.0)))
+    momentum_acceleration = max(-1.0, min(1.0, (ret(6) - ret(24) / 4.0) / max(momentum_scale * 4.0, 1e-5)))
 
     trend_window=closes[-24:]
     trend_strength=0.0
@@ -161,6 +162,7 @@ def build_model_features(candles: Iterable[Any] | None = None, context: Any | No
         num72=sum((i-xm72)*(math.log(v)-ym72) for i,v in enumerate(trend_window_72)); den72=sum((i-xm72)**2 for i in range(len(trend_window_72)))
         slope72=num72/den72 if den72 else 0.0
         trend_strength_72=max(-1.0,min(1.0,slope72/max(volatility_72,1e-6)*4.0))
+    trend_alignment = max(-1.0, min(1.0, 0.55*trend_strength_72 + 0.30*trend_strength + 0.15*(1.0 if ema_gap_8_24 > 0 else -1.0 if ema_gap_8_24 < 0 else 0.0)))
     body_pct=((last_close-_value(rows[-1],"open"))/last_close) if rows and last_close>0 else 0.0
     upper_wick_pct=((highs[-1]-max(last_close,_value(rows[-1],"open")))/last_close) if rows and last_close>0 else 0.0
     lower_wick_pct=((min(last_close,_value(rows[-1],"open"))-lows[-1])/last_close) if rows and last_close>0 else 0.0
@@ -177,8 +179,20 @@ def build_model_features(candles: Iterable[Any] | None = None, context: Any | No
         if name in historical: return _value(historical,name,default)
         return _value(market,name,default)
 
+    vol24=max(volatility,1e-6)
+    vol72=max(volatility_72,1e-6)
+    hi24,lo24=max(closes[-24:]),min(closes[-24:]) if closes else (0.0,0.0)
+    hi72,lo72=max(closes[-72:]),min(closes[-72:]) if closes else (0.0,0.0)
+    range_position_24=max(-1.0,min(1.0,2.0*(last_close-lo24)/max(hi24-lo24,1e-9)-1.0)) if closes else 0.0
+    range_position_72=max(-1.0,min(1.0,2.0*(last_close-lo72)/max(hi72-lo72,1e-9)-1.0)) if closes else 0.0
+    volatility_ratio_24_72=max(0.05,min(20.0,vol24/vol72))
+    candle_pressure=max(-1.0,min(1.0,close_location*(1.0+0.25*volume_zscore)))
+    volume_price_pressure=max(-1.0,min(1.0,momentum*math.tanh(volume_zscore_72/3.0)))
     features = {
-        "return_1": one, "return_3": ret(3), "return_6": ret(6), "return_12": ret(12), "return_24": ret(24), "return_48": ret(48), "return_72": ret(72), "return_168": ret(168),
+        "return_1": one, "return_2": ret(2), "return_3": ret(3), "return_6": ret(6), "return_8": ret(8), "return_12": ret(12), "return_16": ret(16), "return_24": ret(24), "return_32": ret(32), "return_48": ret(48), "return_72": ret(72), "return_96": ret(96), "return_168": ret(168),
+        "return_6_vol_adj": max(-5.0,min(5.0,ret(6)/max(vol72*math.sqrt(6.0),1e-5))), "return_12_vol_adj": max(-5.0,min(5.0,ret(12)/max(vol72*math.sqrt(12.0),1e-5))),
+        "return_24_vol_adj": max(-5.0,min(5.0,ret(24)/max(vol72*math.sqrt(24.0),1e-5))), "return_48_vol_adj": max(-5.0,min(5.0,ret(48)/max(vol72*math.sqrt(48.0),1e-5))),
+        "return_72_vol_adj": max(-5.0,min(5.0,ret(72)/max(vol72*math.sqrt(72.0),1e-5))),
         "range_pct": range_pct, "range_mean_12": range_mean_12, "range_mean_24": range_mean_24, "close_location": close_location,
         "atr_pct_14": atr_pct_14, "atr_pct_28": atr_pct_28, "volume_change": max(-5.0,min(5.0,volume_change)),
         "volume_zscore": max(-5.0,min(5.0,volume_zscore)), "volume_zscore_72": max(-5.0,min(5.0,volume_zscore_72)), "rsi_14": rsi_14, "rsi_28": rsi_28,
@@ -190,7 +204,9 @@ def build_model_features(candles: Iterable[Any] | None = None, context: Any | No
         "news_risk": _value(context,"news_risk",context_or_live("news_risk")),
         "news_sentiment": _value(context,"news_sentiment",context_or_live("news_sentiment")),
         "volatility_proxy": min(1.0,max(0.0,volatility*12.0)), "trend_strength": trend_strength,
-        "momentum": momentum, "trend_strength_72": trend_strength_72, "liquidity_stress": context_or_live("liquidity_stress"),
+        "momentum": momentum, "momentum_acceleration": momentum_acceleration, "trend_strength_72": trend_strength_72, "trend_alignment": trend_alignment,
+        "range_position_24": range_position_24, "range_position_72": range_position_72, "volatility_ratio_24_72": volatility_ratio_24_72,
+        "candle_pressure": candle_pressure, "volume_price_pressure": volume_price_pressure, "liquidity_stress": context_or_live("liquidity_stress"),
     }
     # Return the full canonical market feature state. PredictiveModel/Ensemble select
     # their explicit FEATURES subset, while decision layers can still consume
