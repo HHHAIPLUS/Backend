@@ -83,6 +83,7 @@ ARTIFACT_SCHEMA = 4
 MAX_LABEL_HORIZON = max(HORIZONS)
 FIXED_HORIZON = int(os.getenv("HHHAI_PHASE2_FIXED_HORIZON", "0") or "0")
 MIN_OOS_TRADES = 100
+SIDE_SIGNAL_FLOOR = float(os.getenv("HHHAI_PHASE2_SIDE_SIGNAL_FLOOR", "0.35"))
 EXECUTION_PROFILES = ("confidence", "trend", "volatility", "momentum", "long_only")
 
 
@@ -158,7 +159,7 @@ class SideOnlyXGBClassifier(ClassifierMixin, BaseEstimator):
     def predict(self, x):
         p = self.predict_proba(x)[:, 2 if self.side == 1 else 0]
         # Lower entry boundary is fixed at 0.35; calibration still controls confidence/abstention.
-        return np.where(p >= 0.35, self.side, 0).astype(int)
+        return np.where(p >= SIDE_SIGNAL_FLOOR, self.side, 0).astype(int)
 
 
 class BinaryXGBSelectiveClassifier(ClassifierMixin, BaseEstimator):
@@ -675,14 +676,12 @@ def _slice(a, bounds):
 
 
 def _calibrate(model, x_cal, y_cal):
-    # Calibration is a separate pre-OOS stage. Balance the calibration
-    # objective so a flat-heavy target prior cannot turn a useful directional
-    # learner into an almost-always-flat predictor merely through probability
-    # recalibration. The calibration rows themselves remain strictly
-    # chronological and disjoint from train/validation/OOS.
-    weights = _balanced_weights(y_cal)
+    # Calibration is a separate pre-OOS stage. Preserve the natural
+    # chronological calibration distribution. With FrozenEstimator,
+    # scikit-learn warns that sample weights are applied only to calibration
+    # and can make the result incorrect. Class balance belongs in training.
     return CalibratedClassifierCV(FrozenEstimator(model), method="sigmoid").fit(
-        x_cal, y_cal, sample_weight=weights
+        x_cal, y_cal
     )
 
 
@@ -880,6 +879,16 @@ class PredictiveBrain:
         r_val = _slice(returns, va)
         r_cal = _slice(returns, ca)
         r_oos = _slice(returns, oo)
+
+        label_distribution = {}
+        for name, part in (("train", y_train), ("validation", y_val), ("calibration", y_cal), ("oos", y_oos)):
+            counts = np.bincount(np.asarray(part, dtype=int) + 1, minlength=3).astype(int)
+            label_distribution[name] = {
+                "short": int(counts[0]),
+                "flat": int(counts[1]),
+                "long": int(counts[2]),
+                "fractions": (counts / max(1, len(part))).tolist(),
+            }
 
         if any(len(set(part.tolist())) < 3 for part in (y_train, y_val, y_cal, y_oos)):
             return BrainReport("REJECTED", version, {"chosen_horizon": chosen_horizon, "chosen_threshold": chosen_threshold},
@@ -1252,6 +1261,8 @@ class PredictiveBrain:
             "cost_rate": COST_RATE,
             "label_mode": LABEL_MODE,
             "label_bounds": final_label_bounds,
+            "label_distribution": label_distribution,
+            "side_signal_floor": SIDE_SIGNAL_FLOOR,
         }
         if not all(absolute_gate.values()):
             return BrainReport("REJECTED", version, metrics,
@@ -1280,6 +1291,8 @@ class PredictiveBrain:
             "cost_rate": COST_RATE,
             "label_mode": LABEL_MODE,
             "label_bounds": final_label_bounds,
+            "label_distribution": label_distribution,
+            "side_signal_floor": SIDE_SIGNAL_FLOOR,
             "horizons": HORIZONS,
             "chosen_horizon": chosen_horizon,
             "label_threshold": chosen_threshold,
