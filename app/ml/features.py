@@ -181,8 +181,8 @@ def build_model_features(candles: Iterable[Any] | None = None, context: Any | No
 
     vol24=max(volatility,1e-6)
     vol72=max(volatility_72,1e-6)
-    hi24,lo24=max(closes[-24:]),min(closes[-24:]) if closes else (0.0,0.0)
-    hi72,lo72=max(closes[-72:]),min(closes[-72:]) if closes else (0.0,0.0)
+    hi24,lo24=(max(closes[-24:]),min(closes[-24:])) if closes else (0.0,0.0)
+    hi72,lo72=(max(closes[-72:]),min(closes[-72:])) if closes else (0.0,0.0)
     range_position_24=max(-1.0,min(1.0,2.0*(last_close-lo24)/max(hi24-lo24,1e-9)-1.0)) if closes else 0.0
     range_position_72=max(-1.0,min(1.0,2.0*(last_close-lo72)/max(hi72-lo72,1e-9)-1.0)) if closes else 0.0
     volatility_ratio_24_72=max(0.05,min(20.0,vol24/vol72))
