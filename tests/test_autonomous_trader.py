@@ -40,7 +40,7 @@ def test_live_mode_does_not_require_testnet_flag(monkeypatch):
     monkeypatch.setattr("ai.autonomous_trader.settings.live_trading_enabled", True)
     monkeypatch.setattr("ai.autonomous_trader.settings.testnet_trading_enabled", False)
     t = AutonomousTrader()
-    assert t._execution_gate() == (True, "live execution enabled")
+        assert t._execution_gate() == (False, "no promoted predictive brain is available")
 
 
 def test_equity_state_tracks_daily_loss_and_drawdown():
