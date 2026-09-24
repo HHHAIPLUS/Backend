@@ -36,6 +36,7 @@ async def persist_brain(metrics: dict | None = None):
                 "data": encoded,
                 "sha256": artifact_sha256,
                 "schema_version": manifest.get("schema_version"),
+                "version": version,
             },
             "metrics": metrics or manifest.get("metrics") or {},
         },
@@ -68,7 +69,7 @@ async def persist_brain(metrics: dict | None = None):
     stored_bundle = joblib.load(io.BytesIO(stored_data))
     if stored_bundle.get("schema_version") != manifest.get("schema_version"):
         return False
-    if stored_bundle.get("version") != version:
+    if stored.get("version") != version:
         return False
     if stored_bundle.get("promotion", {}).get("promoted") is not True:
         return False
@@ -111,8 +112,7 @@ async def hydrate_model():
             return False
 
         row_version = str(row.get("version") or "")
-        bundle_version = str(bundle.get("version") or "")
-        if not row_version or row_version != bundle_version:
+        if not row_version or stored.get("version") != row_version:
             return False
 
         predictive_brain.bundle = bundle
