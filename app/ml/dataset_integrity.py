@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 import math
 from typing import Any, Iterable, Sequence
 
-from app.ml.predictive import FEATURES
+from app.ml.features import FEATURES
 
 CONTEXT_FEATURES = {
     "order_book_imbalance",
