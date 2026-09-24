@@ -1,3 +1,4 @@
+# Trigger authoritative verification for latest main commit
 # Single authoritative Phase 2 workflow
 name: Phase 2 authoritative OOS
 
