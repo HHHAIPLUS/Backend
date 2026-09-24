@@ -6,7 +6,7 @@ import pytest
 
 from app.ml.features import build_model_features
 from app.ml.validation import evaluate_predictions, validate_observations, walk_forward
-from app.ml.predictive import FEATURES
+from app.ml.features import FEATURES
 
 
 def _candles(count: int = 60) -> list[list[float]]:
