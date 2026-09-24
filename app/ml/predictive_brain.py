@@ -973,6 +973,14 @@ class PredictiveBrain:
                 if score.get("status") != "UNAVAILABLE":
                     candidates.append((score["avg_trade_net_return"], score["balanced_accuracy"], family, False, train_window))
 
+        # Return regressors remain useful diagnostics, but they must not be
+        # eligible to become the Phase 2 directional brain. Their current
+        # probability vectors are synthetic (0.90/0.05/0.05), so treating them
+        # as calibrated three-class classifiers can manufacture misleading
+        # confidence and allow a low-trade regression to win model selection.
+        # Phase 2 requires genuine directional classification evidence.
+        candidates = [candidate for candidate in candidates if candidate[2] in MODEL_FAMILIES]
+
         if not candidates:
             return BrainReport("REJECTED", version, {"validation_families": validation_scores},
                                "No valid model family was evaluated.")
@@ -987,32 +995,31 @@ class PredictiveBrain:
             bal = float(score.get("balanced_accuracy", -1e99))
             acc = float(score.get("accuracy", -1e99))
             exp = float(score.get("avg_trade_net_return", -1e99))
-            viable_validation = exp > 0.0 and int(score.get("trades", 0)) >= MIN_OOS_TRADES
             total = float(score.get("total_net_return", -1e99))
             dd = float(score.get("max_drawdown", 1e99))
             predicted_fractions = score.get("prediction_class_fractions", [0.0, 0.0, 0.0])
             directional_coverage_ok = float(predicted_fractions[0]) >= 0.02 and float(predicted_fractions[2]) >= 0.02
+            classification_ok = bal >= 0.50 and acc >= 0.52
+            economic_ok = exp > 0.0 and total > 0.0 and dd <= 0.15
             return (
-                1 if viable_validation and directional_coverage_ok else 0,
+                1 if classification_ok else 0,
+                1 if economic_ok else 0,
                 1 if directional_coverage_ok else 0,
-                # Among validation-viable models, prioritize realized economic
-                # quality before small classification-score differences. This
-                # prevents a slightly higher balanced-accuracy model on a
-                # shorter window from displacing a materially better-performing
-                # full-history model and then collapsing after the final refit.
-                total if viable_validation else -1e99,
-                exp if viable_validation else -1e99,
                 bal,
                 acc,
-                -dd if viable_validation else -1e99,
+                exp,
+                total,
+                -dd,
+                float(score.get("trade_rate", 0.0)),
                 -window,
-                float(c[0]),
-                float(c[1]),
             )
 
         fixed_family = os.getenv("HHHAI_PHASE2_FIXED_MODEL_FAMILY", "").strip()
         fixed_window = int(os.getenv("HHHAI_PHASE2_FIXED_TRAIN_WINDOW", "0") or "0")
         if fixed_family:
+            if fixed_family not in MODEL_FAMILIES:
+                return BrainReport("REJECTED", version, {"validation_families": validation_scores},
+                                   "Phase 2 fixed model family must be a genuine directional classifier.")
             fixed = [candidate for candidate in candidates if candidate[2] == fixed_family and candidate[4] == fixed_window]
             if not fixed:
                 return BrainReport("REJECTED", version, {"validation_families": validation_scores},
