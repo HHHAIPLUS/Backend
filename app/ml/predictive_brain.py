@@ -1034,7 +1034,7 @@ class PredictiveBrain:
         if family in MODEL_FAMILIES:
             raw_direction = _classifier(family)
             fit_mask = _training_filter_mask(_slice(returns, fit_bounds), float(chosen_threshold))
-            if fit_mask.sum() >= 300 and len(set(y_fit[fit_mask].tolist())) == 3:
+            if fit_mask.sum() >= 300 and len(set(y_fit[fit_mask].tolist())) == 3 and family != "return_weighted_xgboost":
                 x_fit_direction = x_fit[fit_mask]
                 y_fit_direction = y_fit[fit_mask]
             else:
