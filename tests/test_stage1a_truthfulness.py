@@ -99,8 +99,7 @@ def test_empty_feature_contract_is_explicit() -> None:
     features = build_model_features([])
     assert len(features) == len(FEATURES) + 6
     assert all(value == value and abs(value) != float("inf") for value in features.values())
-    assert all(features[name] == 0.0 for name in FEATURES)
-    assert features["volatility_ratio_24_72"] == 1.0
+    assert all(features[name] == (1.0 if name == "volatility_ratio_24_72" else 0.0) for name in FEATURES)
 
 
 @pytest.mark.parametrize("bad_rows", [None, []])
