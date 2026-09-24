@@ -42,6 +42,7 @@ MODEL_FAMILIES = (
     "xgboost",
     "xgboost_directional_weighted",
     "blended_directional",
+    "return_weighted_xgboost",
     "logistic_regression_unweighted",
     "logistic_regression_directional",
     "extra_trees",
@@ -249,6 +250,35 @@ class DirectionalWeightedXGBClassifier(ClassifierMixin, BaseEstimator):
         return np.asarray(self.model_.predict_proba(x), dtype=float)
 
 
+class ReturnWeightedXGBClassifier(ClassifierMixin, BaseEstimator):
+    """XGBoost direction learner that emphasizes economically meaningful moves."""
+    def __init__(self):
+        self.model_ = XGBClassifier(
+            n_estimators=420, max_depth=3, learning_rate=0.025,
+            subsample=0.82, colsample_bytree=0.82, min_child_weight=8,
+            reg_alpha=0.15, reg_lambda=4.0, objective="multi:softprob",
+            num_class=3, eval_metric="mlogloss", tree_method="hist",
+            n_jobs=1, random_state=47,
+        )
+        self.classes_ = np.asarray([-1, 0, 1], dtype=int)
+
+    def fit(self, x, y, sample_weight=None):
+        mapping = {-1: 0, 0: 1, 1: 2}
+        y_arr = np.asarray(y, dtype=int)
+        encoded = np.asarray([mapping[int(v)] for v in y_arr], dtype=int)
+        base = _balanced_weights(y_arr)
+        weights = base if sample_weight is None else base * np.asarray(sample_weight, dtype=float)
+        self.model_.fit(x, encoded, sample_weight=weights)
+        return self
+
+    def predict(self, x):
+        encoded = np.asarray(self.model_.predict(x), dtype=int)
+        return self.classes_[encoded]
+
+    def predict_proba(self, x):
+        return np.asarray(self.model_.predict_proba(x), dtype=float)
+
+
 class XGBDirectionalClassifier(ClassifierMixin, BaseEstimator):
     """XGBoost wrapper that preserves the {-1, 0, 1} public class contract."""
     def __init__(self):
@@ -310,6 +340,13 @@ def _x(rows):
 
 TARGET_RETURN_FIELD = os.getenv("HHHAI_PHASE2_TARGET_RETURN", "close")
 TRAIN_FILTER_MULTIPLIER = max(1.0, float(os.getenv("HHHAI_PHASE2_TRAIN_FILTER_MULTIPLIER", "1.0")))
+
+def _economic_sample_weights(returns, threshold):
+    """Emphasize larger moves while capping outlier influence."""
+    r = np.abs(np.asarray(returns, dtype=float))
+    scale = max(float(threshold), 1e-6)
+    return np.sqrt(np.clip(r / scale, 0.5, 4.0))
+
 
 def _training_filter_mask(returns, threshold):
     """Keep sufficiently large training outcomes for filtered-label learning."""
@@ -376,6 +413,8 @@ def _classifier(family):
         return DirectionalWeightedXGBClassifier()
     if family == "blended_directional":
         return BlendedDirectionalClassifier()
+    if family == "return_weighted_xgboost":
+        return ReturnWeightedXGBClassifier()
     if family == "logistic_regression":
         return Pipeline([
             ("scale", StandardScaler()),
@@ -746,11 +785,31 @@ class PredictiveBrain:
                     y_val_fold = _direction_target(val_returns, threshold, label_bounds)
                     if len(set(y_train_fold.tolist())) < 3 or len(set(y_val_fold.tolist())) < 3:
                         continue
-                    model = _classifier("logistic_regression")
-                    model.fit(_slice(x, train_bounds), y_train_fold)
-                    pred = model.predict(_slice(x, val_bounds))
-                    probs = model.predict_proba(_slice(x, val_bounds))
-                    fold_scores.append(_metrics(y_val_fold, pred, probs, model.classes_, val_returns))
+                    horizon_models = (
+                        _classifier("logistic_regression"),
+                        _classifier("return_weighted_xgboost"),
+                    )
+                    horizon_fold_candidates = []
+                    for model in horizon_models:
+                        if isinstance(model, ReturnWeightedXGBClassifier):
+                            model.fit(
+                                _slice(x, train_bounds),
+                                y_train_fold,
+                                sample_weight=_economic_sample_weights(train_returns, float(threshold)),
+                            )
+                        else:
+                            model.fit(_slice(x, train_bounds), y_train_fold)
+                        pred = model.predict(_slice(x, val_bounds))
+                        probs = model.predict_proba(_slice(x, val_bounds))
+                        horizon_fold_candidates.append(_metrics(y_val_fold, pred, probs, model.classes_, val_returns))
+                    fold_scores.append(max(
+                        horizon_fold_candidates,
+                        key=lambda z: (
+                            float(z.get("balanced_accuracy", -1e9)),
+                            float(z.get("avg_trade_net_return", -1e9)),
+                            float(z.get("accuracy", -1e9)),
+                        ),
+                    ))
                 if fold_scores:
                     # Reject validation targets that are dominated by one class.
                     # This prevents a high overall accuracy from coming mainly
@@ -849,7 +908,7 @@ class PredictiveBrain:
                     x_train_fold = _slice(x, train_bounds)
                     r_train_fold = _slice(returns, train_bounds)
                     filter_mask = _training_filter_mask(r_train_fold, float(chosen_threshold))
-                    if filter_mask.sum() >= 300 and len(set(y_train_fold[filter_mask].tolist())) == 3:
+                    if filter_mask.sum() >= 300 and len(set(y_train_fold[filter_mask].tolist())) == 3 and family != "return_weighted_xgboost":
                         x_train_fold = x_train_fold[filter_mask]
                         y_train_fold = y_train_fold[filter_mask]
                     if family == "binary_logistic_selective":
