@@ -1005,7 +1005,7 @@ class PredictiveBrain:
             # calibration set only to choose a confidence/abstention threshold.
             raw_reg = _regressor(family)
             # Regression candidates predict the actual future return target.
-            raw_reg.fit(x_fit, _slice(returns, (0, fit_end)))
+            raw_reg.fit(x_fit, _slice(returns, fit_bounds))
             direction = raw_reg
             baseline_raw = _classifier("logistic_regression")
             baseline_raw.fit(x_fit, y_fit)
