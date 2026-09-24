@@ -15,7 +15,9 @@ PHASE2_PROVIDER = os.getenv("HHHAI_PHASE2_PROVIDER", "bitget").strip().lower()
 PHASE2_SYMBOL = os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOLS", "BTCUSDT").split(",")[0].strip().upper()
 PHASE2_INTERVAL = os.getenv("HHHAI_PHASE2_INTERVAL", os.getenv("HHHAI_BRAIN_BOOTSTRAP_INTERVAL", "1h")).strip()
 PHASE2_CANDLES = max(5000, min(30000, int(os.getenv("HHHAI_PHASE2_CANDLES", os.getenv("HHHAI_BRAIN_BOOTSTRAP_CANDLES", "10000")))))
-PHASE2_HORIZON = int(os.getenv("HHHAI_PHASE2_HORIZON", os.getenv("HHHAI_PHASE2_FIXED_HORIZON", "6") or "6"))
+PHASE2_HORIZON = int(os.getenv("HHHAI_PHASE2_HORIZON", os.getenv("HHHAI_PHASE2_FIXED_HORIZON", "1") or "1"))
+if PHASE2_HORIZON <= 0:
+    PHASE2_HORIZON = 1
 PHASE2_THRESHOLD = float(
     os.getenv("HHHAI_PHASE2_FIXED_LABEL_THRESHOLD", "").strip()
     or os.getenv("HHHAI_BRAIN_LABEL_THRESHOLD", "0.0015")
