@@ -29,7 +29,7 @@ from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier, XGBRegressor
 from sklearn.preprocessing import StandardScaler
 
-from app.ml.predictive import FEATURES
+from app.ml.features import FEATURES
 from app.ml.model_validation import promotion_gate
 
 MODEL_FAMILIES = (
