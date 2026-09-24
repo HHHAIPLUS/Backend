@@ -88,7 +88,7 @@ async def hydrate_model(expected_version: str | None = None):
             {
                 "select": "*",
                 "name": "eq.predictive_brain",
-                "version": f"eq.{expected_version}",
+                **({"version": f"eq.{expected_version}"} if expected_version else {"order": "created_at.desc"}),
                 "limit": "1",
             },
         )
@@ -112,7 +112,9 @@ async def hydrate_model(expected_version: str | None = None):
             return False
 
         row_version = str(row.get("version") or "")
-        if not row_version or stored.get("version") != row_version:
+        if not row_version or artifact.get("version") != row_version:
+            return False
+        if expected_version and row_version != str(expected_version):
             return False
 
         predictive_brain.bundle = bundle
