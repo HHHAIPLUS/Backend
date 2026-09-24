@@ -1,13 +1,6 @@
 name: Phase 3 Robustness Implementation Gate
 
 on:
-  push:
-    paths:
-      - "ai/stress_harness.py"
-      - "app/ml/phase3_robustness.py"
-      - "tests/test_stress_harness.py"
-      - "tests/test_phase3_robustness.py"
-      - ".github/workflows/phase3-robustness.yml"
   workflow_dispatch:
 
 permissions:
