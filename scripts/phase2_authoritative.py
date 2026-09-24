@@ -30,7 +30,7 @@ def main() -> int:
             report.status = "REJECTED"
             report.reason = "OOS gates passed, but the promoted artifact could not be persisted to Supabase."
         else:
-            hydrated = asyncio.run(hydrate_model())
+            hydrated = asyncio.run(hydrate_model(report.version))
             persistence["hydrated"] = bool(hydrated)
             if not hydrated:
                 report.status = "REJECTED"
