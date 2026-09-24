@@ -13,7 +13,7 @@ from app.market_data.binance_central import CentralBinanceMarketData
 from app.market_data.binance_user_stream import binance_user_stream
 from app.market_data.realtime import build_world_intelligence
 from app.ml.adaptive_intelligence import adaptive_intelligence
-from app.ml.predictive import predictive_model
+from app.ml.predictive_brain import predictive_brain
 
 
 @dataclass
@@ -273,7 +273,7 @@ def install_stage6_position_intelligence(trader: Any) -> None:
                     "news_sentiment": float(world_dict.get("news_sentiment") or 0),
                     "liquidity_stress": float(world_dict.get("liquidity_stress") or 0),
                 }
-                pred = predictive_model.predict(predictive_input)
+                pred = predictive_brain.predict(predictive_input)
                 try:
                     stage5 = Stage5DecisionEngine(adaptive_intelligence).evaluate(
                         market_state=world_dict,
