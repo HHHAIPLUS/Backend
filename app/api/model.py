@@ -29,15 +29,15 @@ def status():
     # independently gated capability and is disabled by default.
     brain_manifest = brain.manifest()
     return {
-        "version": brain.version if brain.bundle is not None else predictive_model.version,
-        "trained": brain.bundle is not None or predictive_model.model is not None,
+        "version": brain.version if brain.bundle is not None else "untrained",
+        "trained": brain.bundle is not None,
         "brain_ready": brain.bundle is not None,
-        "model_ready": predictive_model.model is not None,
+        "model_ready": brain.bundle is not None,
         "execution_gate": False,
         "live_trading_enabled": bool(settings.live_trading_enabled),
         "testnet_trading_enabled": bool(settings.testnet_trading_enabled),
         "autotrading_enabled": bool(settings.hhhai_autotrading_enabled),
-        "artifact": str(brain.artifact_path if brain.bundle is not None else predictive_model.model_path),
+        "artifact": str(brain.artifact_path),
         "brain_manifest": brain_manifest,
     }
 
