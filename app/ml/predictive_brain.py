@@ -41,6 +41,7 @@ MODEL_FAMILIES = (
     "short_only_xgboost",
     "xgboost",
     "xgboost_directional_weighted",
+    "blended_directional",
     "logistic_regression_unweighted",
     "logistic_regression_directional",
     "extra_trees",
@@ -102,6 +103,21 @@ class BinaryDirectionalClassifier(ClassifierMixin, BaseEstimator):
 
     def predict_proba(self, x):
         return np.asarray(self.model_.predict_proba(x), dtype=float)
+
+class BlendedDirectionalClassifier(ClassifierMixin, BaseEstimator):
+    def __init__(self):
+        self.lr_=Pipeline([('scale',StandardScaler()),('model',LogisticRegression(max_iter=2200,class_weight='balanced',C=0.7,random_state=42))])
+        self.xgb_=XGBClassifier(n_estimators=420,max_depth=3,learning_rate=0.025,subsample=0.82,colsample_bytree=0.82,min_child_weight=10,reg_alpha=0.20,reg_lambda=4.0,objective='multi:softprob',num_class=3,eval_metric='mlogloss',tree_method='hist',n_jobs=1,random_state=44)
+        self.classes_=np.asarray([-1,0,1],dtype=int)
+    def fit(self,x,y,sample_weight=None):
+        y=np.asarray(y,dtype=int); mapping={-1:0,0:1,1:2}; enc=np.asarray([mapping[int(v)] for v in y],dtype=int)
+        w=_balanced_weights(y) if sample_weight is None else np.asarray(sample_weight,dtype=float)
+        self.lr_.fit(x,y,model__sample_weight=w); self.xgb_.fit(x,enc,sample_weight=w); return self
+    def predict_proba(self,x):
+        return 0.45*np.asarray(self.lr_.predict_proba(x),dtype=float)+0.55*np.asarray(self.xgb_.predict_proba(x),dtype=float)
+    def predict(self,x):
+        return self.classes_[np.argmax(self.predict_proba(x),axis=1)]
+
 
 def _balanced_weights(y):
     y = np.asarray(y, dtype=int)
@@ -358,6 +374,8 @@ def _classifier(family):
         return XGBDirectionalClassifier()
     if family == "xgboost_directional_weighted":
         return DirectionalWeightedXGBClassifier()
+    if family == "blended_directional":
+        return BlendedDirectionalClassifier()
     if family == "logistic_regression":
         return Pipeline([
             ("scale", StandardScaler()),
