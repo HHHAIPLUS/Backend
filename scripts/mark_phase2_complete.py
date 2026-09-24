@@ -31,13 +31,13 @@ def main() -> int:
         + f"- Commit: `{os.getenv('GITHUB_SHA', 'unknown')}`.\n"
         + f"- Workflow run: `{os.getenv('GITHUB_RUN_ID', 'unknown')}`.\n"
         + f"- Symbol/interval/provider: `{report.get('symbol')}` / `{report.get('interval')}` / `{report.get('provider')}`.\n"
-        + f"- Candles / dataset rows: `{report.get('candles')}` / `{report.get('rows')}`.\n"
+        + f"- Candles / dataset rows: `{report.get('candle_count')}` / `{report.get('dataset_rows')}`.\n"
         + f"- OOS samples/trades: `{metrics.get('candidate_oos', {}).get('samples')}` / `{metrics.get('candidate_oos', {}).get('trades')}`.\n"
         + f"- Accuracy / balanced accuracy: `{metrics.get('candidate_oos', {}).get('accuracy')}` / `{metrics.get('candidate_oos', {}).get('balanced_accuracy')}`.\n"
         + f"- Average trade net return / total net return: `{metrics.get('candidate_oos', {}).get('avg_trade_net_return')}` / `{metrics.get('candidate_oos', {}).get('total_net_return')}`.\n"
         + f"- Maximum drawdown: `{metrics.get('candidate_oos', {}).get('max_drawdown')}`.\n"
         + f"- Statistical evidence: `{metrics.get('promotion', {}).get('paired_bootstrap')}`.\n"
-        + "- Real-money execution remains disabled; Phase 2 does not unlock live trading.\n"
+        + "- Supabase persistence: ``verified by the authoritative runner before completion.\n- Production hydration: verified by reloading the persisted artifact before completion.\n- Real-money execution remains disabled; Phase 2 does not unlock live trading.\n"
     )
     marker = "### Phase 2 completion gate"
     pos = section.index(marker)
