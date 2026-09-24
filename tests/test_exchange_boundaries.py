@@ -60,11 +60,10 @@ async def test_bitget_close_short_uses_reduce_only_close_side(monkeypatch):
     await adapter.close_position("BTCUSDT", "short", 0.01)
 
     assert captured["method"] == "POST"
-    assert captured["path"] == "/api/v2/mix/order/place-order"
+    assert captured["path"] == "/api/v2/mix/order/close-positions"
     assert captured["private"] is True
-    assert captured["body"]["side"] == "buy"
-    assert captured["body"]["reduceOnly"] == "YES"
-    assert captured["body"]["orderType"] == "market"
+    assert captured["body"]["symbol"] == "BTCUSDT"
+    assert captured["body"]["holdSide"] == "short"
 
 
 @pytest.mark.asyncio
