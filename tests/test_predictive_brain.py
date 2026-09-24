@@ -2,8 +2,8 @@ import math
 
 import numpy as np
 
+from app.ml.features import FEATURES
 from app.ml.predictive_brain import PredictiveBrain, _direction_target, _feature_hash
-from app.ml.predictive import FEATURES
 
 
 def _rows(n=900):
