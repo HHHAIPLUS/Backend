@@ -30,6 +30,8 @@ jobs:
       HHHAI_PHASE2_LABEL_MODE: "fixed"
       HHHAI_PHASE2_FIXED_HORIZON: "1"
       HHHAI_PHASE2_SIDE_SIGNAL_FLOOR: "0.35"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
