@@ -4,7 +4,7 @@ import time
 import pytest
 
 from app.ml.dataset_integrity import audit_klines, audit_dataset
-from app.ml.predictive import FEATURES
+from app.ml.features import FEATURES
 
 def _candles(count=10, interval_ms=3_600_000):
     base = 1700000000000
