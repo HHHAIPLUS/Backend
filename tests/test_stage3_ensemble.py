@@ -1,7 +1,7 @@
 import numpy as np
 
 from app.ml.ensemble import PredictiveEnsemble
-from app.ml.predictive import FEATURES
+from app.ml.features import FEATURES
 
 
 def _rows(n=600):
