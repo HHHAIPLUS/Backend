@@ -5,7 +5,7 @@ from ai.adaptive_engine import AdaptivePositionEngine
 from app.api.realtime import build_world_intelligence
 from app.api.positions import manager
 from ai.decision_fusion import DecisionFusion
-from app.ml.predictive import predictive_model
+from app.ml.predictive_brain import predictive_brain
 
 router = APIRouter(prefix="/api/control-center", tags=["control-center"])
 _council = IntelligenceCouncil()
@@ -20,7 +20,7 @@ def control_center_status():
         "live_trading_enabled": settings.live_trading_enabled,
         "execution_authority": False,
         "real_money": False,
-        "validated_model": predictive_model.model is not None,
+        "validated_model": predictive_brain.bundle is not None,
         "backend_driven": True,
         "continuous_monitoring": True,
         "fixed_take_profit_required": False,
@@ -77,7 +77,7 @@ def control_center_overview(symbol: str = "BTCUSDT"):
         reason = "The evidence is mixed and HHHAI is not forcing a directional conclusion."
 
     model_features = dict(m.get("model_features") or {})
-    predictive = predictive_model.predict({
+    predictive = predictive_brain.predict({
         **model_features,
         "order_book_imbalance": imbalance,
         "funding_rate": float(m.get("funding_rate") or 0),
@@ -103,5 +103,5 @@ def control_center_overview(symbol: str = "BTCUSDT"):
         "position_count": len(manager.positions),
         "execution_authority": False,
         "real_money": False,
-        "validated_model": predictive_model.model is not None,
+        "validated_model": predictive_brain.bundle is not None,
     }
