@@ -915,7 +915,12 @@ class PredictiveBrain:
                         binary_mask = y_train_fold != 0
                         x_train_fold = x_train_fold[binary_mask]
                         y_train_fold = y_train_fold[binary_mask]
-                    if family == "hist_gradient_boosting_balanced":
+                    if family == "return_weighted_xgboost":
+                        model.fit(
+                            x_train_fold, y_train_fold,
+                            sample_weight=_economic_sample_weights(r_train_fold, float(chosen_threshold)),
+                        )
+                    elif family == "hist_gradient_boosting_balanced":
                         counts = np.bincount(y_train_fold + 1, minlength=3).astype(float)
                         weights = np.asarray([1.0 / max(counts[label + 1], 1.0) for label in y_train_fold])
                         weights *= len(weights) / max(weights.sum(), 1e-12)
@@ -1039,7 +1044,14 @@ class PredictiveBrain:
                 binary_mask = y_fit_direction != 0
                 x_fit_direction = x_fit_direction[binary_mask]
                 y_fit_direction = y_fit_direction[binary_mask]
-            if family == "hist_gradient_boosting_balanced":
+            if family == "return_weighted_xgboost":
+                raw_direction.fit(
+                    x_fit_direction, y_fit_direction,
+                    sample_weight=_economic_sample_weights(
+                        _slice(returns, fit_bounds), float(chosen_threshold)
+                    ),
+                )
+            elif family == "hist_gradient_boosting_balanced":
                 counts = np.bincount(y_fit_direction + 1, minlength=3).astype(float)
                 weights = np.asarray([1.0 / max(counts[label + 1], 1.0) for label in y_fit_direction])
                 weights *= len(weights) / max(weights.sum(), 1e-12)
