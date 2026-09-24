@@ -13,23 +13,36 @@ from app.ml.phase2_authority import authoritative_config, fetch_authoritative_da
 from app.ml.predictive_brain import predictive_brain
 
 CONFIG = authoritative_config()
-def main():
+VERSION = os.getenv("PHASE2_VERSION", "phase2-authoritative")
+
+
+def main() -> int:
     rows, meta = fetch_authoritative_dataset()
-    report = predictive_brain.train(rows, CONFIG.get("version", "phase2-authoritative"))
+    report = predictive_brain.train(rows, VERSION)
     payload = {
-        "phase": 2,
         "status": report.status,
         "version": report.version,
         "reason": report.reason,
-        "artifact": report.artifact,
         "metrics": report.metrics,
-        "data": meta,
+        "artifact": report.artifact,
+        "provider": meta["provider"],
+        "symbol": meta["symbol"],
+        "interval": meta["interval"],
+        "horizon": meta["horizon"],
+        "label_threshold": meta["label_threshold"],
+        "candle_count": meta["raw_candles"],
+        "dataset_rows": meta["training_rows"],
+        "candle_audit": meta["candle_audit"],
+        "oos_start": os.getenv("PHASE2_OOS_START"),
+        "oos_end": os.getenv("PHASE2_OOS_END"),
         "authoritative_config": CONFIG,
     }
-    print(json.dumps(payload, indent=2, sort_keys=True))
-    if report.status != "PROMOTED":
-        raise SystemExit(1)
+    Path("phase2_report.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True, default=str)
+    )
+    print(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    return 0 if report.status == "PROMOTED" else 2
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
