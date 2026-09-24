@@ -20,7 +20,7 @@ jobs:
     env:
       PHASE2_OOS_START: "2026-07-01T00:00:00+00:00"
       PHASE2_OOS_END: "2026-09-21T00:00:00+00:00"
-      PHASE2_VERSION: "phase2-validation-gated-1h-2026-07to09-v3-predictive-improvement"
+      PHASE2_VERSION: "phase2-validation-gated-6h-2026-07to09-v4-directional-learning"
       HHHAI_BRAIN_BOOTSTRAP_SYMBOLS: "BTCUSDT"
       HHHAI_BRAIN_BOOTSTRAP_CANDLES: "10000"
       HHHAI_BRAIN_BOOTSTRAP_INTERVAL: "1h"
@@ -28,6 +28,7 @@ jobs:
       HHHAI_PHASE2_TRAIN_FILTER_MULTIPLIER: "1.0"
       HHHAI_PHASE2_FIXED_LABEL_THRESHOLD: ""
       HHHAI_PHASE2_LABEL_MODE: "fixed"
+      HHHAI_PHASE2_FIXED_HORIZON: "6"
       HHHAI_PHASE2_SIDE_SIGNAL_FLOOR: "0.35"
     steps:
       - uses: actions/checkout@v4
