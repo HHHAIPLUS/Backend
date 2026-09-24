@@ -23,7 +23,6 @@ from app.exchanges.factory import adapters
 from app.exchanges.safe_router import SafeExchangeRouter
 from app.market_data.realtime import build_world_intelligence
 from app.market_data.binance_user_stream import binance_user_stream
-from app.ml.predictive import predictive_model
 from app.ml.predictive_brain import predictive_brain
 from app.persistence.repository import record_decision, record_outcome, record_event, record_adaptive_observation
 from app.persistence.supabase import store
