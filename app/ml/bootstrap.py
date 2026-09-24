@@ -8,13 +8,7 @@ import httpx
 import numpy as np
 import io
 import zipfile
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-
-from app.ml.predictive import FEATURES, predictive_model
 from app.ml.predictive_brain import HORIZONS
-from app.ml.validation import walk_forward, evaluate_predictions
 from app.ml.features import build_model_features
 from app.ml.dataset_integrity import audit_klines, require_production_ready, DatasetAudit
 
@@ -303,39 +297,3 @@ def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 
     return rows
 
 
-def validate_and_promote(rows: list[dict[str, Any]], version: str = "bootstrap") -> dict[str, Any]:
-    if not rows:
-        return {"status": "REJECTED", "reason": "No training rows were supplied.", "rows": 0}
-    try:
-        audit: DatasetAudit = require_production_ready(rows)
-    except Exception as exc:
-        return {"status": "REJECTED", "reason": f"Dataset integrity gate failed: {exc}", "rows": len(rows)}
-
-    min_train = max(300, min(700, len(rows) // 2))
-    folds = walk_forward(rows, min_train=min_train, test_size=100, step=100)
-    if not folds:
-        return {"status": "REJECTED", "reason": "Not enough historical rows for walk-forward validation.", "rows": len(rows), "audit": audit.__dict__}
-
-    predictions: list[tuple[int, int, float]] = []
-    for fold in folds:
-        X = [[r["features"][k] for k in FEATURES] for r in fold.train]
-        y = [int(r["label"]) for r in fold.train]
-        if len(set(y)) < 3:
-            continue
-        model = Pipeline([("scale", StandardScaler()), ("clf", LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42))])
-        model.fit(X, y)
-        Xtest = [[r["features"][k] for k in FEATURES] for r in fold.test]
-        pred = model.predict(Xtest)
-        for r, p in zip(fold.test, pred):
-            future_return = float(r["outcome_return"])
-            signed_return = future_return * (1.0 if int(p) == 1 else -1.0 if int(p) == -1 else 0.0)
-            predictions.append((int(r["label"]), int(p), signed_return))
-
-    metrics = evaluate_predictions(predictions)
-    if metrics.get("balanced_accuracy", 0.0) < 0.50 or metrics.get("avg_return", 0.0) <= 0.0:
-        return {"status": "REJECTED", "version": version, "metrics": metrics, "rows": len(rows), "audit": audit.__dict__, "reason": "Candidate did not clear the conservative baseline promotion gate."}
-
-    report = predictive_model.train(rows, version=version, min_rows=500)
-    if not report.trained:
-        return {"status": "REJECTED", "version": version, "metrics": metrics, "rows": len(rows), "audit": audit.__dict__, "reason": report.reason}
-    return {"status": "PROMOTED", "version": version, "metrics": metrics, "rows": len(rows), "audit": audit.__dict__, "model_artifact": predictive_model.artifact()}
