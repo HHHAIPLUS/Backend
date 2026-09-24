@@ -78,7 +78,7 @@ async def persist_brain(metrics: dict | None = None):
     return True
 
 
-async def hydrate_model():
+async def hydrate_model(expected_version: str | None = None):
     """Hydrate only the exact promoted predictive brain persisted in Supabase."""
     if not store.configured:
         return False
@@ -88,7 +88,7 @@ async def hydrate_model():
             {
                 "select": "*",
                 "name": "eq.predictive_brain",
-                "order": "created_at.desc",
+                "version": f"eq.{expected_version}",
                 "limit": "1",
             },
         )
