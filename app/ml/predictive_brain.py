@@ -1481,8 +1481,12 @@ class PredictiveBrain:
         downside = max(0.0, float(self.bundle["downside_model"].predict(x)[0]))
         volatility = max(0.0, float(self.bundle["volatility_model"].predict(x)[0]))
         regime = int(self.bundle["regime_model"].predict(x)[0])
-        edge = er - COST_RATE
-        abstain = bool(abstain or edge <= 0.0 or not np.isfinite([er, downside, volatility]).all())
+        # Expected return is signed in market-return space.  For a SHORT
+        # decision a negative predicted return is the profitable direction, so
+        # the edge must be measured after aligning the forecast with the chosen
+        # side.  The old er - COST_RATE check incorrectly rejected valid shorts.
+        signed_edge = (1.0 if direction == "LONG" else -1.0 if direction == "SHORT" else 0.0) * er - COST_RATE
+        abstain = bool(abstain or signed_edge <= 0.0 or not np.isfinite([er, downside, volatility]).all())
         return {
             "trained": True,
             "abstain": abstain,
@@ -1490,7 +1494,7 @@ class PredictiveBrain:
             "decision": "NO_TRADE" if abstain else direction.upper(),
             "probabilities": probs,
             "expected_return": er,
-            "expected_edge_after_cost": edge,
+            "expected_edge_after_cost": signed_edge,
             "downside": downside,
             "volatility": volatility,
             "regime": regime,
