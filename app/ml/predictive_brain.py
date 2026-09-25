@@ -34,20 +34,16 @@ from app.ml.model_validation import promotion_gate
 
 MODEL_FAMILIES = (
     "logistic_regression",
-    "binary_logistic_selective",
     "xgboost",
     "xgboost_directional_weighted",
-    "blended_directional",
-    "return_weighted_xgboost",
     "extra_trees",
     "hist_gradient_boosting_balanced",
 )
 RETURN_BASE_FAMILIES = (
     "ridge",
-    "extra_trees_regressor",
     "xgboost_regressor",
 )
-RETURN_SIGNAL_THRESHOLDS = (0.0014, 0.0020, 0.0030, 0.0040, 0.0050)
+RETURN_SIGNAL_THRESHOLDS = (0.0014, 0.0025, 0.0040)
 RETURN_FAMILIES = tuple(
     f"{family}@{threshold:.4f}"
     for family in RETURN_BASE_FAMILIES
@@ -850,7 +846,7 @@ class PredictiveBrain:
         # folds.  A rolling training window is a legitimate time-series
         # hyperparameter: it lets the model forget stale regimes without ever
         # looking at the untouched OOS period.
-        TRAIN_WINDOW_CANDIDATES = (0, 1500, 2500, 4000)
+        TRAIN_WINDOW_CANDIDATES = (0, 1500, 3000)
         for family in MODEL_FAMILIES:
             for train_window in TRAIN_WINDOW_CANDIDATES:
                 fold_scores = []
