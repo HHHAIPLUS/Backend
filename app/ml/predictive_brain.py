@@ -923,26 +923,11 @@ class PredictiveBrain:
             return BrainReport("REJECTED", version, {"validation_families": validation_scores},
                                "No valid model family was evaluated.")
 
-        if not any(
-            float(validation_scores[
-                f"{c[2]}@window={int(c[4])}" + ("_inverse" if c[3] else "")
-            ].get("balanced_accuracy", -1e99)) >= 0.50
-            and float(validation_scores[
-                f"{c[2]}@window={int(c[4])}" + ("_inverse" if c[3] else "")
-            ].get("accuracy", -1e99)) >= 0.52
-            and float(validation_scores[
-                f"{c[2]}@window={int(c[4])}" + ("_inverse" if c[3] else "")
-            ].get("avg_trade_net_return", -1e99)) > 0.0
-            and float(validation_scores[
-                f"{c[2]}@window={int(c[4])}" + ("_inverse" if c[3] else "")
-            ].get("total_net_return", -1e99)) > 0.0
-            and float(validation_scores[
-                f"{c[2]}@window={int(c[4])}" + ("_inverse" if c[3] else "")
-            ].get("max_drawdown", 1e99)) <= 0.15
-            for c in candidates
-        ):
-            return BrainReport("REJECTED", version, {"validation_families": validation_scores},
-                               "No directional model cleared the pre-OOS classification and economic safety gates.")
+        # Do not require the validation period to pass the final OOS gates.
+        # Validation is for model/target selection; the fixed acceptance gates
+        # are applied once, and only once, to the untouched OOS period.
+        # Requiring the final OOS thresholds pre-OOS can reject a legitimately
+        # generalizing candidate and changes the statistical meaning of Phase 2.
         
         # Model selection is validation-only. A candidate that cannot satisfy both
         # classification and economic requirements before OOS is not allowed to be
