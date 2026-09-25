@@ -37,8 +37,6 @@ MODEL_FAMILIES = (
     "binary_logistic_selective",
     "trend_regime",
     "binary_xgb_selective",
-    "long_only_xgboost",
-    "short_only_xgboost",
     "xgboost",
     "xgboost_directional_weighted",
     "blended_directional",
@@ -128,38 +126,6 @@ def _balanced_weights(y):
     k = float(len(labels))
     weights = {int(label): total / max(k * float(count), 1.0) for label, count in zip(labels, counts)}
     return np.asarray([weights[int(label)] for label in y], dtype=float)
-
-
-class SideOnlyXGBClassifier(ClassifierMixin, BaseEstimator):
-    """Binary directional learner exposed as long/flat or short/flat probabilities."""
-    def __init__(self, side: int):
-        self.side = int(side)
-        self.other = -self.side
-        self.model_ = XGBClassifier(
-            n_estimators=260, max_depth=4, learning_rate=0.035,
-            subsample=0.85, colsample_bytree=0.85, min_child_weight=10,
-            reg_alpha=0.10, reg_lambda=3.0, objective="binary:logistic",
-            eval_metric="logloss", tree_method="hist", n_jobs=1, random_state=42,
-        )
-        self.classes_ = np.asarray([-1, 0, 1], dtype=int)
-
-    def fit(self, x, y, sample_weight=None):
-        target = (np.asarray(y, dtype=int) == self.side).astype(int)
-        weights = _balanced_weights(target) if sample_weight is None else np.asarray(sample_weight, dtype=float)
-        self.model_.fit(x, target, sample_weight=weights)
-        return self
-
-    def predict_proba(self, x):
-        p = np.asarray(self.model_.predict_proba(x), dtype=float)[:, 1]
-        out = np.zeros((len(p), 3), dtype=float)
-        out[:, 1] = 1.0 - p
-        out[:, 2 if self.side == 1 else 0] = p
-        return out
-
-    def predict(self, x):
-        p = self.predict_proba(x)[:, 2 if self.side == 1 else 0]
-        # Lower entry boundary is fixed at 0.35; calibration still controls confidence/abstention.
-        return np.where(p >= SIDE_SIGNAL_FLOOR, self.side, 0).astype(int)
 
 
 class BinaryXGBSelectiveClassifier(ClassifierMixin, BaseEstimator):
@@ -404,10 +370,6 @@ def _classifier(family):
         return BinaryXGBSelectiveClassifier()
     if family == "binary_logistic_selective":
         return BinaryDirectionalClassifier()
-    if family == "long_only_xgboost":
-        return SideOnlyXGBClassifier(1)
-    if family == "short_only_xgboost":
-        return SideOnlyXGBClassifier(-1)
     if family == "xgboost":
         return XGBDirectionalClassifier()
     if family == "xgboost_directional_weighted":
@@ -519,7 +481,7 @@ def _net_returns(returns, pred):
 
 
 def _apply_execution_profile(pred, x, profile):
-    """Apply one of five pre-registered execution filters using only point-in-time features."""
+    """Apply one of four pre-registered execution filters using only point-in-time features."""
     pred = np.asarray(pred, dtype=int).copy()
     if profile == "confidence":
         return pred
@@ -536,8 +498,6 @@ def _apply_execution_profile(pred, x, profile):
         momentum = np.asarray(x, dtype=float)[:, FEATURES.index("momentum")]
         pred[(pred == 1) & (momentum <= 0.0)] = 0
         pred[(pred == -1) & (momentum >= 0.0)] = 0
-    elif profile == "long_only":
-        pred[pred == -1] = 0
     return pred
 
 def _apply_regime_filter(pred, x, threshold):
