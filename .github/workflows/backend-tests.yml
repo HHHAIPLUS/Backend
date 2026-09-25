@@ -1,5 +1,9 @@
 name: Backend tests
 
+concurrency:
+  group: backend-tests-main-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
