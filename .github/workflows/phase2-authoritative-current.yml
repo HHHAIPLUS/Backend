@@ -1,5 +1,6 @@
 # Trigger authoritative verification for latest main commit
 # Single authoritative Phase 2 workflow
+# Verification trigger: rerun after predictive-brain changes.
 name: Phase 2 authoritative OOS
 
 on:
