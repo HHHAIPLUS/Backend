@@ -76,14 +76,14 @@ Prove that the historical data used to train and validate HHHAI is trustworthy, 
 - Live trading remained disabled throughout verification.
 
 ### Additional Phase 1 controls added during implementation
-- [ ] Raw OHLCV candles are audited before supervised dataset construction.
-- [ ] Duplicate timestamps and interval gaps are hard failures.
-- [ ] Open/incomplete candles are excluded from training.
-- [ ] OHLC and volume validity are hard-gated.
-- [ ] Production training requires the intended Bitget USDT-futures historical source.
-- [ ] Predictive training uses only features with truthful historical reconstruction; live-only context is not fabricated as historical training data.
-- [ ] The full canonical feature state remains available to decision layers while the supervised model has an explicit historical feature subset.
-- [ ] A reproducible GitHub Actions live-data audit verifies the configured BTCUSDT 1h 10,000-candle dataset.
+- [✓] Raw OHLCV candles are audited before supervised dataset construction.
+- [✓] Duplicate timestamps and interval gaps are hard failures.
+- [✓] Open/incomplete candles are excluded from training.
+- [✓] OHLC and volume validity are hard-gated.
+- [✓] Production training requires the intended Bitget USDT-futures historical source.
+- [✓] Predictive training uses only features with truthful historical reconstruction; live-only context is not fabricated as historical training data.
+- [✓] The full canonical feature state remains available to decision layers while the supervised model has an explicit historical feature subset.
+- [✓] A reproducible GitHub Actions live-data audit verifies the configured BTCUSDT 1h 10,000-candle dataset.
 
 ---
 
