@@ -1,7 +1,4 @@
-import os
-
-from fastapi import APIRouter, Header, HTTPException, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Header, HTTPException
 
 from app.api.admin import require_admin
 from app.ml.predictive_brain import predictive_brain
@@ -10,14 +7,6 @@ from app.ml.model_persistence import persist_brain
 from app.core.config import settings
 
 router = APIRouter(prefix="/api/model", tags=["predictive-model"])
-
-
-class BootstrapRequest(BaseModel):
-    symbol: str = Field(default="BTCUSDT", min_length=5, max_length=30)
-    interval: str = "5m"
-    limit: int = Field(default=5000, ge=500, le=10000)
-    horizon: int = Field(default=6, ge=1, le=24)
-    threshold: float = Field(default=0.0025, gt=0, lt=0.1)
 
 
 brain = predictive_brain
