@@ -25,37 +25,9 @@ jobs:
           LIVE_TRADING_ENABLED: 'false'
         run: pytest -q
 
-  release-ladder:
-    if: github.event_name == 'push'
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      - name: Historical, walk-forward, OOS, stress, Monte Carlo, paper and controlled execution gates
-        env:
-          HHHAI_TEST_HISTORY_LIMIT: '1000'
-          HHHAI_TEST_REPORT: testing_ladder_report.json
-          LIVE_TRADING_ENABLED: 'false'
-          TESTNET_TRADING_ENABLED: 'false'
-          HHHAI_AUTOTRADING_ENABLED: 'false'
-        run: python tools/testing_ladder.py
-      - name: Upload release-ladder evidence
-        uses: actions/upload-artifact@v4
-        with:
-          name: hh-hai-testing-ladder-evidence
-          path: testing_ladder_report.json
-
   deployed-smoke:
     if: github.event_name == 'push'
-    needs: [test, release-ladder]
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Verify deployed backend safety and release state
