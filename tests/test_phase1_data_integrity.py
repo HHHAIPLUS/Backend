@@ -74,5 +74,5 @@ def test_build_dataset_rejects_duplicates_before_deduplication():
 
     rows = _candles(count=400)
     rows.insert(100, list(rows[100]))
-    with pytest.raises(ValueError, match="Historical candle integrity gate failed"):
+    with pytest.raises(RuntimeError, match="Historical candle integrity gate failed"):
         build_dataset(rows, horizon=1, threshold=0.0015, interval="1h", symbol="BTCUSDT", provider="bitget")
