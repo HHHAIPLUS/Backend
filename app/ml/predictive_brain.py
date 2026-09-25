@@ -297,7 +297,7 @@ def _x(rows):
     return x
 
 
-TARGET_RETURN_FIELD = os.getenv("HHHAI_PHASE2_TARGET_RETURN", "close")
+TARGET_RETURN_FIELD = os.getenv("HHHAI_PHASE2_TARGET_RETURN", "barrier")
 TRAIN_FILTER_MULTIPLIER = max(1.0, float(os.getenv("HHHAI_PHASE2_TRAIN_FILTER_MULTIPLIER", "1.0")))
 
 def _economic_sample_weights(returns, threshold):
@@ -807,15 +807,14 @@ class PredictiveBrain:
                         "validation_class_fractions": fractions.tolist(),
                     }
 
-        viable = [
-            v for v in horizon_selection.values()
-            if int(v.get("trades", 0)) >= MIN_OOS_TRADES
-            and np.isfinite(float(v.get("avg_trade_net_return", 0.0)))
-            and float(v.get("avg_trade_net_return", 0.0)) > 0.0
-        ]
+        # The >=100-trade requirement is an untouched-OOS acceptance gate.
+        # It must never prevent a validation horizon/target from being selected.
+        # Validation only determines which pre-registered target/horizon has the
+        # strongest out-of-sample-development evidence.
+        viable = list(horizon_selection.values())
         if not viable:
             return BrainReport("REJECTED", version, {"horizon_selection": horizon_selection},
-                               "No horizon/label threshold produced enough validation trades across the chronological selection folds.")
+                               "No valid chronological horizon/label candidate was produced.")
 
         # Select the supervised target/horizon primarily by validation
         # classification quality because the untouched OOS gate requires both
@@ -1092,6 +1091,14 @@ class PredictiveBrain:
             baseline_raw.fit(x_fit, y_fit)
             baseline = _calibrate(baseline_raw, _slice(x, ca), y_cal)
 
+        # A separate return model provides a pre-registered economic-edge check.
+        # It is trained only on train+validation and never sees OOS. A directional
+        # prediction is actionable only when its predicted gross return, in that
+        # predicted direction, exceeds the full configured trading cost.
+        edge_model = _regressor("xgboost_regressor")
+        edge_model.fit(x_fit, _slice(returns, fit_bounds))
+        cal_expected_return = np.asarray(edge_model.predict(_slice(x, ca)), dtype=float)
+
         # Threshold selection is calibration-only. It must retain a meaningful
         # trade sample and cannot inspect OOS.
         cal_pred, cal_prob = self._predict_selected(direction, _slice(x, ca), invert_direction, family)
@@ -1117,6 +1124,10 @@ class PredictiveBrain:
                 selected = _apply_regime_filter(
                     selected, _slice(x, ca), regime_threshold
                 )
+                # Directional evidence and predicted net edge must agree.
+                # This filter is fixed by COST_RATE rather than tuned on OOS.
+                predicted_edge = selected.astype(float) * cal_expected_return - COST_RATE
+                selected[predicted_edge <= 0.0] = 0
                 traded = selected != 0
                 net = _execution_net_returns(r_cal, selected, chosen_horizon)
                 executed = net != 0.0
@@ -1198,6 +1209,8 @@ class PredictiveBrain:
             candidate_pred = candidate_pred.astype(int)
         candidate_pred = _apply_execution_profile(candidate_pred, _slice(x, oo), execution_profile)
         candidate_pred = _apply_regime_filter(candidate_pred, _slice(x, oo), regime_filter_threshold)
+        oos_expected_return = np.asarray(edge_model.predict(_slice(x, oo)), dtype=float)
+        candidate_pred[candidate_pred.astype(float) * oos_expected_return - COST_RATE <= 0.0] = 0
 
         candidate_metrics = _metrics(y_oos, candidate_pred, candidate_prob, np.array([-1, 0, 1]), r_oos, execution_horizon=chosen_horizon)
         baseline_metrics = _metrics(y_oos, baseline_pred, baseline_prob, baseline.classes_, r_oos, execution_horizon=chosen_horizon)
@@ -1250,6 +1263,7 @@ class PredictiveBrain:
             "execution_profile": execution_profile,
             "execution_oos_profiles": execution_oos_profiles,
             "cost_rate": COST_RATE,
+            "edge_filter": "predicted_directional_return_minus_cost > 0",
             "label_mode": LABEL_MODE,
             "label_bounds": final_label_bounds,
             "label_distribution": label_distribution,
@@ -1266,7 +1280,7 @@ class PredictiveBrain:
             "schema_version": ARTIFACT_SCHEMA,
             "direction_model": direction,
             "baseline_model": baseline,
-            "expected_return_model": direction if family not in MODEL_FAMILIES else self._fit_return_model(x_fit, _slice(returns, fit_bounds), family),
+            "expected_return_model": edge_model,
             "downside_model": self._fit_return_model(x_fit, np.minimum(_slice(returns, fit_bounds), 0.0), family if family in RETURN_FAMILIES else "ridge"),
             "volatility_model": self._fit_return_model(x_fit, np.abs(_slice(returns, fit_bounds)), family if family in RETURN_FAMILIES else "ridge"),
             "regime_model": self._fit_regime_model(x_fit, _slice(returns, fit_bounds), family),
