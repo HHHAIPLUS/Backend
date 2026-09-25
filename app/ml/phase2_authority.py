@@ -21,7 +21,8 @@ if PHASE2_HORIZON <= 0:
     PHASE2_HORIZON = 1
 PHASE2_THRESHOLD = float(
     os.getenv("HHHAI_PHASE2_FIXED_LABEL_THRESHOLD", "").strip()
-    or os.getenv("HHHAI_BRAIN_LABEL_THRESHOLD", "0.0015")
+    or os.getenv("HHHAI_BRAIN_LABEL_THRESHOLD", "").strip()
+    or "0.0015"
 )
 
 _FETCHERS = {
