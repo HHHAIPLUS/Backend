@@ -69,3 +69,10 @@ def test_future_target_inside_features_fails():
     audit = audit_dataset([row])
     assert audit.leakage_suspected
     assert not audit.production_ready
+def test_build_dataset_rejects_duplicates_before_deduplication():
+    from app.ml.bootstrap import build_dataset
+
+    rows = _candles(count=400)
+    rows.insert(100, list(rows[100]))
+    with pytest.raises(ValueError, match="Historical candle audit failed"):
+        build_dataset(rows, horizon=1, threshold=0.0015, interval="1h", symbol="BTCUSDT", provider="bitget")
