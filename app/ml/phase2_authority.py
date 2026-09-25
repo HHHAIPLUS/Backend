@@ -10,6 +10,7 @@ from app.ml.bootstrap import (
     fetch_binance_klines,
     fetch_bitget_klines,
 )
+from app.ml.dataset_integrity import require_production_ready
 
 PHASE2_PROVIDER = os.getenv("HHHAI_PHASE2_PROVIDER", "bitget").strip().lower()
 PHASE2_SYMBOL = os.getenv("HHHAI_BRAIN_BOOTSTRAP_SYMBOLS", "BTCUSDT").split(",")[0].strip().upper()
@@ -58,4 +59,11 @@ def fetch_authoritative_dataset() -> tuple[list[dict[str, Any]], dict[str, Any]]
         interval=PHASE2_INTERVAL,
         provider=PHASE2_PROVIDER,
     )
-    return rows, {**authoritative_config(), "candle_audit": audit, "raw_candles": len(raw), "training_rows": len(rows)}
+    dataset_audit = require_production_ready(rows)
+    return rows, {
+        **authoritative_config(),
+        "candle_audit": audit,
+        "dataset_audit": dataset_audit.__dict__,
+        "raw_candles": len(raw),
+        "training_rows": len(rows),
+    }
