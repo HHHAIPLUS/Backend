@@ -9,6 +9,7 @@ on:
       - "scripts/phase2_authoritative.py"
       - "app/ml/**"
       - "requirements.txt"
+      - "runtime.txt"
       - ".github/workflows/phase2-authoritative-current.yml"
   workflow_dispatch:
 
