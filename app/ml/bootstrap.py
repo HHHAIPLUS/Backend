@@ -249,9 +249,13 @@ def _candle_to_dict(row: list[Any]) -> dict[str, Any]:
 def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 0.0025, take_profit: float = 0.004, stop_loss: float = 0.004, *, symbol: str = "", interval: str = "", provider: str = "") -> list[dict[str, Any]]:
     if horizon <= 0 or threshold <= 0 or take_profit <= 0 or stop_loss <= 0:
         raise ValueError("Horizon, threshold, take_profit and stop_loss must be greater than zero")
-    raw = _deduplicate_klines(klines)
+    raw = list(klines)
+    # Duplicate/gap/open-candle defects must be rejected before any normalization
+    # can hide them. Deduplication is only for internal callers that have already
+    # passed the authoritative raw-candle audit.
     if interval:
         audit_historical_klines(raw, interval)
+    raw = _deduplicate_klines(raw)
     candles = [_candle_to_dict(row) for row in raw]
     if len(candles) < 50:
         raise ValueError(f"Not enough valid OHLCV candles: {len(candles)}")
