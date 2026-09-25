@@ -1118,7 +1118,9 @@ class PredictiveBrain:
                     selected, _slice(x, ca), regime_threshold
                 )
                 traded = selected != 0
-                trade_count = int(traded.sum())
+                net = _execution_net_returns(r_cal, selected, chosen_horizon)
+                executed = net != 0.0
+                trade_count = int(executed.sum())
                 trade_rate = trade_count / max(1, len(selected))
                 long_rate = float(np.mean(selected == 1)) if len(selected) else 0.0
                 short_rate = float(np.mean(selected == -1)) if len(selected) else 0.0
@@ -1129,11 +1131,10 @@ class PredictiveBrain:
                     or short_rate < min_cal_side_rate
                 ):
                     continue
-                net = _execution_net_returns(r_cal, selected, chosen_horizon)
                 equity = np.cumsum(net)
                 peak = np.maximum.accumulate(np.r_[0.0, equity])
                 drawdown = float(np.max(peak[1:] - equity)) if len(equity) else 0.0
-                avg_trade = float(net[traded].mean())
+                avg_trade = float(net[executed].mean()) if executed.any() else 0.0
                 cal_metrics = _metrics(y_cal, selected, cal_prob, np.array([-1, 0, 1]), r_cal, execution_horizon=chosen_horizon)
                 threshold_candidates.append((
                     float(avg_trade),
@@ -1415,7 +1416,7 @@ class PredictiveBrain:
                     raise ValueError("Horizon evaluation feature/label length mismatch")
                 m = _classifier("logistic_regression")
                 m.fit(x_train, ya)
-                out[str(h)] = _metrics(yb, m.predict(x_oos), m.predict_proba(x_oos), m.classes_, b)
+                out[str(h)] = _metrics(yb, m.predict(x_oos), m.predict_proba(x_oos), m.classes_, b, execution_horizon=h)
             except Exception as exc:
                 out[str(h)] = {"status": "UNAVAILABLE", "reason": str(exc)}
         return out
