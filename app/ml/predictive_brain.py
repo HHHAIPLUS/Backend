@@ -300,7 +300,7 @@ def _x(rows):
     return x
 
 
-TARGET_RETURN_FIELD = os.getenv("HHHAI_PHASE2_TARGET_RETURN", "barrier")
+TARGET_RETURN_FIELD = os.getenv("HHHAI_PHASE2_TARGET_RETURN", "outcome")
 TRAIN_FILTER_MULTIPLIER = max(1.0, float(os.getenv("HHHAI_PHASE2_TRAIN_FILTER_MULTIPLIER", "1.0")))
 
 def _economic_sample_weights(returns, threshold):
