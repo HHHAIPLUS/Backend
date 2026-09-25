@@ -6,8 +6,6 @@ from app.services.monitor_worker import monitor
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import logging
-import subprocess
-import sys
 from app.api.health import router as health_router
 from app.api.status import router as status_router
 from app.api.integration import router as integration_router
@@ -63,32 +61,12 @@ install_multi_coin_selection(trader)
 @asynccontextmanager
 async def lifespan(app):
     await hydrate_model()
-    phase2_task = None
     await hydrate_learning()
     await hydrate_adaptive()
     await hydrate_research()
     await hydrate_stage8_risk(stage8_risk)
     exchange = os.getenv("HHHAI_EXECUTION_EXCHANGE", os.getenv("HHHAI_MARKET_EXCHANGE", "binance")).lower()
     log.warning("HHHAI_RUNTIME exchange=%s bitget_testnet=%s trading_mode=%s live_enabled=%s autotrading=%s", exchange, settings.bitget_testnet, settings.hhhai_trading_mode, settings.live_trading_enabled, settings.hhhai_autotrading_enabled)
-    if exchange == "bitget":
-        try:
-            account = await adapters()["bitget"].get_account_status()
-            log.warning("BITGET_AUTH_CHECK_OK available_balance=%s", account.get("available_balance"))
-            try:
-                positions = await adapters()["bitget"].get_positions("DOGEUSDT")
-                log.warning("TEST10_POSITION_CHECK %s", positions)
-                if os.getenv("HHHAI_TEST10_CLEANUP_EXISTING", "true").lower() == "true":
-                    for row in positions or []:
-                        if float(row.get("total") or 0) > 0:
-                            mode = await adapters()["bitget"].get_position_mode("DOGEUSDT")
-                            cleanup = await adapters()["bitget"].close_position("DOGEUSDT", str(row.get("holdSide") or "long"), float(row.get("total")), mode)
-                            log.warning("TEST10_EXISTING_POSITION_CLOSED %s", cleanup)
-                    positions = await adapters()["bitget"].get_positions("DOGEUSDT")
-                    log.warning("TEST10_POSITION_AFTER_CLEANUP %s", positions)
-            except Exception as exc:
-                log.error("TEST10_POSITION_CHECK_FAILED %s", exc)
-        except Exception as exc:
-            log.error("BITGET_AUTH_CHECK_FAILED %s", exc)
     if exchange == "binance":
         CentralBinanceMarketData._start_universe()
     task = asyncio.create_task(monitor.run())
