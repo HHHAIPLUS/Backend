@@ -1141,9 +1141,11 @@ class PredictiveBrain:
                 dd = -float(neg_dd)
                 classification_ok = float(bal) >= 0.50 and float(acc) >= 0.52
                 economic_ok = float(total) > 0.0 and dd <= 0.15
+                both_ok = classification_ok and economic_ok
                 return (
-                    1 if classification_ok else 0,
+                    1 if both_ok else 0,
                     1 if economic_ok else 0,
+                    1 if classification_ok else 0,
                     float(bal),
                     float(acc),
                     float(total),
