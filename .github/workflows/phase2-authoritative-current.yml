@@ -11,6 +11,10 @@ on:
       - ".github/workflows/phase2-authoritative-current.yml"
   workflow_dispatch:
 
+concurrency:
+  group: phase2-authoritative-main
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
