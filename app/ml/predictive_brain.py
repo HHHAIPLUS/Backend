@@ -1201,9 +1201,12 @@ class PredictiveBrain:
                     float(long_rate + short_rate),
                 )
             best_calibration = max(threshold_candidates, key=_calibration_key)
-            selection_threshold = best_calibration[6]
-            regime_filter_threshold = best_calibration[7]
-            execution_profile = best_calibration[8]
+            # threshold_candidates stores:
+            # avg_trade,total,-drawdown,balanced_accuracy,accuracy,trade_rate,
+            # long_rate,short_rate,threshold,regime,profile.
+            selection_threshold = best_calibration[8]
+            regime_filter_threshold = best_calibration[9]
+            execution_profile = best_calibration[10]
 
         candidate_pred, candidate_prob = self._predict_selected(direction, _slice(x, oo), invert_direction, family)
         baseline_pred = baseline.predict(_slice(x, oo))
@@ -1219,7 +1222,7 @@ class PredictiveBrain:
 
         candidate_metrics = _metrics(y_oos, candidate_pred, candidate_prob, np.array([-1, 0, 1]), r_oos)
         baseline_metrics = _metrics(y_oos, baseline_pred, baseline_prob, baseline.classes_, r_oos)
-        # Research-only diagnostic: evaluate all five frozen execution profiles
+        # Research-only diagnostic: evaluate all four frozen execution profiles
         # on this already-observed development OOS period. These diagnostics
         # are never used by promotion or model selection.
         execution_oos_profiles = {}
