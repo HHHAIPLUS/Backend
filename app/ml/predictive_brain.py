@@ -35,32 +35,19 @@ from app.ml.model_validation import promotion_gate
 MODEL_FAMILIES = (
     "logistic_regression",
     "binary_logistic_selective",
-    "trend_regime",
-    "binary_xgb_selective",
     "xgboost",
     "xgboost_directional_weighted",
     "blended_directional",
     "return_weighted_xgboost",
-    "logistic_regression_unweighted",
-    "logistic_regression_directional",
     "extra_trees",
-    "random_forest_unweighted",
-    "random_forest_balanced",
-    "hist_gradient_boosting",
     "hist_gradient_boosting_balanced",
-    "soft_voting",
-    "random_forest",
-    "gaussian_nb",
-    "sgd_logistic",
 )
 RETURN_BASE_FAMILIES = (
     "ridge",
     "extra_trees_regressor",
-    "random_forest_regressor",
-    "hist_gradient_boosting_regressor",
     "xgboost_regressor",
 )
-RETURN_SIGNAL_THRESHOLDS = (0.0005, 0.0008, 0.0010, 0.0012, 0.0014, 0.0018, 0.0022, 0.0030, 0.0040, 0.0050)
+RETURN_SIGNAL_THRESHOLDS = (0.0014, 0.0020, 0.0030, 0.0040, 0.0050)
 RETURN_FAMILIES = tuple(
     f"{family}@{threshold:.4f}"
     for family in RETURN_BASE_FAMILIES
@@ -867,7 +854,6 @@ class PredictiveBrain:
         for family in MODEL_FAMILIES:
             for train_window in TRAIN_WINDOW_CANDIDATES:
                 fold_scores = []
-                inverse_fold_scores = []
                 for base_train_bounds, val_bounds in selection_folds:
                     train_end = base_train_bounds[1]
                     train_start = max(0, train_end - train_window) if train_window else base_train_bounds[0]
@@ -900,16 +886,6 @@ class PredictiveBrain:
                     pred = model.predict(_slice(x, val_bounds))
                     probs = model.predict_proba(_slice(x, val_bounds))
                     fold_scores.append(_metrics(y_val_fold, pred, probs, model.classes_, _slice(returns, val_bounds)))
-                    inv_pred = np.where(pred == 1, -1, np.where(pred == -1, 1, 0))
-                    inv_probs = probs.copy()
-                    mapping = {int(c): i for i, c in enumerate(model.classes_)}
-                    if all(c in mapping for c in (-1, 0, 1)):
-                        inv_probs[:, mapping[-1]], inv_probs[:, mapping[1]] = (
-                            probs[:, mapping[1]], probs[:, mapping[-1]]
-                        )
-                    inverse_fold_scores.append(
-                        _metrics(y_val_fold, inv_pred, inv_probs, model.classes_, _slice(returns, val_bounds))
-                    )
                 score = aggregate_scores(fold_scores)
                 inv_score = aggregate_scores(inverse_fold_scores)
                 key = f"{family}@window={train_window}"
