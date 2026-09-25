@@ -273,8 +273,18 @@ def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 
         for h in HORIZONS:
             if i + h >= len(candles):
                 continue
-            long_barrier = last["close"] * (1.0 + take_profit)
-            short_barrier = last["close"] * (1.0 - stop_loss)
+            # Use a point-in-time volatility-scaled barrier rather than one
+            # fixed percentage for every market regime.  The volatility estimate
+            # is derived only from candles in the historical lookback window, so
+            # the target cannot see the future.  A hard floor keeps the target
+            # above the configured round-trip cost in quiet markets.
+            closes = np.asarray([float(c["close"]) for c in window], dtype=float)
+            log_returns = np.diff(np.log(np.maximum(closes, 1e-12)))
+            recent_vol = float(np.std(log_returns[-72:], ddof=1)) if len(log_returns) >= 10 else 0.0
+            dynamic_take_profit = max(float(take_profit), 1.5 * recent_vol)
+            dynamic_stop_loss = max(float(stop_loss), 1.5 * recent_vol)
+            long_barrier = last["close"] * (1.0 + dynamic_take_profit)
+            short_barrier = last["close"] * (1.0 - dynamic_stop_loss)
             barrier = None
             for j in range(i + 1, i + h + 1):
                 hi, lo = candles[j]["high"], candles[j]["low"]
@@ -283,10 +293,10 @@ def build_dataset(klines: list[list[Any]], horizon: int = 6, threshold: float = 
                     barrier = 0.0
                     break
                 if hit_long:
-                    barrier = take_profit
+                    barrier = dynamic_take_profit
                     break
                 if hit_short:
-                    barrier = -stop_loss
+                    barrier = -dynamic_stop_loss
                     break
             if barrier is None:
                 barrier = candles[i + h]["close"] / last["close"] - 1.0
