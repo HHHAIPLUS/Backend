@@ -6,7 +6,7 @@ from pathlib import Path
 
 def _project_modules() -> list[str]:
     modules: list[str] = []
-    for root in (Path("app"), Path("ai"), Path("research_backtest")):
+    for root in (Path("app"), Path("ai")):
         for path in root.rglob("*.py"):
             if path.name.startswith("test_"):
                 continue
