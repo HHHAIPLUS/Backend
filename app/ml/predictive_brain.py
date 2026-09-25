@@ -46,6 +46,9 @@ MODEL_FAMILIES = (
     "return_weighted_xgboost",
     "blended_directional",
     "extra_trees",
+    "random_forest_unweighted",
+    "random_forest_balanced",
+    "soft_voting",
     "hist_gradient_boosting_balanced",
 )
 RETURN_BASE_FAMILIES = (
