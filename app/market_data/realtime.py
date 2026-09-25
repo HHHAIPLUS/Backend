@@ -530,116 +530,19 @@ class BinanceWebSocketFeed:
 
 
 class BinancePublicFeed:
-    """
-    Compatibility wrapper used by the rest of HHHAI.
-
-    WebSocket is preferred; public REST is automatically used if the
-    WebSocket cannot provide fresh data.
-    """
+    """Compatibility wrapper over the canonical central Binance market-data source."""
 
     def snapshot(self, symbol: str) -> RealtimeSnapshot:
-        return BinanceWebSocketFeed.get(symbol).snapshot()
+        from app.market_data.binance_central import CentralBinanceMarketData
+        return CentralBinanceMarketData.snapshot(symbol)
 
 
 class BitgetPublicFeed:
-    """Public Bitget USDT-M Futures snapshot using REST market data."""
-
-    rest_base = "https://api.bitget.com"
+    """Compatibility wrapper over the canonical central Bitget market-data source."""
 
     def snapshot(self, symbol: str) -> RealtimeSnapshot:
-        symbol = symbol.upper()
-        started = time.perf_counter()
-        headers = {"User-Agent": "HHHAI/1.0", "Accept": "application/json"}
-        timeout = httpx.Timeout(8.0, connect=5.0)
-
-        try:
-            with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True, trust_env=True) as client:
-                ticker_response = client.get(
-                    f"{self.rest_base}/api/v2/mix/market/ticker",
-                    params={"productType": "USDT-FUTURES", "symbol": symbol},
-                )
-                ticker_response.raise_for_status()
-                ticker_payload = ticker_response.json()
-                tickers = ticker_payload.get("data") or []
-                ticker = tickers[0] if isinstance(tickers, list) and tickers else ticker_payload.get("data", {})
-
-                depth_response = client.get(
-                    f"{self.rest_base}/api/v2/mix/market/orderbook",
-                    params={"productType": "USDT-FUTURES", "symbol": symbol, "limit": 5},
-                )
-                depth_response.raise_for_status()
-                depth_payload = depth_response.json()
-                depth = depth_payload.get("data") or {}
-
-                oi_response = client.get(
-                    f"{self.rest_base}/api/v2/mix/market/open-interest",
-                    params={"productType": "USDT-FUTURES", "symbol": symbol},
-                )
-                oi_response.raise_for_status()
-                oi_payload = oi_response.json()
-
-                candles_response = client.get(
-                    f"{self.rest_base}/api/v2/mix/market/candles",
-                    params={"productType": "USDT-FUTURES", "symbol": symbol, "granularity": "5m", "limit": 30},
-                )
-                candles_response.raise_for_status()
-                candles_payload = candles_response.json()
-
-            price = float(ticker.get("lastPr", 0) or 0)
-            bid = float(ticker.get("bidPr", 0) or price)
-            ask = float(ticker.get("askPr", 0) or price)
-            bids = depth.get("bids") or depth.get("b") or []
-            asks = depth.get("asks") or depth.get("a") or []
-            bid_qty = sum(float(row[1]) for row in bids if len(row) >= 2)
-            ask_qty = sum(float(row[1]) for row in asks if len(row) >= 2)
-            if bid <= 0 and bids:
-                bid = float(bids[0][0])
-            if ask <= 0 and asks:
-                ask = float(asks[0][0])
-            if price <= 0:
-                raise RuntimeError(f"Bitget returned an invalid price for {symbol}")
-
-            imbalance = (bid_qty - ask_qty) / max(bid_qty + ask_qty, 1e-12)
-            change = float(ticker.get("change24h", ticker.get("price24hPcnt", 0)) or 0)
-            # Bitget v2 classic reports change24h as a decimal fraction.
-            if abs(change) > 1.0:
-                change /= 100.0
-            raw_candles = candles_payload.get("data") or []
-            closes = [float(r[4]) for r in raw_candles if isinstance(r, list) and len(r) >= 5 and float(r[4]) > 0]
-            rets = [closes[i] / closes[i - 1] - 1 for i in range(1, len(closes))] if len(closes) > 1 else []
-            volatility_proxy = min(1.0, pstdev(rets[-12:]) * 10) if len(rets[-12:]) > 1 else abs(change)
-            trend_strength = min(1.0, abs(sum(rets[-12:])) * 12) if rets else min(1.0, abs(change) * 4)
-            momentum = max(-1.0, min(1.0, sum(rets[-3:]) * 25)) if rets else max(-1.0, min(1.0, change * 5))
-            oi_data = oi_payload.get("data") or {}
-            if isinstance(oi_data, list): oi_data = oi_data[0] if oi_data else {}
-            oi = float(oi_data.get("openInterest", oi_data.get("openInterestValue", 0)) or 0)
-            now = datetime.now(timezone.utc)
-            health = FeedHealth(
-                source="bitget_futures_rest",
-                status="healthy",
-                latency_ms=round((time.perf_counter() - started) * 1000, 2),
-                observed_at=now,
-                stale_after_seconds=30,
-                error=None,
-            )
-            return RealtimeSnapshot(
-                symbol=symbol,
-                source="bitget_futures_rest",
-                price=price,
-                bid=bid if bid > 0 else price,
-                ask=ask if ask > 0 else price,
-                volume_24h=max(0.0, float(ticker.get("usdtVolume", ticker.get("quoteVolume", ticker.get("turnover24h", 0))) or 0)),
-                funding_rate=float(ticker.get("fundingRate", 0) or 0),
-                open_interest=oi or None,
-                open_interest_change=None,
-                order_book_imbalance=max(-1.0, min(1.0, imbalance)),
-                volatility_proxy=volatility_proxy,
-                price_change_24h=change,
-                observed_at=now,
-                feed_health=health,
-            )
-        except Exception as exc:
-            raise RuntimeError(f"Bitget market data unavailable for {symbol}: {type(exc).__name__}: {exc}") from exc
+        from app.market_data.bitget_central import CentralBitgetMarketData
+        return CentralBitgetMarketData.snapshot(symbol)
 
 
 class CoinDeskNewsFeed:
