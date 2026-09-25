@@ -47,9 +47,9 @@ services:
       - key: HHHAI_UNIVERSE_REFRESH_SECONDS
         value: "300"
       - key: HHHAI_EXECUTION_EXCHANGE
-        value: "binance"
+        value: "bitget"
       - key: HHHAI_MARKET_EXCHANGE
-        value: "binance"
+        value: "bitget"
       - key: HHHAI_TRADING_INTERVAL_SECONDS
         value: "30"
       - key: HHHAI_PAPER_EQUITY
