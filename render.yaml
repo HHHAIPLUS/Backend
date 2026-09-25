@@ -8,6 +8,8 @@ services:
     envVars:
       - key: APP_ENV
         value: production
+      - key: PYTHON_VERSION
+        value: "3.12"
       - key: LIVE_TRADING_ENABLED
         value: "false"
       - key: TESTNET_TRADING_ENABLED
