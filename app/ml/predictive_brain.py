@@ -1406,7 +1406,17 @@ class PredictiveBrain:
                 classes = np.asarray(getattr(model, "classes_", [-1, 0, 1]), dtype=int)
                 pred = classes[np.argmax(probs, axis=1)].astype(int)
             else:
-                pred = model.predict(x).astype(int)
+                # Calibration should determine confidence, not silently replace the
+                # directional class boundary.  CalibratedClassifierCV can shift the
+                # argmax enough to collapse a previously two-sided classifier into
+                # one class.  Keep the fitted raw estimator's directional prediction
+                # while using the calibrated probabilities for confidence/abstention.
+                base_estimator = getattr(model, "estimator", None)
+                base_estimator = getattr(base_estimator, "estimator", base_estimator)
+                if base_estimator is not None and hasattr(base_estimator, "predict"):
+                    pred = np.asarray(base_estimator.predict(x), dtype=int)
+                else:
+                    pred = model.predict(x).astype(int)
             if invert_direction:
                 pred = np.where(pred == 1, -1, np.where(pred == -1, 1, 0))
                 mapping = {int(c): i for i, c in enumerate(model.classes_)}
