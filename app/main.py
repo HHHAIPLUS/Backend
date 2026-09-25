@@ -39,7 +39,6 @@ from ai.stage6_hydration import install_stage6_hydration
 from ai.stage8_integration import install_stage8_risk, hydrate_stage8_risk
 from ai.multi_coin_selection import install_multi_coin_selection
 from app.market_data.binance_central import CentralBinanceMarketData
-from app.market_data.bitget_central import CentralBitgetMarketData
 from app.market_data import realtime as realtime_market_data
 from app.market_data.binance_user_stream import binance_user_stream
 from app.services.binance_execution_guard import install_binance_execution_guard
@@ -48,7 +47,6 @@ from app.core.config import settings
 
 log = logging.getLogger(__name__)
 
-realtime_market_data.BitgetPublicFeed.snapshot = lambda self, symbol: CentralBitgetMarketData.snapshot(symbol)
 
 CentralBinanceMarketData.install()
 install_binance_execution_guard(trader)
