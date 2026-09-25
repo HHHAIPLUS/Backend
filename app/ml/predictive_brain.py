@@ -505,25 +505,27 @@ def _apply_regime_filter(pred, x, threshold):
 
 
 def _execution_net_returns(returns, pred, horizon=1):
-    """Evaluate completed trades without overlapping future-return double counting.
+    """Evaluate non-overlapping trades at every eligible signal.
     
-    A horizon-h prediction at candle t represents one trade held through t+h.
-    Only non-overlapping entry points are executed. The full round-trip cost is
-    charged once per completed trade. This keeps multi-hour horizon economics
-    aligned with the return target instead of repeatedly applying the same
-    future return on every intervening candle.
+    A horizon-h prediction at candle t represents a trade held through t+h.
+    When a signal is present, execute it and advance by the holding horizon;
+    when there is no signal, advance one candle and keep looking. This avoids
+    the old fixed-index stride, which silently discarded valid signals whenever
+    they did not land on indices 0, h, 2h, ... and made the economic metric
+    depend on arbitrary dataset alignment.
     """
     returns = np.asarray(returns, dtype=float)
     pred = np.asarray(pred, dtype=int)
     horizon = max(1, int(horizon))
     net = np.zeros(len(pred), dtype=float)
-    for i in range(0, len(pred), horizon):
+    i = 0
+    while i < len(pred):
         signal = int(pred[i])
         if signal == 0:
+            i += 1
             continue
-        if i >= len(returns):
-            break
         net[i] = signal * float(returns[i]) - COST_RATE
+        i += horizon
     return net
 
 
