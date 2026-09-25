@@ -84,7 +84,7 @@ MAX_LABEL_HORIZON = max(HORIZONS)
 FIXED_HORIZON = int(os.getenv("HHHAI_PHASE2_FIXED_HORIZON", "0") or "0")
 MIN_OOS_TRADES = 100
 SIDE_SIGNAL_FLOOR = float(os.getenv("HHHAI_PHASE2_SIDE_SIGNAL_FLOOR", "0.35"))
-EXECUTION_PROFILES = ("confidence", "trend", "volatility", "momentum", "long_only")
+EXECUTION_PROFILES = ("confidence", "trend", "volatility", "momentum")
 
 
 class BinaryDirectionalClassifier(ClassifierMixin, BaseEstimator):
@@ -1123,13 +1123,12 @@ class PredictiveBrain:
         selection_threshold = 0.30
         threshold_candidates = []
         regime_thresholds = (None, 0.0, 0.0005, 0.0010, 0.0020, 0.0040)
-        # Calibration coverage is a model-selection constraint, not an OOS
-        # promotion gate. Requiring 5% of the entire calibration window can
-        # reject otherwise valid selective models before their untouched OOS
-        # performance is even measured. Keep a small, stable floor here while
-        # the authoritative OOS gate remains >= MIN_OOS_TRADES.
-        min_cal_trades = max(50, int(len(y_cal) * 0.02))
-        min_cal_trade_rate = 0.005
+        # Calibration must not select a strategy that only works by becoming nearly inactive.
+        # Require meaningful two-sided coverage so calibration cannot choose a long-only
+        # profile or an extreme confidence threshold that later collapses on OOS.
+        min_cal_trades = max(200, int(len(y_cal) * 0.10))
+        min_cal_trade_rate = 0.10
+        min_cal_side_rate = 0.03
         for threshold in np.arange(0.30, 0.71, 0.02):
             selected_base = cal_pred.copy()
             if family in MODEL_FAMILIES:
@@ -1145,7 +1144,14 @@ class PredictiveBrain:
                 traded = selected != 0
                 trade_count = int(traded.sum())
                 trade_rate = trade_count / max(1, len(selected))
-                if trade_count < min_cal_trades or trade_rate < min_cal_trade_rate:
+                long_rate = float(np.mean(selected == 1)) if len(selected) else 0.0
+                short_rate = float(np.mean(selected == -1)) if len(selected) else 0.0
+                if (
+                    trade_count < min_cal_trades
+                    or trade_rate < min_cal_trade_rate
+                    or long_rate < min_cal_side_rate
+                    or short_rate < min_cal_side_rate
+                ):
                     continue
                 net = _net_returns(r_cal, selected)
                 equity = np.cumsum(net)
@@ -1160,6 +1166,8 @@ class PredictiveBrain:
                     float(cal_metrics["balanced_accuracy"]),
                     float(cal_metrics["accuracy"]),
                     float(trade_rate),
+                    float(long_rate),
+                    float(short_rate),
                     float(threshold),
                     regime_threshold,
                     profile,
@@ -1177,7 +1185,7 @@ class PredictiveBrain:
             # period. Prefer positive total net return and controlled drawdown,
             # then expectancy and classification quality. OOS remains untouched.
             def _calibration_key(c):
-                avg_trade, total, neg_dd, bal, acc, trade_rate, threshold, regime, profile = c
+                avg_trade, total, neg_dd, bal, acc, trade_rate, long_rate, short_rate, threshold, regime, profile = c
                 dd = -float(neg_dd)
                 classification_ok = float(bal) >= 0.50 and float(acc) >= 0.52
                 economic_ok = float(total) > 0.0 and dd <= 0.15
@@ -1190,6 +1198,7 @@ class PredictiveBrain:
                     float(avg_trade),
                     float(neg_dd),
                     float(trade_rate),
+                    float(long_rate + short_rate),
                 )
             best_calibration = max(threshold_candidates, key=_calibration_key)
             selection_threshold = best_calibration[6]
