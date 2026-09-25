@@ -835,6 +835,7 @@ class PredictiveBrain:
             v for v in horizon_selection.values()
             if int(v.get("trades", 0)) >= MIN_OOS_TRADES
             and np.isfinite(float(v.get("avg_trade_net_return", 0.0)))
+            and float(v.get("avg_trade_net_return", 0.0)) > 0.0
         ]
         if not viable:
             return BrainReport("REJECTED", version, {"horizon_selection": horizon_selection},
@@ -994,8 +995,30 @@ class PredictiveBrain:
             return BrainReport("REJECTED", version, {"validation_families": validation_scores},
                                "No valid model family was evaluated.")
 
-        # Model selection is validation-only. Prefer candidates that already
-        # demonstrate positive validation expectancy and sufficient coverage.
+        if not any(
+            float(validation_scores[
+                f"{c[2]}@window={int(c[4])}" + ("_inverse" if c[3] else "")
+            ].get("balanced_accuracy", -1e99)) >= 0.50
+            and float(validation_scores[
+                f"{c[2]}@window={int(c[4])}" + ("_inverse" if c[3] else "")
+            ].get("accuracy", -1e99)) >= 0.52
+            and float(validation_scores[
+                f"{c[2]}@window={int(c[4])}" + ("_inverse" if c[3] else "")
+            ].get("avg_trade_net_return", -1e99)) > 0.0
+            and float(validation_scores[
+                f"{c[2]}@window={int(c[4])}" + ("_inverse" if c[3] else "")
+            ].get("total_net_return", -1e99)) > 0.0
+            and float(validation_scores[
+                f"{c[2]}@window={int(c[4])}" + ("_inverse" if c[3] else "")
+            ].get("max_drawdown", 1e99)) <= 0.15
+            for c in candidates
+        ):
+            return BrainReport("REJECTED", version, {"validation_families": validation_scores},
+                               "No directional model cleared the pre-OOS classification and economic safety gates.")
+        
+        # Model selection is validation-only. A candidate that cannot satisfy both
+        # classification and economic requirements before OOS is not allowed to be
+        # rescued by OOS tuning later.
         def _candidate_score(c):
             family_name = c[2]
             window = int(c[4])
@@ -1010,7 +1033,9 @@ class PredictiveBrain:
             directional_coverage_ok = float(predicted_fractions[0]) >= 0.02 and float(predicted_fractions[2]) >= 0.02
             classification_ok = bal >= 0.50 and acc >= 0.52
             economic_ok = exp > 0.0 and total > 0.0 and dd <= 0.15
+            both_ok = classification_ok and economic_ok and directional_coverage_ok
             return (
+                1 if both_ok else 0,
                 1 if classification_ok else 0,
                 1 if economic_ok else 0,
                 1 if directional_coverage_ok else 0,
