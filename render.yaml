@@ -77,7 +77,30 @@ services:
       - key: HHHAI_BRAIN_BOOTSTRAP_INTERVAL
         value: "1h"
 
+      # Phase 2 must use the same authoritative configuration as GitHub Actions.
+      - key: PHASE2_PROVIDER
+        value: "bitget"
+      - key: PHASE2_SYMBOL
+        value: "BTCUSDT"
+      - key: PHASE2_INTERVAL
+        value: "1h"
+      - key: PHASE2_CANDLES
+        value: "30000"
+      - key: PHASE2_VERSION
+        value: "phase2-authoritative-current"
       - key: PHASE2_OOS_START
-        value: "2025-01-01T00:00:00+00:00"
+        value: "2026-07-01T00:00:00+00:00"
       - key: PHASE2_OOS_END
-        value: "2026-01-01T00:00:00+00:00"
+        value: "2026-09-21T00:00:00+00:00"
+      - key: HHHAI_BRAIN_LABEL_THRESHOLD
+        value: "0.0015"
+      - key: HHHAI_PHASE2_TRAIN_FILTER_MULTIPLIER
+        value: "1.0"
+      - key: HHHAI_PHASE2_LABEL_MODE
+        value: "fixed"
+      - key: HHHAI_PHASE2_FIXED_LABEL_THRESHOLD
+        value: ""
+      - key: HHHAI_PHASE2_FIXED_HORIZON
+        value: ""
+      - key: HHHAI_PHASE2_SIDE_SIGNAL_FLOOR
+        value: "0.35"
