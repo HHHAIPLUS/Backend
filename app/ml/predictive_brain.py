@@ -883,14 +883,10 @@ class PredictiveBrain:
                     probs = model.predict_proba(_slice(x, val_bounds))
                     fold_scores.append(_metrics(y_val_fold, pred, probs, model.classes_, _slice(returns, val_bounds)))
                 score = aggregate_scores(fold_scores)
-                inv_score = aggregate_scores(inverse_fold_scores)
                 key = f"{family}@window={train_window}"
                 validation_scores[key] = score
-                validation_scores[key + "_inverse"] = inv_score
                 if score.get("status") != "UNAVAILABLE":
                     candidates.append((score["avg_trade_net_return"], score["balanced_accuracy"], family, False, train_window))
-                if inv_score.get("status") != "UNAVAILABLE":
-                    candidates.append((inv_score["avg_trade_net_return"], inv_score["balanced_accuracy"], family, True, train_window))
 
         for family in RETURN_FAMILIES:
             for train_window in TRAIN_WINDOW_CANDIDATES:
