@@ -33,9 +33,18 @@ from app.ml.features import FEATURES
 from app.ml.model_validation import promotion_gate
 
 MODEL_FAMILIES = (
+    # Registered directional learners. The binary selective learners are
+    # deliberately included: they learn LONG-vs-SHORT separately from the
+    # NO_TRADE decision, which is a better fit for a cost-sensitive trading
+    # system than forcing the classifier to learn three classes at once.
     "logistic_regression",
+    "logistic_regression_directional",
+    "binary_logistic_selective",
+    "binary_xgb_selective",
     "xgboost",
     "xgboost_directional_weighted",
+    "return_weighted_xgboost",
+    "blended_directional",
     "extra_trees",
     "hist_gradient_boosting_balanced",
 )
@@ -1041,7 +1050,12 @@ class PredictiveBrain:
             # component probabilities structurally; wrapping the whole voter in
             # a second post-hoc calibrator can collapse its directional signal.
             # Keep the pre-registered ensemble probabilities intact.
-            direction = raw_direction if family in ("soft_voting", "long_only_xgboost", "short_only_xgboost") else _calibrate(raw_direction, _slice(x, ca), y_cal)
+            direction = (
+                raw_direction
+                if family in ("soft_voting", "long_only_xgboost", "short_only_xgboost",
+                              "binary_logistic_selective", "binary_xgb_selective")
+                else _calibrate(raw_direction, _slice(x, ca), y_cal)
+            )
             baseline = _calibrate(baseline_raw, _slice(x, ca), y_cal)
         else:
             # Regression candidates are fit on train+validation and use the
