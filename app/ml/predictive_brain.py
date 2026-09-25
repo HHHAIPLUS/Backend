@@ -504,9 +504,33 @@ def _apply_regime_filter(pred, x, threshold):
     return pred
 
 
-def _metrics(y, pred, probs, classes, returns):
-    net = _net_returns(returns, pred)
-    traded = pred != 0
+def _execution_net_returns(returns, pred, horizon=1):
+    """Evaluate completed trades without overlapping future-return double counting.
+    
+    A horizon-h prediction at candle t represents one trade held through t+h.
+    Only non-overlapping entry points are executed. The full round-trip cost is
+    charged once per completed trade. This keeps multi-hour horizon economics
+    aligned with the return target instead of repeatedly applying the same
+    future return on every intervening candle.
+    """
+    returns = np.asarray(returns, dtype=float)
+    pred = np.asarray(pred, dtype=int)
+    horizon = max(1, int(horizon))
+    net = np.zeros(len(pred), dtype=float)
+    for i in range(0, len(pred), horizon):
+        signal = int(pred[i])
+        if signal == 0:
+            continue
+        if i >= len(returns):
+            break
+        net[i] = signal * float(returns[i]) - COST_RATE
+    return net
+
+
+def _metrics(y, pred, probs, classes, returns, execution_horizon=1):
+    net = _execution_net_returns(returns, pred, execution_horizon)
+    traded = (pred != 0)
+    executed = (net != 0.0)
     mapping = {int(c): i for i, c in enumerate(classes)}
     if all(c in mapping for c in (-1, 0, 1)):
         ordered = np.column_stack([probs[:, mapping[-1]], probs[:, mapping[0]], probs[:, mapping[1]]])
@@ -527,19 +551,19 @@ def _metrics(y, pred, probs, classes, returns):
             "precision": float(
                 precision_score(y[mask], pred[mask], labels=[label], average="micro", zero_division=0)
             ) if mask.any() else 0.0,
-            "avg_net_return": float(net[mask].mean()) if mask.any() else 0.0,
+            "avg_net_return": float(net[mask & executed].mean()) if (mask & executed).any() else 0.0,
         }
     return {
         "samples": int(len(y)),
-        "trades": int(traded.sum()),
-        "trade_rate": float(traded.mean()),
+        "trades": int(executed.sum()),
+        "trade_rate": float(executed.mean()),
         "prediction_class_fractions": prediction_class_fractions,
         "accuracy": float(accuracy_score(y, pred)),
         "balanced_accuracy": float(balanced_accuracy_score(y, pred)),
         "precision_macro": float(precision_score(y, pred, average="macro", zero_division=0)),
         "recall_macro": float(recall_score(y, pred, average="macro", zero_division=0)),
-        "avg_net_return": float(net.mean()),
-        "avg_trade_net_return": float(net[traded].mean()) if traded.any() else 0.0,
+        "avg_net_return": float(net.sum() / max(1, executed.sum())),
+        "avg_trade_net_return": float(net[executed].mean()) if executed.any() else 0.0,
         "total_net_return": float(net.sum()),
         "max_drawdown": dd,
         "calibration_brier": brier,
@@ -752,7 +776,7 @@ class PredictiveBrain:
                             model.fit(_slice(x, train_bounds), y_train_fold)
                         pred = model.predict(_slice(x, val_bounds))
                         probs = model.predict_proba(_slice(x, val_bounds))
-                        horizon_fold_candidates.append(_metrics(y_val_fold, pred, probs, model.classes_, val_returns))
+                        horizon_fold_candidates.append(_metrics(y_val_fold, pred, probs, model.classes_, val_returns, execution_horizon=h))
                     fold_scores.append(max(
                         horizon_fold_candidates,
                         key=lambda z: (
@@ -890,7 +914,7 @@ class PredictiveBrain:
                         model.fit(x_train_fold, y_train_fold)
                     pred = model.predict(_slice(x, val_bounds))
                     probs = model.predict_proba(_slice(x, val_bounds))
-                    fold_scores.append(_metrics(y_val_fold, pred, probs, model.classes_, _slice(returns, val_bounds)))
+                    fold_scores.append(_metrics(y_val_fold, pred, probs, model.classes_, _slice(returns, val_bounds), execution_horizon=chosen_horizon))
                 score = aggregate_scores(fold_scores)
                 key = f"{family}@window={train_window}"
                 validation_scores[key] = score
@@ -913,7 +937,7 @@ class PredictiveBrain:
                         np.where(pred == 0, 0.90, 0.05),
                         np.where(pred == 1, 0.90, 0.05),
                     ])
-                    fold_scores.append(_metrics(_slice(y, val_bounds), pred, probs, np.array([-1, 0, 1]), _slice(returns, val_bounds)))
+                    fold_scores.append(_metrics(_slice(y, val_bounds), pred, probs, np.array([-1, 0, 1]), _slice(returns, val_bounds), execution_horizon=chosen_horizon))
                 score = aggregate_scores(fold_scores)
                 key = f"{family}@window={train_window}"
                 validation_scores[key] = score
@@ -1105,12 +1129,12 @@ class PredictiveBrain:
                     or short_rate < min_cal_side_rate
                 ):
                     continue
-                net = _net_returns(r_cal, selected)
+                net = _execution_net_returns(r_cal, selected, chosen_horizon)
                 equity = np.cumsum(net)
                 peak = np.maximum.accumulate(np.r_[0.0, equity])
                 drawdown = float(np.max(peak[1:] - equity)) if len(equity) else 0.0
                 avg_trade = float(net[traded].mean())
-                cal_metrics = _metrics(y_cal, selected, cal_prob, np.array([-1, 0, 1]), r_cal)
+                cal_metrics = _metrics(y_cal, selected, cal_prob, np.array([-1, 0, 1]), r_cal, execution_horizon=chosen_horizon)
                 threshold_candidates.append((
                     float(avg_trade),
                     float(net.sum()),
@@ -1174,8 +1198,8 @@ class PredictiveBrain:
         candidate_pred = _apply_execution_profile(candidate_pred, _slice(x, oo), execution_profile)
         candidate_pred = _apply_regime_filter(candidate_pred, _slice(x, oo), regime_filter_threshold)
 
-        candidate_metrics = _metrics(y_oos, candidate_pred, candidate_prob, np.array([-1, 0, 1]), r_oos)
-        baseline_metrics = _metrics(y_oos, baseline_pred, baseline_prob, baseline.classes_, r_oos)
+        candidate_metrics = _metrics(y_oos, candidate_pred, candidate_prob, np.array([-1, 0, 1]), r_oos, execution_horizon=chosen_horizon)
+        baseline_metrics = _metrics(y_oos, baseline_pred, baseline_prob, baseline.classes_, r_oos, execution_horizon=chosen_horizon)
         # Research-only diagnostic: evaluate all four frozen execution profiles
         # on this already-observed development OOS period. These diagnostics
         # are never used by promotion or model selection.
@@ -1187,14 +1211,14 @@ class PredictiveBrain:
             profile_pred = _apply_execution_profile(profile_pred, _slice(x, oo), profile)
             profile_pred = _apply_regime_filter(profile_pred, _slice(x, oo), regime_filter_threshold)
             execution_oos_profiles[profile] = _metrics(
-                y_oos, profile_pred, candidate_prob, np.array([-1, 0, 1]), r_oos
+                y_oos, profile_pred, candidate_prob, np.array([-1, 0, 1]), r_oos, execution_horizon=chosen_horizon
             )
 
         # Statistical comparison is calculated once, after all choices are
         # frozen. It is evidence, never a tuning signal.
         gate = promotion_gate(
-            _net_returns(r_oos, candidate_pred),
-            _net_returns(r_oos, baseline_pred),
+            _execution_net_returns(r_oos, candidate_pred, chosen_horizon),
+            _execution_net_returns(r_oos, baseline_pred, chosen_horizon),
             candidate_metrics["balanced_accuracy"],
             baseline_metrics["balanced_accuracy"],
             candidate_metrics["max_drawdown"],
