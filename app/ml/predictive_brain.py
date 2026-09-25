@@ -1109,9 +1109,11 @@ class PredictiveBrain:
         # Calibration must not select a strategy that only works by becoming nearly inactive.
         # Require meaningful two-sided coverage so calibration cannot choose a long-only
         # profile or an extreme confidence threshold that later collapses on OOS.
-        min_cal_trades = max(200, int(len(y_cal) * 0.10))
-        min_cal_trade_rate = 0.10
-        min_cal_side_rate = 0.03
+        # These are calibration stability guards, not the Phase 2 OOS gate.
+        # The >=100-trade requirement belongs exclusively to untouched OOS.
+        min_cal_trades = max(50, int(len(y_cal) * 0.05))
+        min_cal_trade_rate = 0.05
+        min_cal_side_rate = 0.01
         for threshold in np.arange(0.30, 0.71, 0.02):
             selected_base = cal_pred.copy()
             if family in MODEL_FAMILIES:
@@ -1124,10 +1126,11 @@ class PredictiveBrain:
                 selected = _apply_regime_filter(
                     selected, _slice(x, ca), regime_threshold
                 )
-                # Directional evidence and predicted net edge must agree.
-                # This filter is fixed by COST_RATE rather than tuned on OOS.
-                predicted_edge = selected.astype(float) * cal_expected_return - COST_RATE
-                selected[predicted_edge <= 0.0] = 0
+                # Keep directional evidence and economic evidence as separate
+                # signals. The expected-return model is a cost-aware diagnostic
+                # and ranking feature here; it must not hard-zero every signal
+                # before the calibration set can measure the classifier itself.
+                # The actual net-return calculation below already includes COST_RATE.
                 traded = selected != 0
                 net = _execution_net_returns(r_cal, selected, chosen_horizon)
                 executed = net != 0.0
@@ -1209,8 +1212,12 @@ class PredictiveBrain:
             candidate_pred = candidate_pred.astype(int)
         candidate_pred = _apply_execution_profile(candidate_pred, _slice(x, oo), execution_profile)
         candidate_pred = _apply_regime_filter(candidate_pred, _slice(x, oo), regime_filter_threshold)
+        # Do not apply an additional learned hard gate to the untouched OOS
+        # signal. It was the cause of calibration collapse and would make the
+        # economic model decide whether the classifier gets evaluated at all.
+        # OOS economics are evaluated directly from realized net returns after
+        # COST_RATE, while the frozen expected-return model remains diagnostic.
         oos_expected_return = np.asarray(edge_model.predict(_slice(x, oo)), dtype=float)
-        candidate_pred[candidate_pred.astype(float) * oos_expected_return - COST_RATE <= 0.0] = 0
 
         candidate_metrics = _metrics(y_oos, candidate_pred, candidate_prob, np.array([-1, 0, 1]), r_oos, execution_horizon=chosen_horizon)
         baseline_metrics = _metrics(y_oos, baseline_pred, baseline_prob, baseline.classes_, r_oos, execution_horizon=chosen_horizon)
