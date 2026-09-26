@@ -1,5 +1,7 @@
 from __future__ import annotations
-import json, os, math, time
+import json, os, math, time, sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from datetime import datetime, timezone
 import httpx, numpy as np
 from sklearn.linear_model import LogisticRegression
