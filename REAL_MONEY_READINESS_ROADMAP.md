@@ -87,42 +87,74 @@ Prove that the historical data used to train and validate HHHAI is trustworthy, 
 
 ---
 
-# PHASE 2 — PREDICTIVE BRAIN / UNTOUCHED OOS VALIDATION
+# PHASE 2 — ADAPTIVE TRADING VALIDATION
 **Status: [ ] IN PROGRESS**
 
 ### Goal
-Produce a predictive model that demonstrates genuine out-of-sample economic value under strict, pre-defined gates.
+Replace the retired single-model OOS-gate approach with a causal, walk-forward trading-validation process that evaluates whether HHHAI can produce positive net trading performance on genuinely unseen future data.
+
+### Method
+The system will be evaluated as a time-ordered trading process, not as a one-shot classification contest. Each prediction must be generated using only information that would have been available at that timestamp. Model selection and parameter selection occur only inside historical development windows; the final holdout remains untouched until the validation design is frozen.
 
 ### Required work
-- [ ] Train the predictive brain only from the verified Phase 1 dataset.
-- [ ] Use chronological train/validation/OOS separation.
-- [ ] Verify no leakage between train, validation and OOS.
-- [ ] Train and evaluate the required predictive components.
-- [ ] Evaluate appropriate model families without adding complexity merely to force a pass.
-- [ ] Calibrate probabilities using validation data only.
-- [ ] Select abstention threshold using validation data only.
-- [ ] Select the prediction horizon using validation evidence only.
-- [ ] Evaluate on a completely untouched OOS period.
-- [ ] Include realistic trading costs, fees, spread and conservative slippage.
-- [ ] Evaluate long, short and no-trade behavior.
-- [ ] Record accuracy and balanced accuracy.
-- [ ] Record trade count and trade rate.
-- [ ] Record average net return per trade and total net return.
-- [ ] Record drawdown and other relevant risk metrics.
-- [ ] Require at least **100 OOS trades**.
-- [ ] Require **accuracy >= 52%**.
-- [ ] Require **balanced accuracy >= 50%**.
-- [ ] Require **positive average net return per trade**.
-- [ ] Require **positive total net return**.
-- [ ] Require **maximum drawdown <= 15%**.
-- [ ] Reject the candidate if any mandatory gate fails.
-- [ ] Do not repeatedly alter labels, thresholds, costs or gates simply to manufacture a PASS.
-- [ ] Save a complete reproducible validation report.
+
+#### A. Causal data and target pipeline
+- [ ] Verify feature timestamps and target timestamps are strictly causal.
+- [ ] Verify long/short sign conventions end-to-end.
+- [ ] Verify the training target represents the same economic quantity used by execution evaluation.
+- [ ] Verify entry price, exit price, fees, spread and slippage are calculated consistently.
+- [ ] Verify live prediction and historical walk-forward prediction use the same feature-generation path.
+- [ ] Add automated assertions for feature/target alignment and class-direction mapping.
+
+#### B. Walk-forward development
+- [ ] Replace the current single frozen-model validation procedure with chronological walk-forward evaluation.
+- [ ] Use expanding or rolling training windows without shuffling future observations into training.
+- [ ] Retrain only from data available before each prediction window.
+- [ ] Use validation sub-windows for model/parameter selection.
+- [ ] Keep a completely untouched final holdout that is never used for model selection.
+- [ ] Include a gap where necessary to prevent target-horizon overlap between training and evaluation windows.
+
+#### C. Trading decision architecture
+- [ ] Separate directional prediction from trade qualification.
+- [ ] Evaluate long and short opportunities independently.
+- [ ] Add an explicit no-trade state based on expected net opportunity.
+- [ ] Use a cost-aware trade decision rather than assuming classification accuracy implies profitability.
+- [ ] Add independent risk sizing/limits so model confidence cannot determine unsafe exposure.
+
+#### D. Candidate evaluation
+For every walk-forward window record:
+- [ ] Net return after fees, spread and conservative slippage.
+- [ ] Average net return per trade.
+- [ ] Profit factor where sample size permits.
+- [ ] Expectancy.
+- [ ] Maximum drawdown.
+- [ ] Number of trades and trade rate.
+- [ ] Long and short results separately.
+- [ ] Win/loss distribution.
+- [ ] Performance stability across chronological windows.
+- [ ] Baseline comparison.
+
+Candidate selection must consider both predictive quality and economic performance. No threshold, label, cost assumption or acceptance rule may be changed using final-holdout results.
+
+#### E. Robustness before final holdout
+- [ ] Test multiple historical market regimes.
+- [ ] Test fee/slippage sensitivity.
+- [ ] Test high- and low-volatility periods.
+- [ ] Test whether results depend on a small number of trades.
+- [ ] Test model degradation across time.
+- [ ] Reject unstable strategies even when one development window looks profitable.
+
+#### F. Final untouched validation
+- [ ] Freeze the model architecture and all decision parameters.
+- [ ] Freeze the trading-cost assumptions.
+- [ ] Run the final holdout exactly once under the frozen configuration.
+- [ ] Record the complete result without tuning against it.
+- [ ] Require positive net performance and acceptable drawdown under the predefined acceptance criteria.
+- [ ] Require sufficient trade sample size for the conclusion to be meaningful.
+- [ ] Reject the candidate if the final holdout does not demonstrate genuine economic value.
 
 ### Phase 2 completion gate
-**Genuine untouched-OOS PASS under the fixed gates above.**
-
----
+**A frozen HHHAI trading strategy demonstrates positive, cost-adjusted performance across causal walk-forward development windows and then passes the untouched final holdout without post-hoc tuning.**
 
 # PHASE 3 — ROBUSTNESS / WALK-FORWARD / STRESS VALIDATION
 **Status: [ ] LOCKED — WAITING FOR PHASE 2**
@@ -432,7 +464,7 @@ Perform the final release audit before allowing normal real-money operation.
 | Phase | Status |
 |---|---|
 | Phase 1 — Historical Data Integrity | **[✓] COMPLETE** |
-| Phase 2 — Predictive Brain / OOS Validation | **[ ] IN PROGRESS** |
+| Phase 2 — Adaptive Trading Validation | **[ ] IN PROGRESS** |
 | Phase 3 — Robustness / Walk-Forward / Stress | [ ] LOCKED |
 | Phase 4 — Production Model Packaging & Persistence | [ ] LOCKED |
 | Phase 5 — Paper Trading | [ ] LOCKED |
@@ -462,4 +494,4 @@ When work begins:
 6. Mark the phase **[✓] COMPLETE** only after verification.
 7. Then—and only then—unlock the next phase.
 
-**Current phase: PHASE 2 — PREDICTIVE BRAIN / UNTOUCHED OOS VALIDATION.**
+**Current phase: PHASE 2 — ADAPTIVE TRADING VALIDATION.**
