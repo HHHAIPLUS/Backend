@@ -1,4 +1,5 @@
 name: Phase 2 adaptive validation
+# Authoritative production-brain verification; triggered by main-branch changes.
 on:
   push:
     branches: [main]
