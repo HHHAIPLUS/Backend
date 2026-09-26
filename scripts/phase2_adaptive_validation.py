@@ -17,19 +17,22 @@ FINAL_HOLDOUT=2200; HORIZON=1; GAP=HORIZON
 MIN_TRADES=100
 
 def fetch():
-    rows=[]; end=None
-    with httpx.Client(timeout=30, trust_env=False, headers={"User-Agent":"HHHAI/phase2"}) as c:
+    rows=[]; end_ms=int(time.time()*1000)//3600000*3600000
+    with httpx.Client(timeout=30, trust_env=False, headers={"User-Agent":"HHHAI/phase2"}) as client:
         while len(rows)<N:
-            p={"category":"USDT-FUTURES","symbol":SYMBOL,"interval":INTERVAL,"limit":200}
-            if end is not None: p["endTime"]=end
-            data=c.get("https://api.bitget.com/api/v3/market/history-candles",params=p).json().get("data",[])
-            if not data: raise RuntimeError("Bitget returned no candles")
+            start_ms=end_ms-(999*3600000)
+            p={"category":"USDT-FUTURES","symbol":SYMBOL,"interval":INTERVAL,"limit":1000,"startTime":start_ms,"endTime":end_ms,"type":"market"}
+            resp=client.get("https://api.bitget.com/api/v3/market/candles",params=p)
+            resp.raise_for_status(); payload=resp.json()
+            if payload.get("code") not in (None,"00000"): raise RuntimeError(f"Bitget candles error: {payload}")
+            data=payload.get("data",[])
+            if not data: raise RuntimeError(f"Bitget returned no candles for {start_ms}..{end_ms}")
             batch=[(int(r[0]),float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[5])) for r in data if len(r)>=6]
             rows.extend(batch)
-            new_end=min(r[0] for r in batch)-1
-            if end is not None and new_end>=end: raise RuntimeError("pagination stalled")
-            end=new_end
-            time.sleep(.05)
+            oldest=min(r[0] for r in batch)
+            if oldest>=end_ms: raise RuntimeError("candle pagination stalled")
+            end_ms=oldest-3600000
+            time.sleep(.08)
     rows=sorted({r[0]:r for r in rows}.values())[-N:]
     if len(rows)!=N: raise RuntimeError(f"expected {N} candles, got {len(rows)}")
     for a,b in zip(rows,rows[1:]):
