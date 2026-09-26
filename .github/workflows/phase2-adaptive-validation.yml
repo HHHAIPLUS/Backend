@@ -1,0 +1,25 @@
+name: Phase 2 adaptive validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/phase2_adaptive_validation.py'
+      - 'app/ml/features.py'
+      - 'app/ml/**'
+      - '.github/workflows/phase2-adaptive-validation.yml'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r requirements.txt
+      - run: python scripts/phase2_adaptive_validation.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase2-adaptive-evidence
+          path: phase2_evidence/
