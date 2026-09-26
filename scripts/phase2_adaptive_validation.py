@@ -20,7 +20,7 @@ def fetch():
     rows=[]; end_ms=int(time.time()*1000)//3600000*3600000
     with httpx.Client(timeout=30, trust_env=False, headers={"User-Agent":"HHHAI/phase2"}) as client:
         while len(rows)<N:
-            start_ms=end_ms-(999*3600000)
+            start_ms=end_ms-(899*3600000)
             p={"category":"USDT-FUTURES","symbol":SYMBOL,"interval":INTERVAL,"limit":1000,"startTime":start_ms,"endTime":end_ms,"type":"market"}
             resp=client.get("https://api.bitget.com/api/v3/market/candles",params=p)
             resp.raise_for_status(); payload=resp.json()
