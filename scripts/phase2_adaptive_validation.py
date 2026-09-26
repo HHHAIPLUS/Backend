@@ -77,7 +77,7 @@ def predict_trade(m,X,confidence_threshold=0.55):
             j=list(cls).index(out[i])
             flat=j if False else None
             other=np.delete(pr[i],j)
-            if pr[i,j] < 0.55 or pr[i,j] <= other.max(): out[i]=0
+            if pr[i,j] < confidence_threshold or pr[i,j] <= other.max(): out[i]=0
     return out
 
 def main():
