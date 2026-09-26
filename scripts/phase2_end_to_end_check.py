@@ -4,6 +4,60 @@ from datetime import datetime, timezone
 from pathlib import Path
 import httpx, numpy as np
 
+
+BITGET_URL = "https://api.bitget.com/api/v2/mix/market/history-candles"
+
+
+def fetch_bitget_candles(target: int):
+    rows = {}
+    end_ms = int(time.time() * 1000) // 3600000 * 3600000
+    consecutive_empty = 0
+    with httpx.Client(timeout=30, trust_env=False, headers={"User-Agent": "HHHAI/phase2"}) as client:
+        while len(rows) < target:
+            start_ms = end_ms - 199 * 3600000
+            params = {"symbol": SYMBOL, "productType": "USDT-FUTURES", "granularity": INTERVAL,
+                      "limit": 200, "startTime": start_ms, "endTime": end_ms}
+            for attempt in range(6):
+                try:
+                    response = client.get(BITGET_URL, params=params)
+                    if response.status_code == 429:
+                        delay = min(60.0, 2.0 ** attempt * 2.0)
+                        time.sleep(delay)
+                        continue
+                    response.raise_for_status()
+                    payload = response.json()
+                    break
+                except (httpx.HTTPError, ValueError) as exc:
+                    if attempt == 5:
+                        raise RuntimeError(f"Bitget historical request failed: {exc}") from exc
+                    time.sleep(min(30.0, 2.0 ** attempt))
+            else:
+                raise RuntimeError("Bitget remained rate-limited after retries")
+            if payload.get("code") not in (None, "00000"):
+                raise RuntimeError(f"Bitget candles error: {payload}")
+            data = payload.get("data", [])
+            if not data:
+                consecutive_empty += 1
+                if consecutive_empty >= 3:
+                    raise RuntimeError("Bitget returned no candles repeatedly")
+                time.sleep(2.0)
+                continue
+            consecutive_empty = 0
+            before = len(rows)
+            for r in data:
+                if len(r) >= 6:
+                    rows[int(r[0])] = (int(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5]))
+            oldest = min(int(r[0]) for r in data)
+            if oldest >= end_ms or len(rows) == before:
+                raise RuntimeError("Bitget candle pagination stalled")
+            end_ms = oldest
+            # Stay well below the endpoint limit and leave room for transient retries.
+            time.sleep(1.1)
+    ordered = sorted(rows.values())[-target:]
+    if len(ordered) != target:
+        raise RuntimeError(f"expected {target} candles, got {len(ordered)}")
+    return ordered
+
 from app.ml.features import FEATURES, build_model_features
 from app.ml.predictive_brain import PredictiveBrain, _direction_target
 
@@ -14,36 +68,7 @@ HORIZONS = (1, 3, 6, 12)
 
 
 def fetch():
-    rows = []
-    end_ms = int(time.time() * 1000) // 3600000 * 3600000
-    with httpx.Client(timeout=30, trust_env=False, headers={"User-Agent": "HHHAI/phase2-e2e"}) as client:
-        while len(rows) < CANDLES:
-            start_ms = end_ms - 199 * 3600000
-            params = {
-                "symbol": SYMBOL, "productType": "USDT-FUTURES",
-                "granularity": INTERVAL, "limit": 200,
-                "startTime": start_ms, "endTime": end_ms,
-            }
-            payload = client.get(
-                "https://api.bitget.com/api/v2/mix/market/history-candles",
-                params=params,
-            ).json()
-            if payload.get("code") not in (None, "00000"):
-                raise RuntimeError(payload)
-            data = payload.get("data", [])
-            if not data:
-                raise RuntimeError("Bitget returned no candles")
-            rows.extend(
-                (int(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5]))
-                for r in data if len(r) >= 6
-            )
-            oldest = min(r[0] for r in rows[-200:])
-            if oldest >= end_ms:
-                raise RuntimeError("Bitget pagination stalled")
-            end_ms = oldest
-    rows = sorted({r[0]: r for r in rows}.values())[-CANDLES:]
-    if len(rows) != CANDLES:
-        raise RuntimeError(f"expected {CANDLES}, got {len(rows)}")
+    rows = fetch_bitget_candles(CANDLES)
     for a, b in zip(rows, rows[1:]):
         if b[0] - a[0] != 3600000:
             raise RuntimeError("candle chronology/gap failure")
