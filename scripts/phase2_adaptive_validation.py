@@ -84,30 +84,30 @@ def main():
     rows=fetch(); X,y,r,ts=dataset(rows)
     split=len(X)-FINAL_HOLDOUT
     dev_end=split
-    # Development walk-forward windows. Candidate selection uses only these windows.
     windows=[(max(0,dev_end-10000),dev_end-1800,1800),(max(0,dev_end-11800),dev_end-3600,1800),(max(0,dev_end-13600),dev_end-5400,1800),(max(0,dev_end-15400),dev_end-7200,1800)]
     scores=[]
-    for family in ("logistic","rf"):
-        fold=[]
-        for a,b,t in windows:
-            tr=np.arange(a,b-GAP); te=np.arange(b,min(b+t,dev_end))
-            m=model(family); m.fit(X[tr],y[tr]); p=predict_trade(m,X[te])
-            fold.append(trade_metrics(y[te],p,r[te]))
-        scores.append((family,fold))
-    # Frozen selection rule: median total net return, then median drawdown, then median balanced accuracy.
+    for family in ("logistic",):
+        for threshold in (0.35,0.40,0.45,0.50,0.55):
+            fold=[]
+            for a,b,t in windows:
+                tr=np.arange(a,b-GAP); te=np.arange(b,min(b+t,dev_end))
+                m=model(family); m.fit(X[tr],y[tr]); p=predict_trade(m,X[te],threshold)
+                fold.append(trade_metrics(y[te],p,r[te]))
+            scores.append((family,threshold,fold))
     def key(item):
         fold=item[2]
         return (float(np.median([z["total_net_return"] for z in fold])),
                 -float(np.median([z["max_drawdown"] for z in fold])),
-                float(np.median([z["balanced_accuracy"] for z in fold])))
-    chosen=max(scores,key=key)\n    chosen_family, chosen_threshold = chosen[0], chosen[1]
-    # Freeze architecture/parameters before touching final holdout.
+                float(np.median([z["balanced_accuracy"] for z in fold])),
+                float(np.median([z["trades"] for z in fold])))
+    chosen=max(scores,key=key)
+    chosen_family, chosen_threshold = chosen[0], chosen[1]
     train=np.arange(0,split-GAP); final=np.arange(split,len(X))
     m=model(chosen_family); m.fit(X[train],y[train]); p=predict_trade(m,X[final],chosen_threshold)
     fm=trade_metrics(y[final],p,r[final])
     result={"status":"PASS" if fm["trades"]>=MIN_TRADES and fm["total_net_return"]>0 and fm["avg_net_return"]>0 and fm["max_drawdown"]<=0.15 else "FAIL",
             "data":{"candles":len(rows),"dataset_rows":len(X),"symbol":SYMBOL,"interval":INTERVAL},
-            "design":{"horizon":HORIZON,"cost_rate":COST,"gap":GAP,"final_holdout_rows":FINAL_HOLDOUT,"final_holdout_start":datetime.fromtimestamp(ts[split]/1000,tz=timezone.utc).isoformat(),"selection":"development-only walk-forward median economics"},
+            "design":{"horizon":HORIZON,"cost_rate":COST,"gap":GAP,"final_holdout_rows":FINAL_HOLDOUT,"final_holdout_start":datetime.fromtimestamp(ts[split]/1000,tz=timezone.utc).isoformat(),"selection":"development-only walk-forward threshold/family selection"},
             "development":{"candidates":[{"family":a,"threshold":t,"folds":b} for a,t,b in scores],"chosen_family":chosen_family,"chosen_threshold":chosen_threshold},
             "final_holdout":fm,
             "causal_checks":{"chronological":True,"no_future_features":True,"target_horizon":HORIZON,"holdout_untouched_during_selection":True}}
