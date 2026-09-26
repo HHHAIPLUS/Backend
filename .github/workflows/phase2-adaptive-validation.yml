@@ -4,20 +4,26 @@ on:
     branches: [main]
     paths:
       - 'scripts/phase2_adaptive_validation.py'
+      - 'scripts/phase2_end_to_end_check.py'
       - 'app/ml/features.py'
-      - 'app/ml/**'
+      - 'app/ml/predictive_brain.py'
+      - 'app/ml/model_validation.py'
       - '.github/workflows/phase2-adaptive-validation.yml'
   workflow_dispatch:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
+        with:
+          python-version: '3.12'
       - run: pip install -r requirements.txt
-      - run: python scripts/phase2_adaptive_validation.py
+      - name: End-to-end production brain diagnostic
+        run: python scripts/phase2_end_to_end_check.py
+      - name: Authoritative Phase 2 verification
+        run: python scripts/phase2_adaptive_validation.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
