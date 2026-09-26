@@ -64,13 +64,13 @@ def model(family):
         return Pipeline([("scale",StandardScaler()),("m",LogisticRegression(max_iter=1800,class_weight="balanced",C=0.5,random_state=42))])
     return RandomForestClassifier(n_estimators=180,min_samples_leaf=12,max_features="sqrt",class_weight="balanced_subsample",random_state=42,n_jobs=1)
 
-def predict_trade(m,X):
+def predict_trade(m,X,confidence_threshold=0.55):
     pr=m.predict_proba(X); cls=m.classes_
     out=np.zeros(len(X),dtype=int)
     # fixed, predeclared cost-aware qualification; no final-holdout tuning
     for j,c in enumerate(cls):
-        if c==-1: out[pr[:,j]>=0.55]=-1
-        if c==1: out[pr[:,j]>=0.55]=1
+        if c==-1: out[pr[:,j]>=confidence_threshold]=-1
+        if c==1: out[pr[:,j]>=confidence_threshold]=1
     # require directional probability to beat flat and cost-aware confidence
     for i in range(len(out)):
         if out[i] != 0:
@@ -96,19 +96,19 @@ def main():
         scores.append((family,fold))
     # Frozen selection rule: median total net return, then median drawdown, then median balanced accuracy.
     def key(item):
-        fold=item[1]
+        fold=item[2]
         return (float(np.median([z["total_net_return"] for z in fold])),
                 -float(np.median([z["max_drawdown"] for z in fold])),
                 float(np.median([z["balanced_accuracy"] for z in fold])))
-    chosen=max(scores,key=key)[0]
+    chosen=max(scores,key=key)\n    chosen_family, chosen_threshold = chosen[0], chosen[1]
     # Freeze architecture/parameters before touching final holdout.
     train=np.arange(0,split-GAP); final=np.arange(split,len(X))
-    m=model(chosen); m.fit(X[train],y[train]); p=predict_trade(m,X[final])
+    m=model(chosen_family); m.fit(X[train],y[train]); p=predict_trade(m,X[final],chosen_threshold)
     fm=trade_metrics(y[final],p,r[final])
     result={"status":"PASS" if fm["trades"]>=MIN_TRADES and fm["total_net_return"]>0 and fm["avg_net_return"]>0 and fm["max_drawdown"]<=0.15 else "FAIL",
             "data":{"candles":len(rows),"dataset_rows":len(X),"symbol":SYMBOL,"interval":INTERVAL},
             "design":{"horizon":HORIZON,"cost_rate":COST,"gap":GAP,"final_holdout_rows":FINAL_HOLDOUT,"final_holdout_start":datetime.fromtimestamp(ts[split]/1000,tz=timezone.utc).isoformat(),"selection":"development-only walk-forward median economics"},
-            "development":{"candidates":[{"family":a,"folds":b} for a,b in scores],"chosen_family":chosen},
+            "development":{"candidates":[{"family":a,"threshold":t,"folds":b} for a,t,b in scores],"chosen_family":chosen_family,"chosen_threshold":chosen_threshold},
             "final_holdout":fm,
             "causal_checks":{"chronological":True,"no_future_features":True,"target_horizon":HORIZON,"holdout_untouched_during_selection":True}}
     os.makedirs("phase2_evidence",exist_ok=True)
