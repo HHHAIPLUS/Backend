@@ -26,7 +26,7 @@ def fetch():
             resp.raise_for_status(); payload=resp.json()
             if payload.get("code") not in (None,"00000"): raise RuntimeError(f"Bitget candles error: {payload}")
             data=payload.get("data",[])
-            if not data: raise RuntimeError(f"Bitget returned no candles for {start_ms}..{end_ms}")
+            if not data: raise RuntimeError(f"Bitget returned no candles for {start_ms}..{end_ms}; payload={payload}")
             batch=[(int(r[0]),float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[5])) for r in data if len(r)>=6]
             rows.extend(batch)
             oldest=min(r[0] for r in batch)
