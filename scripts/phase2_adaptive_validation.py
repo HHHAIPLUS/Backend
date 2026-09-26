@@ -31,12 +31,12 @@ def fetch():
             rows.extend(batch)
             oldest=min(r[0] for r in batch)
             if oldest>=end_ms: raise RuntimeError("candle pagination stalled")
-            end_ms=oldest-3600000
+            end_ms=oldest
             time.sleep(.06)
     rows=sorted({r[0]:r for r in rows}.values())[-N:]
     if len(rows)!=N: raise RuntimeError(f"expected {N} candles, got {len(rows)}")
     for a,b in zip(rows,rows[1:]):
-        if b[0]-a[0] != 3600000: raise RuntimeError("candle gap/overlap")
+        if b[0]-a[0] != 3600000: raise RuntimeError(f"candle gap/overlap at {a[0]}->{b[0]} delta={b[0]-a[0]}")
         if not (a[3] <= min(a[1],a[4]) and a[2] >= max(a[1],a[4]) and a[1]>0 and a[4]>0 and a[5]>=0): raise RuntimeError("invalid OHLCV")
     return rows
 
