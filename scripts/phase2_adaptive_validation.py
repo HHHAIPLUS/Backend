@@ -66,8 +66,48 @@ LOOKBACK = 168
 HORIZONS = (1, 3, 6, 12)
 
 
+def fetch_funding_rates(start_ms: int):
+    """Fetch historical funding settlements without using future observations."""
+    rates = {}
+    page_no = 1
+    with httpx.Client(timeout=30, trust_env=False, headers={"User-Agent": "HHHAI/phase2"}) as client:
+        while page_no <= 100:
+            response = client.get(
+                "https://api.bitget.com/api/v2/mix/market/history-fund-rate",
+                params={
+                    "symbol": SYMBOL,
+                    "productType": "USDT-FUTURES",
+                    "pageSize": 100,
+                    "pageNo": page_no,
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get("code") not in (None, "00000"):
+                raise RuntimeError(f"Bitget funding history error: {payload}")
+            data = payload.get("data", [])
+            if not data:
+                break
+            before = len(rates)
+            for item in data:
+                ts = int(item.get("fundingTime", 0))
+                if ts:
+                    rates[ts] = float(item.get("fundingRate", 0.0))
+            if len(rates) == before:
+                break
+            oldest = min(rates)
+            if oldest <= start_ms:
+                break
+            page_no += 1
+            time.sleep(0.08)
+    if not rates:
+        raise RuntimeError("Bitget returned no historical funding rates")
+    return dict(sorted(rates.items()))
+
+
 def fetch():
     rows = fetch_bitget_candles(CANDLES)
+    funding = fetch_funding_rates(rows[0][0])
     for a, b in zip(rows, rows[1:]):
         if b[0] - a[0] != 3600000:
             raise RuntimeError(f"candle gap/overlap {a[0]}->{b[0]}")
@@ -76,12 +116,19 @@ def fetch():
     return rows
 
 
-def build_rows(candles):
+def build_rows(candles, funding_rates):
     rows = []
+    funding_times = sorted(funding_rates)
+    fp = 0
+    current_funding = 0.0
     for i in range(LOOKBACK, len(candles) - max(HORIZONS)):
+        ts = candles[i][0]
+        while fp < len(funding_times) and funding_times[fp] <= ts:
+            current_funding = float(funding_rates[funding_times[fp]])
+            fp += 1
         window = [{"timestamp": r[0], "open": r[1], "high": r[2], "low": r[3], "close": r[4], "volume": r[5]}
                   for r in candles[i - LOOKBACK:i + 1]]
-        features = build_model_features(window)
+        features = build_model_features(window, context={"market": {"funding_rate": current_funding}})
         rows.append({
             "observed_at": datetime.fromtimestamp(candles[i][0] / 1000, timezone.utc).isoformat(),
             "features": {k: float(features[k]) for k in FEATURES},
@@ -95,7 +142,7 @@ def build_rows(candles):
 
 def main():
     candles = fetch()
-    rows = build_rows(candles)
+    rows = build_rows(candles, funding)
     if len(rows) < 1200:
         raise RuntimeError("insufficient point-in-time rows")
 
@@ -111,6 +158,7 @@ def main():
         "interval": INTERVAL,
         "candles": len(candles),
         "dataset_rows": len(rows),
+        "funding_history": {"available": True, "feature": "funding_rate"},
         "artifact": report.artifact,
         "metrics": report.metrics,
         "causal_checks": {
