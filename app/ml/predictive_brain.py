@@ -1200,7 +1200,7 @@ class PredictiveBrain:
             best_calibration = max(threshold_candidates, key=_calibration_key)
             # threshold_candidates stores:
             # avg_trade,total,-drawdown,balanced_accuracy,accuracy,trade_rate,
-            # long_rate,short_rate,threshold,regime,profile.
+            # long_rate,short_rate,threshold,regime,profile,edge_threshold.
             selection_threshold = best_calibration[8]
             regime_filter_threshold = best_calibration[9]
             execution_profile = best_calibration[10]
