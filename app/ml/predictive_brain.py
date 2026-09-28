@@ -1224,6 +1224,7 @@ class PredictiveBrain:
             selection_threshold = best_calibration[8]
             regime_filter_threshold = best_calibration[9]
             execution_profile = best_calibration[10]
+            edge_filter_threshold = best_calibration[11]
 
         candidate_pred, candidate_prob = self._predict_selected(direction, _slice(x, oo), invert_direction, family)
         baseline_pred = baseline.predict(_slice(x, oo))
@@ -1242,6 +1243,7 @@ class PredictiveBrain:
         # OOS economics are evaluated directly from realized net returns after
         # COST_RATE, while the frozen expected-return model remains diagnostic.
         oos_expected_return = np.asarray(edge_model.predict(_slice(x, oo)), dtype=float)
+        candidate_pred = _apply_edge_filter(candidate_pred, oos_expected_return, edge_filter_threshold)
 
         candidate_metrics = _metrics(y_oos, candidate_pred, candidate_prob, np.array([-1, 0, 1]), r_oos, execution_horizon=chosen_horizon)
         baseline_metrics = _metrics(y_oos, baseline_pred, baseline_prob, baseline.classes_, r_oos, execution_horizon=chosen_horizon)
@@ -1255,6 +1257,7 @@ class PredictiveBrain:
                 profile_pred[candidate_prob.max(axis=1) < selection_threshold] = 0
             profile_pred = _apply_execution_profile(profile_pred, _slice(x, oo), profile)
             profile_pred = _apply_regime_filter(profile_pred, _slice(x, oo), regime_filter_threshold)
+            profile_pred = _apply_edge_filter(profile_pred, oos_expected_return, edge_filter_threshold)
             execution_oos_profiles[profile] = _metrics(
                 y_oos, profile_pred, candidate_prob, np.array([-1, 0, 1]), r_oos, execution_horizon=chosen_horizon
             )
@@ -1323,6 +1326,7 @@ class PredictiveBrain:
             "decision_threshold": selection_threshold,
             "regime_filter_threshold": regime_filter_threshold,
             "execution_profile": execution_profile,
+            "edge_filter_threshold": edge_filter_threshold,
             "feature_hash": _feature_hash(),
             "features": FEATURES,
             "cost_rate": COST_RATE,
@@ -1528,7 +1532,8 @@ class PredictiveBrain:
         # the edge must be measured after aligning the forecast with the chosen
         # side.  The old er - COST_RATE check incorrectly rejected valid shorts.
         signed_edge = (1.0 if direction == "LONG" else -1.0 if direction == "SHORT" else 0.0) * er - COST_RATE
-        abstain = bool(abstain or signed_edge <= 0.0 or not np.isfinite([er, downside, volatility]).all())
+        edge_threshold = float(self.bundle.get("edge_filter_threshold", 0.0))
+        abstain = bool(abstain or signed_edge <= edge_threshold or not np.isfinite([er, downside, volatility]).all())
         return {
             "trained": True,
             "abstain": abstain,
