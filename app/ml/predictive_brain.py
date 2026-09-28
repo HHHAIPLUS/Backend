@@ -495,6 +495,15 @@ def _apply_execution_profile(pred, x, profile):
         pred[(pred == -1) & (momentum >= 0.0)] = 0
     return pred
 
+def _apply_edge_filter(pred, expected_return, threshold):
+    """Keep only signals whose predicted directional return clears a frozen economic edge floor."""
+    pred = np.asarray(pred, dtype=int).copy()
+    expected_return = np.asarray(expected_return, dtype=float)
+    edge = np.where(pred == 1, expected_return, np.where(pred == -1, -expected_return, 0.0))
+    pred[edge <= float(threshold)] = 0
+    return pred
+
+
 def _apply_regime_filter(pred, x, threshold):
     """Filter directional signals using the precomputed medium-term trend."""
     pred = np.asarray(pred, dtype=int).copy()
@@ -1111,6 +1120,7 @@ class PredictiveBrain:
         selection_threshold = 0.30
         threshold_candidates = []
         regime_thresholds = (None, 0.0, 0.0005, 0.0010, 0.0020, 0.0040)
+        edge_thresholds = (0.0, 0.0005, 0.0010, COST_RATE)
         # Calibration must not select a strategy that only works by becoming nearly inactive.
         # Require meaningful two-sided coverage so calibration cannot choose a long-only
         # profile or an extreme confidence threshold that later collapses on OOS.
@@ -1176,12 +1186,13 @@ class PredictiveBrain:
             )
         regime_filter_threshold = None
         execution_profile = "confidence"
+        edge_filter_threshold = 0.0
         if threshold_candidates:
             # Economic execution is selected only on the separate calibration
             # period. Prefer positive total net return and controlled drawdown,
             # then expectancy and classification quality. OOS remains untouched.
             def _calibration_key(c):
-                avg_trade, total, neg_dd, bal, acc, trade_rate, long_rate, short_rate, threshold, regime, profile = c
+                avg_trade, total, neg_dd, bal, acc, trade_rate, long_rate, short_rate, threshold, regime, profile, edge_threshold = c
                 dd = -float(neg_dd)
                 classification_ok = float(bal) >= 0.50 and float(acc) >= 0.52
                 economic_ok = float(total) > 0.0 and dd <= 0.15
@@ -1272,10 +1283,11 @@ class PredictiveBrain:
             "train_window": train_window,
             "decision_threshold": selection_threshold,
             "regime_filter_threshold": regime_filter_threshold,
+            "edge_filter_threshold": edge_filter_threshold,
             "execution_profile": execution_profile,
             "execution_oos_profiles": execution_oos_profiles,
             "cost_rate": COST_RATE,
-            "edge_filter": "predicted_directional_return_minus_cost > 0",
+            "edge_filter": "predicted_directional_return > calibrated_edge_threshold",
             "label_mode": LABEL_MODE,
             "label_bounds": final_label_bounds,
             "label_distribution": label_distribution,
