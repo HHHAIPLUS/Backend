@@ -973,9 +973,31 @@ class PredictiveBrain:
         # Requiring the final OOS thresholds pre-OOS can reject a legitimately
         # generalizing candidate and changes the statistical meaning of Phase 2.
         
-        # Model selection is validation-only. A candidate that cannot satisfy both
-        # classification and economic requirements before OOS is not allowed to be
-        # rescued by OOS tuning later.
+        # Model selection is validation-only. Do not allow a nearly inactive
+        # candidate to win because a handful of validation trades happened to be
+        # favorable. This is a development-window stability guard; the authoritative
+        # >=100-trade requirement remains exclusively on untouched OOS.
+        MIN_VALIDATION_TRADES = 100
+        MIN_VALIDATION_TRADE_RATE = 0.05
+        validation_eligible = []
+        for candidate in candidates:
+            family_name = candidate[2]
+            window = int(candidate[4])
+            key = f"{family_name}@window={window}" + ("_inverse" if candidate[3] else "")
+            score = validation_scores[key]
+            trade_count = int(score.get("trades", 0))
+            trade_rate = float(score.get("trade_rate", 0.0))
+            if trade_count >= MIN_VALIDATION_TRADES and trade_rate >= MIN_VALIDATION_TRADE_RATE:
+                validation_eligible.append(candidate)
+
+        if not validation_eligible:
+            return BrainReport(
+                "REJECTED",
+                version,
+                {"validation_families": validation_scores},
+                "No candidate cleared the pre-OOS minimum validation trade-coverage guard.",
+            )
+
         def _candidate_score(c):
             family_name = c[2]
             window = int(c[4])
@@ -1017,7 +1039,7 @@ class PredictiveBrain:
                                    f"Requested fixed model family/window unavailable: {fixed_family}@{fixed_window}")
             best = fixed[0]
         else:
-            best = max(candidates, key=_candidate_score)
+            best = max(validation_eligible, key=_candidate_score)
         family = best[2]
         invert_direction = bool(best[3])
         train_window = int(best[4])
