@@ -7,6 +7,7 @@ Patches:
 3. Do NOT replace long-only/sparse trend models with logistic_regression
    via the pre-OOS collapse guard (that was wiping the strategy)
 4. absolute_gate accuracy uses directional_accuracy (pred != 0)
+5. Allow empty calibration threshold candidates for intentionally one-sided trend
 """
 from __future__ import annotations
 from pathlib import Path
@@ -102,7 +103,7 @@ def main() -> None:
         t = t.replace(old_guard, new_guard, 1)
         changed = True
         print("patched: exclude trend families from collapse guard")
-    elif 'family not in ("trend_following", "trend_regime")' in t:
+    elif 'family not in ("trend_following", "trend_regime")' in t and "direction_fallback_family" in t:
         print("skip: collapse guard exclusion already present")
     else:
         raise SystemExit("failed: collapse guard block not found")
@@ -149,6 +150,27 @@ def main() -> None:
         print("skip: absolute_gate already uses directional_accuracy")
     else:
         raise SystemExit("failed: absolute_gate block not found")
+
+    old_empty = """        if family in MODEL_FAMILIES and not threshold_candidates:
+            return BrainReport(
+                "REJECTED", version, {"chosen_horizon": chosen_horizon, "chosen_threshold": chosen_threshold},
+                "Calibration produced no decision threshold with the required minimum trade coverage."
+            )"""
+    new_empty = """        # Long-only / sparse rule-based trend families intentionally fail the
+        # two-sided calibration coverage guard; they use fixed threshold 0.
+        if family in MODEL_FAMILIES and not threshold_candidates and family not in ("trend_following", "trend_regime"):
+            return BrainReport(
+                "REJECTED", version, {"chosen_horizon": chosen_horizon, "chosen_threshold": chosen_threshold},
+                "Calibration produced no decision threshold with the required minimum trade coverage."
+            )"""
+    if old_empty in t:
+        t = t.replace(old_empty, new_empty, 1)
+        changed = True
+        print("patched: allow empty calibration thresholds for trend families")
+    elif 'not threshold_candidates and family not in ("trend_following", "trend_regime")' in t:
+        print("skip: empty-threshold exemption already present")
+    else:
+        raise SystemExit("failed: empty threshold_candidates rejection block not found")
 
     if changed:
         PATH.write_text(t)
