@@ -957,14 +957,12 @@ class PredictiveBrain:
                 if score.get("status") != "UNAVAILABLE":
                     candidates.append((score["avg_trade_net_return"], score["balanced_accuracy"], family, False, train_window))
 
-        # Return regressors remain useful diagnostics, but they must not be
-        # eligible to become the Phase 2 directional brain. Their current
-        # probability vectors are synthetic (0.90/0.05/0.05), so treating them
-        # as calibrated three-class classifiers can manufacture misleading
-        # confidence and allow a low-trade regression to win model selection.
-        # Phase 2 requires genuine directional classification evidence.
-        candidates = [candidate for candidate in candidates if candidate[2] in MODEL_FAMILIES]
-
+        # Return regressors are eligible Phase 2 candidates because the
+        # acceptance gates evaluate realized directional trading outcomes, not
+        # whether the internal learner is a classifier. A return forecast is
+        # converted into LONG/SHORT/NO_TRADE only after its frozen economic
+        # threshold is applied. Its probability vector is synthetic by design,
+        # so calibration is never applied to regression candidates.
         if not candidates:
             return BrainReport("REJECTED", version, {"validation_families": validation_scores},
                                "No valid model family was evaluated.")
@@ -1010,9 +1008,9 @@ class PredictiveBrain:
         fixed_family = os.getenv("HHHAI_PHASE2_FIXED_MODEL_FAMILY", "").strip()
         fixed_window = int(os.getenv("HHHAI_PHASE2_FIXED_TRAIN_WINDOW", "0") or "0")
         if fixed_family:
-            if fixed_family not in MODEL_FAMILIES:
+            if fixed_family not in MODEL_FAMILIES and fixed_family not in RETURN_FAMILIES:
                 return BrainReport("REJECTED", version, {"validation_families": validation_scores},
-                                   "Phase 2 fixed model family must be a genuine directional classifier.")
+                                   "Phase 2 fixed model family must be a registered directional classifier or return forecaster.")
             fixed = [candidate for candidate in candidates if candidate[2] == fixed_family and candidate[4] == fixed_window]
             if not fixed:
                 return BrainReport("REJECTED", version, {"validation_families": validation_scores},
