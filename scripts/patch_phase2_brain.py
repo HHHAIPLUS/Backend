@@ -4,7 +4,9 @@
 Patches:
 1. Long-only TrendFollowingClassifier (short leg destroys OOS expectancy)
 2. Skip post-hoc calibration for rule-based trend families
-3. absolute_gate accuracy uses directional_accuracy (pred != 0)
+3. Do NOT replace long-only/sparse trend models with logistic_regression
+   via the pre-OOS collapse guard (that was wiping the strategy)
+4. absolute_gate accuracy uses directional_accuracy (pred != 0)
 """
 from __future__ import annotations
 from pathlib import Path
@@ -59,10 +61,51 @@ def main() -> None:
         t = t.replace(old_cal, new_cal, 1)
         changed = True
         print("patched: skip calibration for trend families")
-    elif '"trend_following", "trend_regime"' in t:
+    elif '"trend_following", "trend_regime"' in t and "binary_xgb_selective" in t:
         print("skip: trend calibration skip already present")
     else:
         raise SystemExit("failed: calibration skip block not found")
+
+    old_guard = """            direction_fallback_family = None
+            if family in MODEL_FAMILIES:
+                raw_cal_pred = np.asarray(raw_direction.predict(_slice(x, ca)), dtype=int)
+                raw_counts = np.bincount(raw_cal_pred + 1, minlength=3).astype(float)
+                raw_fractions = raw_counts / max(1, len(raw_cal_pred))
+                if float(raw_fractions[0]) < 0.02 or float(raw_fractions[2]) < 0.02:
+                    fallback = _classifier("logistic_regression")
+                    fallback.fit(x_fit_direction, y_fit_direction)
+                    fallback_pred = np.asarray(fallback.predict(_slice(x, ca)), dtype=int)
+                    fallback_counts = np.bincount(fallback_pred + 1, minlength=3).astype(float)
+                    fallback_fractions = fallback_counts / max(1, len(fallback_pred))
+                    if float(fallback_fractions[0]) >= 0.02 and float(fallback_fractions[2]) >= 0.02:
+                        raw_direction = fallback
+                        direction_fallback_family = "logistic_regression"
+"""
+    new_guard = """            direction_fallback_family = None
+            # Rule-based trend families may be intentionally one-sided (e.g. long-only).
+            # Do not replace them with logistic_regression when one side is sparse.
+            if family in MODEL_FAMILIES and family not in ("trend_following", "trend_regime"):
+                raw_cal_pred = np.asarray(raw_direction.predict(_slice(x, ca)), dtype=int)
+                raw_counts = np.bincount(raw_cal_pred + 1, minlength=3).astype(float)
+                raw_fractions = raw_counts / max(1, len(raw_cal_pred))
+                if float(raw_fractions[0]) < 0.02 or float(raw_fractions[2]) < 0.02:
+                    fallback = _classifier("logistic_regression")
+                    fallback.fit(x_fit_direction, y_fit_direction)
+                    fallback_pred = np.asarray(fallback.predict(_slice(x, ca)), dtype=int)
+                    fallback_counts = np.bincount(fallback_pred + 1, minlength=3).astype(float)
+                    fallback_fractions = fallback_counts / max(1, len(fallback_pred))
+                    if float(fallback_fractions[0]) >= 0.02 and float(fallback_fractions[2]) >= 0.02:
+                        raw_direction = fallback
+                        direction_fallback_family = "logistic_regression"
+"""
+    if old_guard in t:
+        t = t.replace(old_guard, new_guard, 1)
+        changed = True
+        print("patched: exclude trend families from collapse guard")
+    elif 'family not in ("trend_following", "trend_regime")' in t:
+        print("skip: collapse guard exclusion already present")
+    else:
+        raise SystemExit("failed: collapse guard block not found")
 
     old_metrics = """        "prediction_class_fractions": prediction_class_fractions,
         "accuracy": float(accuracy_score(y, pred)),
