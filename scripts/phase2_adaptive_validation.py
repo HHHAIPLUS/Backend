@@ -113,7 +113,7 @@ def fetch():
             raise RuntimeError(f"candle gap/overlap {a[0]}->{b[0]}")
         if not (a[3] <= min(a[1], a[4]) and a[2] >= max(a[1], a[4]) and a[1] > 0 and a[4] > 0 and a[5] >= 0):
             raise RuntimeError("invalid OHLCV")
-    return rows
+    return rows, funding
 
 
 def build_rows(candles, funding_rates):
@@ -141,7 +141,7 @@ def build_rows(candles, funding_rates):
 
 
 def main():
-    candles = fetch()
+    candles, funding = fetch()
     rows = build_rows(candles, funding)
     if len(rows) < 1200:
         raise RuntimeError("insufficient point-in-time rows")
