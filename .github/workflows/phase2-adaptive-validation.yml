@@ -1,6 +1,5 @@
 name: Phase 2 adaptive validation
 # Authoritative production-brain verification; triggered by main-branch changes.
-# Manual authoritative verification trigger marker.
 on:
   push:
     branches: [main]
@@ -14,16 +13,19 @@ on:
   workflow_dispatch:
 env:
   # Frozen Phase 2 settings must match the production/Render contract.
+  # COST_RATE aligned to realistic Bitget USDT-M fees (0.02% maker + 0.06% taker
+  # + modest slippage ≈ 0.08%). Label threshold starts near that economic floor.
   PHASE2_PROVIDER: bitget
   PHASE2_SYMBOL: BTCUSDT
   PHASE2_INTERVAL: 1h
   PHASE2_CANDLES: "30000"
   PHASE2_OOS_START: "2026-07-01T00:00:00+00:00"
   PHASE2_OOS_END: "2026-09-21T00:00:00+00:00"
-  HHHAI_BRAIN_LABEL_THRESHOLD: ""
+  HHHAI_PHASE2_COST_RATE: "0.0008"
+  HHHAI_BRAIN_LABEL_THRESHOLD: "0.0010"
   HHHAI_PHASE2_FIXED_LABEL_THRESHOLD: ""
-  HHHAI_PHASE2_FIXED_HORIZON: ""
-  HHHAI_PHASE2_SIDE_SIGNAL_FLOOR: "0.35"
+  HHHAI_PHASE2_FIXED_HORIZON: "6"
+  HHHAI_PHASE2_SIDE_SIGNAL_FLOOR: "0.30"
 
 jobs:
   validate:
