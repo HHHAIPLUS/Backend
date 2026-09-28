@@ -103,6 +103,6 @@ services:
       - key: HHHAI_PHASE2_FIXED_LABEL_THRESHOLD
         value: ""
       - key: HHHAI_PHASE2_FIXED_HORIZON
-        value: ""
+        value: "6"
       - key: HHHAI_PHASE2_SIDE_SIGNAL_FLOOR
         value: "0.35"
