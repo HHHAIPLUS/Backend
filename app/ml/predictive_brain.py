@@ -1289,7 +1289,13 @@ class PredictiveBrain:
             "promotion": gate,
             "absolute_gate": absolute_gate,
             "split_evidence": splits,
+            "horizon_selection": horizon_selection,
             "chosen_horizon": chosen_horizon,
+            "economic_diagnostics": {
+                "candidate_gross_avg_trade_return_before_configured_cost": float(candidate_metrics["avg_trade_net_return"] + COST_RATE),
+                "candidate_configured_cost_rate": COST_RATE,
+                "candidate_net_avg_trade_return": float(candidate_metrics["avg_trade_net_return"]),
+            },
             "chosen_label_threshold": chosen_threshold,
             "train_window": train_window,
             "decision_threshold": selection_threshold,
