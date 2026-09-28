@@ -6,6 +6,7 @@ on:
     paths:
       - 'scripts/phase2_adaptive_validation.py'
       - 'scripts/phase2_end_to_end_check.py'
+      - 'scripts/patch_phase2_brain.py'
       - 'app/ml/features.py'
       - 'app/ml/predictive_brain.py'
       - 'app/ml/model_validation.py'
@@ -43,6 +44,8 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Configure Python import path
         run: echo "PYTHONPATH=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+      - name: Apply Phase 2 brain patches (long-only trend + directional accuracy)
+        run: python scripts/patch_phase2_brain.py
       - name: End-to-end production brain diagnostic
         run: python scripts/phase2_end_to_end_check.py
       - name: Authoritative Phase 2 verification
