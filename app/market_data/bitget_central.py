@@ -326,6 +326,7 @@ class CentralBitgetMarketData:
         with state.lock:
             candles = list(state.candles)
             current = list(state.current_candle) if state.current_candle else None
+            funding_rate = state.funding_rate
         if len(candles) < 3:
             raise RuntimeError(f"Waiting for Bitget 1h candle history for {symbol.upper()}: {len(candles)}/{MAX_CANDLES}")
         rows = candles[-MAX_CANDLES:]
@@ -335,7 +336,7 @@ class CentralBitgetMarketData:
             rows = rows[:-1]
         if len(rows) < 25:
             raise RuntimeError(f"Insufficient closed Bitget candles for {symbol.upper()}: {len(rows)}")
-        features = build_model_features(rows)
+        features = build_model_features(rows, context={"market": {"funding_rate": float(funding_rate or 0.0)}})
         required = ("return_1", "range_pct", "volume_change", "volatility_proxy", "trend_strength", "momentum")
         missing = [name for name in required if name not in features]
         if missing:
