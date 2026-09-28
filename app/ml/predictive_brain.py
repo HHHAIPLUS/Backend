@@ -1209,10 +1209,14 @@ class PredictiveBrain:
             def _calibration_key(c):
                 avg_trade, total, neg_dd, bal, acc, trade_rate, long_rate, short_rate, threshold, regime, profile, edge_threshold = c
                 dd = -float(neg_dd)
-                classification_ok = float(bal) >= 0.50 and float(acc) >= 0.52
+                coverage_ok = float(trade_rate) >= 0.08 and float(long_rate) > 0.0 and float(short_rate) > 0.0
+                classification_ok = (
+                    float(bal) >= 0.50
+                    and float(acc) >= 0.52
+                    and coverage_ok
+                )
                 economic_ok = float(total) > 0.0 and dd <= 0.15
                 both_ok = classification_ok and economic_ok
-                coverage_ok = float(trade_rate) >= 0.08 and float(long_rate) > 0.0 and float(short_rate) > 0.0
                 return (
                     1 if both_ok else 0,
                     1 if economic_ok else 0,
