@@ -15,6 +15,8 @@ env:
   # Frozen Phase 2 settings must match the production/Render contract.
   # COST_RATE aligned to realistic Bitget USDT-M fees (0.02% maker + 0.06% taker
   # + modest slippage ≈ 0.08%). Label threshold starts near that economic floor.
+  # Model family is pre-registered from validation research: trend_following is
+  # the candidate that cleared economic OOS gates under realistic costs.
   PHASE2_PROVIDER: bitget
   PHASE2_SYMBOL: BTCUSDT
   PHASE2_INTERVAL: 1h
@@ -26,6 +28,8 @@ env:
   HHHAI_PHASE2_FIXED_LABEL_THRESHOLD: ""
   HHHAI_PHASE2_FIXED_HORIZON: "6"
   HHHAI_PHASE2_SIDE_SIGNAL_FLOOR: "0.30"
+  HHHAI_PHASE2_FIXED_MODEL_FAMILY: "trend_following"
+  HHHAI_PHASE2_FIXED_TRAIN_WINDOW: "0"
 
 jobs:
   validate:
@@ -48,4 +52,3 @@ jobs:
         with:
           name: phase2-adaptive-evidence
           path: phase2_evidence/
-          
