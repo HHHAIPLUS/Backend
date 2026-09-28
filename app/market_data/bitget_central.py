@@ -177,7 +177,11 @@ class CentralBitgetMarketData:
                 if asks:
                     state.ask = float(asks[0][0])
                     state.ask_qty = sum(float(x[1]) for x in asks if len(x) >= 2)
-            elif channel == "candle5m":
+            elif channel == "candle1H":
+                # The subscription is explicitly 1H because the predictive model
+                # is trained and evaluated on closed hourly candles. The previous
+                # handler listened for candle5m, so the live 1H stream was silently
+                # ignored and model features depended on periodic REST bootstrap.
                 for row in rows:
                     if not isinstance(row, list) or len(row) < 6:
                         continue
