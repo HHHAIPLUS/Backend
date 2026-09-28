@@ -1134,50 +1134,38 @@ class PredictiveBrain:
             if family in MODEL_FAMILIES:
                 selected_base[confidence < threshold] = 0
             for profile in EXECUTION_PROFILES:
-              for regime_threshold in regime_thresholds:
-                selected = _apply_execution_profile(
-                    selected_base, _slice(x, ca), profile
-                )
-                selected = _apply_regime_filter(
-                    selected, _slice(x, ca), regime_threshold
-                )
-                # Keep directional evidence and economic evidence as separate
-                # signals. The expected-return model is a cost-aware diagnostic
-                # and ranking feature here; it must not hard-zero every signal
-                # before the calibration set can measure the classifier itself.
-                # The actual net-return calculation below already includes COST_RATE.
-                traded = selected != 0
-                net = _execution_net_returns(r_cal, selected, chosen_horizon)
-                executed = net != 0.0
-                trade_count = int(executed.sum())
-                trade_rate = trade_count / max(1, len(selected))
-                long_rate = float(np.mean(selected == 1)) if len(selected) else 0.0
-                short_rate = float(np.mean(selected == -1)) if len(selected) else 0.0
-                if (
-                    trade_count < min_cal_trades
-                    or trade_rate < min_cal_trade_rate
-                    or long_rate < min_cal_side_rate
-                    or short_rate < min_cal_side_rate
-                ):
-                    continue
-                equity = np.cumsum(net)
-                peak = np.maximum.accumulate(np.r_[0.0, equity])
-                drawdown = float(np.max(peak[1:] - equity)) if len(equity) else 0.0
-                avg_trade = float(net[executed].mean()) if executed.any() else 0.0
-                cal_metrics = _metrics(y_cal, selected, cal_prob, np.array([-1, 0, 1]), r_cal, execution_horizon=chosen_horizon)
-                threshold_candidates.append((
-                    float(avg_trade),
-                    float(net.sum()),
-                    -float(drawdown),
-                    float(cal_metrics["balanced_accuracy"]),
-                    float(cal_metrics["accuracy"]),
-                    float(trade_rate),
-                    float(long_rate),
-                    float(short_rate),
-                    float(threshold),
-                    regime_threshold,
-                    profile,
-                ))
+                for regime_threshold in regime_thresholds:
+                    for edge_threshold in edge_thresholds:
+                        selected = _apply_execution_profile(selected_base, _slice(x, ca), profile)
+                        selected = _apply_regime_filter(selected, _slice(x, ca), regime_threshold)
+                        selected = _apply_edge_filter(selected, cal_expected_return, edge_threshold)
+                        net = _execution_net_returns(r_cal, selected, chosen_horizon)
+                        executed = net != 0.0
+                        trade_count = int(executed.sum())
+                        trade_rate = trade_count / max(1, len(selected))
+                        long_rate = float(np.mean(selected == 1)) if len(selected) else 0.0
+                        short_rate = float(np.mean(selected == -1)) if len(selected) else 0.0
+                        if (
+                            trade_count < min_cal_trades
+                            or trade_rate < min_cal_trade_rate
+                            or long_rate < min_cal_side_rate
+                            or short_rate < min_cal_side_rate
+                        ):
+                            continue
+                        equity = np.cumsum(net)
+                        peak = np.maximum.accumulate(np.r_[0.0, equity])
+                        drawdown = float(np.max(peak[1:] - equity)) if len(equity) else 0.0
+                        avg_trade = float(net[executed].mean()) if executed.any() else 0.0
+                        cal_metrics = _metrics(
+                            y_cal, selected, cal_prob, np.array([-1, 0, 1]), r_cal,
+                            execution_horizon=chosen_horizon
+                        )
+                        threshold_candidates.append((
+                            float(avg_trade), float(net.sum()), -float(drawdown),
+                            float(cal_metrics["balanced_accuracy"]), float(cal_metrics["accuracy"]),
+                            float(trade_rate), float(long_rate), float(short_rate),
+                            float(threshold), regime_threshold, profile, float(edge_threshold),
+                        ))
 
         if family in MODEL_FAMILIES and not threshold_candidates:
             return BrainReport(
