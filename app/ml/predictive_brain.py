@@ -58,7 +58,7 @@ RETURN_BASE_FAMILIES = (
     "hist_gradient_boosting_regressor",
     "random_forest_regressor",
 )
-RETURN_SIGNAL_THRESHOLDS = (0.0014, 0.0018, 0.0020, 0.0025, 0.0030, 0.0040)
+RETURN_SIGNAL_THRESHOLDS = (0.0008, 0.0015, 0.0025)
 RETURN_FAMILIES = tuple(
     f"{family}@{threshold:.4f}"
     for family in RETURN_BASE_FAMILIES
@@ -72,9 +72,9 @@ _configured_label_threshold = (
 if _configured_label_threshold:
     LABEL_THRESHOLDS = (float(_configured_label_threshold),)
 else:
-    LABEL_THRESHOLDS = (0.0014, 0.0015, 0.0020, 0.0025, 0.0030, 0.0040)
+    LABEL_THRESHOLDS = (0.0008, 0.0010, 0.0015, 0.0025)
 LABEL_MODE = os.getenv("HHHAI_PHASE2_LABEL_MODE", "fixed").strip().lower()
-COST_RATE = 0.0014
+COST_RATE = 0.0008
 ARTIFACT_SCHEMA = 4
 MAX_LABEL_HORIZON = max(HORIZONS)
 FIXED_HORIZON = int(os.getenv("HHHAI_PHASE2_FIXED_HORIZON", "0") or "0")
@@ -1212,17 +1212,19 @@ class PredictiveBrain:
                 classification_ok = float(bal) >= 0.50 and float(acc) >= 0.52
                 economic_ok = float(total) > 0.0 and dd <= 0.15
                 both_ok = classification_ok and economic_ok
+                coverage_ok = float(trade_rate) >= 0.08 and float(long_rate) > 0.0 and float(short_rate) > 0.0
                 return (
                     1 if both_ok else 0,
                     1 if economic_ok else 0,
                     1 if classification_ok else 0,
+                    1 if coverage_ok else 0,
+                    float(trade_rate),
+                    float(long_rate + short_rate),
                     float(bal),
                     float(acc),
                     float(total),
                     float(avg_trade),
                     float(neg_dd),
-                    float(trade_rate),
-                    float(long_rate + short_rate),
                 )
             best_calibration = max(threshold_candidates, key=_calibration_key)
             # threshold_candidates stores:
