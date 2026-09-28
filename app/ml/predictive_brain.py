@@ -54,8 +54,11 @@ MODEL_FAMILIES = (
 RETURN_BASE_FAMILIES = (
     "ridge",
     "xgboost_regressor",
+    "extra_trees_regressor",
+    "hist_gradient_boosting_regressor",
+    "random_forest_regressor",
 )
-RETURN_SIGNAL_THRESHOLDS = (0.0014, 0.0025, 0.0040)
+RETURN_SIGNAL_THRESHOLDS = (0.0014, 0.0018, 0.0020, 0.0025, 0.0030, 0.0040)
 RETURN_FAMILIES = tuple(
     f"{family}@{threshold:.4f}"
     for family in RETURN_BASE_FAMILIES
@@ -835,22 +838,26 @@ class PredictiveBrain:
         # accuracy and balanced accuracy. Trade expectancy remains the
         # validation-only secondary criterion; OOS is never used here.
         def _selection_key(v):
-            # Fixed, pre-OOS selection hierarchy: require meaningful validation
-            # classification and economic quality when available; otherwise
-            # fail over to the strongest balanced classification result.
+            # Economic edge is the primary target-selection criterion. The final
+            # gates require positive net expectancy and total return, so a target
+            # that is more profitable on pre-OOS development data must not lose
+            # solely because another target has slightly higher classification
+            # accuracy. Classification quality remains the secondary criterion.
             bal = float(v.get("balanced_accuracy", -1e99))
             acc = float(v.get("accuracy", -1e99))
             exp = float(v.get("avg_trade_net_return", -1e99))
-            economically_viable = bal >= 0.50 and acc >= 0.52 and exp > 0.0
             total = float(v.get("total_net_return", -1e99))
             dd = float(v.get("max_drawdown", 1e99))
+            economically_viable = exp > 0.0 and total > 0.0 and dd <= 0.15
+            classification_viable = bal >= 0.50 and acc >= 0.52
             return (
                 1 if economically_viable else 0,
+                1 if classification_viable else 0,
+                exp,
+                total,
+                -dd,
                 bal,
                 acc,
-                exp if economically_viable else -1e99,
-                total if economically_viable else -1e99,
-                -dd if economically_viable else -1e99,
                 float(v.get("trade_rate", 0.0)),
             )
 
@@ -1015,14 +1022,14 @@ class PredictiveBrain:
             both_ok = classification_ok and economic_ok and directional_coverage_ok
             return (
                 1 if both_ok else 0,
-                1 if classification_ok else 0,
                 1 if economic_ok else 0,
+                1 if classification_ok else 0,
                 1 if directional_coverage_ok else 0,
-                bal,
-                acc,
                 exp,
                 total,
                 -dd,
+                bal,
+                acc,
                 float(score.get("trade_rate", 0.0)),
                 -window,
             )
