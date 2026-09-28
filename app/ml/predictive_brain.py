@@ -1,2 +1,1 @@
-from __future__ import annotations
-# PLACEHOLDER - will replace via shell
+LOADING_FROM_FILE
