@@ -9,7 +9,7 @@ import math
 
 FEATURES = [
     "return_1", "return_2", "return_3", "return_6", "return_8", "return_12", "return_16", "return_24", "return_32", "return_48", "return_72", "return_96", "return_168",
-    "return_6_vol_adj", "return_12_vol_adj", "return_24_vol_adj", "return_48_vol_adj", "return_72_vol_adj", "funding_rate",
+    "return_6_vol_adj", "return_12_vol_adj", "return_24_vol_adj", "return_48_vol_adj", "return_72_vol_adj",
     "range_pct", "range_mean_12", "range_mean_24", "close_location", "atr_pct_14", "atr_pct_28",
     "volume_change", "volume_zscore", "volume_zscore_72", "rsi_14", "rsi_28", "ema_gap_8_24", "ema_gap_24_72",
     "breakout_24", "breakout_72", "volatility_proxy", "volatility_72", "trend_strength", "trend_strength_72",
@@ -222,4 +222,3 @@ def build_model_features(candles: Iterable[Any] | None = None, context: Any | No
     # their explicit FEATURES subset, while decision layers can still consume
     # live context features without contaminating historical supervised training.
     return {name: (float(value or 0.0) if math.isfinite(float(value or 0.0)) else 0.0) for name, value in features.items()}
-
