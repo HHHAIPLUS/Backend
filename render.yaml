@@ -95,11 +95,11 @@ services:
       - key: PHASE2_OOS_END
         value: "2026-09-21T00:00:00+00:00"
       - key: HHHAI_BRAIN_LABEL_THRESHOLD
-        value: ""
+        value: "0.0014"
       - key: HHHAI_PHASE2_TRAIN_FILTER_MULTIPLIER
         value: "1.0"
       - key: HHHAI_PHASE2_LABEL_MODE
-        value: "fixed"
+        value: "quantile"
       - key: HHHAI_PHASE2_FIXED_LABEL_THRESHOLD
         value: ""
       - key: HHHAI_PHASE2_FIXED_HORIZON
