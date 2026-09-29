@@ -823,7 +823,7 @@ class PredictiveBrain:
             out["trades"] = int(sum(int(s.get("trades", 0)) for s in scores))
             if all("prediction_class_fractions" in s for s in scores):
                 out["prediction_class_fractions"] = [
-                    float(np.mean([float(s["prediction_class_fractions"][i]) for s in scores))
+                    float(np.mean([float(s["prediction_class_fractions"][i]) for s in scores]))
                     for i in range(3)
                 ]
             out["total_net_return"] = float(sum(float(s.get("total_net_return", 0.0)) for s in scores))
