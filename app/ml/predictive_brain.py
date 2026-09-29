@@ -1258,7 +1258,7 @@ class PredictiveBrain:
                             float(threshold), regime_threshold, profile, float(edge_threshold),
                         ))
 
-        if family in MODEL_FAMILIES and not threshold_candidates:
+        if family in MODEL_FAMILIES and not threshold_candidates and family not in ("trend_following", "trend_regime"):
             return BrainReport(
                 "REJECTED", version, {"chosen_horizon": chosen_horizon, "chosen_threshold": chosen_threshold},
                 "Calibration produced no decision threshold with the required minimum trade coverage."
