@@ -1418,7 +1418,7 @@ class PredictiveBrain:
                                "Candidate did not clear the untouched OOS absolute safety gate.")
 
         horizon_metrics = self._horizon_eval(
-            _slice(x, tr), _slice(x, oo), rows[tr[0]:tr[1]], rows[oo[0]:], chosen_threshold
+            _slice(x, tr), _slice(x, oo), rows[tr[0]:tr[1]], rows[oo[0]:oo[1]], chosen_threshold
         )
         bundle = {
             "schema_version": ARTIFACT_SCHEMA,
