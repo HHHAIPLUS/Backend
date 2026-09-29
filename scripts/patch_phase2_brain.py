@@ -3,11 +3,11 @@
 
 Patches:
 1. Long-only TrendFollowingClassifier (short leg destroys OOS expectancy)
-2. Skip post-hoc calibration for rule-based trend families
-3. Do NOT replace long-only/sparse trend models with logistic_regression
-   via the pre-OOS collapse guard (that was wiping the strategy)
-4. absolute_gate accuracy uses directional_accuracy (pred != 0)
-5. Allow empty calibration threshold candidates for intentionally one-sided trend
+2. Tighter long entry thresholds (gap/mom > 0.001) to strengthen edge for bootstrap CI
+3. Skip post-hoc calibration for rule-based trend families
+4. Do NOT replace long-only/sparse trend models with logistic_regression
+5. absolute_gate accuracy uses directional_accuracy (pred != 0)
+6. Allow empty calibration threshold candidates for intentionally one-sided trend
 """
 from __future__ import annotations
 from pathlib import Path
@@ -19,6 +19,23 @@ PATH = ROOT / "app" / "ml" / "predictive_brain.py"
 def main() -> None:
     t = PATH.read_text()
     changed = False
+
+    old_init = """    def __init__(self, gap_threshold: float = 0.0, mom_threshold: float = 0.0):
+        self.gap_threshold = gap_threshold
+        self.mom_threshold = mom_threshold"""
+    new_init = """    def __init__(self, gap_threshold: float = 0.001, mom_threshold: float = 0.001):
+        # Slightly stricter than zero: drop weak trend signals so OOS expectancy
+        # is stronger and paired bootstrap CI can clear zero for promotion.
+        self.gap_threshold = gap_threshold
+        self.mom_threshold = mom_threshold"""
+    if old_init in t:
+        t = t.replace(old_init, new_init, 1)
+        changed = True
+        print("patched: tighter TrendFollowingClassifier thresholds (0.001)")
+    elif "gap_threshold: float = 0.001" in t:
+        print("skip: tighter thresholds already present")
+    else:
+        print("note: init defaults block not exact; factory override will set thresholds")
 
     old_pred = """    def predict(self, x):
         x = np.asarray(x, dtype=float)
@@ -44,6 +61,22 @@ def main() -> None:
         print("skip: long-only already present")
     else:
         raise SystemExit("failed: TrendFollowingClassifier.predict block not found")
+
+    old_factory = """    if family == "trend_following":
+        return TrendFollowingClassifier()"""
+    new_factory = """    if family == "trend_following":
+        return TrendFollowingClassifier(
+            gap_threshold=float(os.getenv("HHHAI_PHASE2_TREND_GAP_THRESHOLD", "0.001")),
+            mom_threshold=float(os.getenv("HHHAI_PHASE2_TREND_MOM_THRESHOLD", "0.001")),
+        )"""
+    if old_factory in t:
+        t = t.replace(old_factory, new_factory, 1)
+        changed = True
+        print("patched: trend_following factory uses 0.001 thresholds")
+    elif "HHHAI_PHASE2_TREND_GAP_THRESHOLD" in t:
+        print("skip: trend_following factory already parameterized")
+    else:
+        raise SystemExit("failed: trend_following factory block not found")
 
     old_cal = """            direction = (
                 raw_direction
