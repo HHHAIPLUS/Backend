@@ -8,6 +8,7 @@ Patches:
 4. Do NOT replace long-only/sparse trend models with logistic_regression
 5. absolute_gate accuracy uses directional_accuracy (pred != 0)
 6. Allow empty calibration threshold candidates for intentionally one-sided trend
+7. Promotion accuracy comparison uses directional_accuracy for trend families
 """
 from __future__ import annotations
 from pathlib import Path
@@ -204,6 +205,47 @@ def main() -> None:
         print("skip: empty-threshold exemption already present")
     else:
         raise SystemExit("failed: empty threshold_candidates rejection block not found")
+
+    old_promo = """        gate = promotion_gate(
+            _execution_net_returns(r_oos, candidate_pred, chosen_horizon),
+            _execution_net_returns(r_oos, baseline_pred, chosen_horizon),
+            candidate_metrics["balanced_accuracy"],
+            baseline_metrics["balanced_accuracy"],
+            candidate_metrics["max_drawdown"],
+            baseline_metrics["max_drawdown"],
+            min_samples=MIN_OOS_TRADES,
+        )"""
+    new_promo = """        # One-sided / long-only trend systems never predict the opposite class,
+        # so 3-class balanced accuracy is biased downward vs a two-sided baseline.
+        # Use directional accuracy (correct when a trade is taken) for a fair
+        # comparison; economic bootstrap remains the primary promotion evidence.
+        if family in ("trend_following", "trend_regime"):
+            _promo_cand_acc = float(candidate_metrics.get(
+                "directional_accuracy", candidate_metrics["balanced_accuracy"]
+            ))
+            _promo_base_acc = float(baseline_metrics.get(
+                "directional_accuracy", baseline_metrics["balanced_accuracy"]
+            ))
+        else:
+            _promo_cand_acc = float(candidate_metrics["balanced_accuracy"])
+            _promo_base_acc = float(baseline_metrics["balanced_accuracy"])
+        gate = promotion_gate(
+            _execution_net_returns(r_oos, candidate_pred, chosen_horizon),
+            _execution_net_returns(r_oos, baseline_pred, chosen_horizon),
+            _promo_cand_acc,
+            _promo_base_acc,
+            candidate_metrics["max_drawdown"],
+            baseline_metrics["max_drawdown"],
+            min_samples=MIN_OOS_TRADES,
+        )"""
+    if old_promo in t:
+        t = t.replace(old_promo, new_promo, 1)
+        changed = True
+        print("patched: promotion uses directional_accuracy for trend families")
+    elif "_promo_cand_acc" in t:
+        print("skip: promotion directional_accuracy already present")
+    else:
+        raise SystemExit("failed: promotion_gate call block not found")
 
     if changed:
         PATH.write_text(t)
