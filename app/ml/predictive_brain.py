@@ -814,17 +814,44 @@ class PredictiveBrain:
         def aggregate_scores(scores):
             if not scores:
                 return {"status": "UNAVAILABLE"}
-            numeric = ("accuracy", "balanced_accuracy", "avg_net_return", "avg_trade_net_return", "trade_rate")
+            numeric = (
+                "accuracy", "directional_accuracy", "balanced_accuracy",
+                "avg_net_return", "avg_trade_net_return", "trade_rate"
+            )
             out = {key: float(np.mean([float(s[key]) for s in scores])) for key in numeric if key in scores[0]}
             out["samples"] = int(sum(int(s.get("samples", 0)) for s in scores))
             out["trades"] = int(sum(int(s.get("trades", 0)) for s in scores))
             if all("prediction_class_fractions" in s for s in scores):
                 out["prediction_class_fractions"] = [
-                    float(np.mean([float(s["prediction_class_fractions"][i]) for s in scores]))
+                    float(np.mean([float(s["prediction_class_fractions"][i]) for s in scores))
                     for i in range(3)
                 ]
             out["total_net_return"] = float(sum(float(s.get("total_net_return", 0.0)) for s in scores))
             out["max_drawdown"] = float(max(float(s.get("max_drawdown", 0.0)) for s in scores))
+            # Phase 2 development stability is a hard selection requirement:
+            # every chronological fold must have positive cost-adjusted
+            # expectancy and total return, with controlled drawdown and a
+            # meaningful number of executed trades. A positive average across
+            # folds is not sufficient because one losing fold can otherwise be
+            # hidden by a stronger earlier fold.
+            min_fold_trades = 30
+            fold_stability = [
+                {
+                    "positive_expectancy": float(s.get("avg_trade_net_return", 0.0)) > 0.0,
+                    "positive_total_net_return": float(s.get("total_net_return", 0.0)) > 0.0,
+                    "drawdown_ok": float(s.get("max_drawdown", 1.0)) <= 0.20,
+                    "enough_trades": int(s.get("trades", 0)) >= min_fold_trades,
+                }
+                for s in scores
+            ]
+            out["development_stability"] = {
+                "required_folds": len(scores),
+                "folds": fold_stability,
+                "all_folds_pass": bool(
+                    fold_stability and all(all(item.values()) for item in fold_stability)
+                ),
+                "min_fold_trades": min_fold_trades,
+            }
             out["folds"] = scores
             return out
 
@@ -893,10 +920,17 @@ class PredictiveBrain:
         # It must never prevent a validation horizon/target from being selected.
         # Validation only determines which pre-registered target/horizon has the
         # strongest out-of-sample-development evidence.
-        viable = list(horizon_selection.values())
+        viable = [
+            value for value in horizon_selection.values()
+            if value.get("development_stability", {}).get("all_folds_pass") is True
+        ]
         if not viable:
-            return BrainReport("REJECTED", version, {"horizon_selection": horizon_selection},
-                               "No valid chronological horizon/label candidate was produced.")
+            return BrainReport(
+                "REJECTED",
+                version,
+                {"horizon_selection": horizon_selection},
+                "No horizon/label candidate demonstrated positive cost-adjusted performance with controlled drawdown in every chronological development fold."
+            )
 
         # Select the supervised target/horizon primarily by validation
         # classification quality because the untouched OOS gate requires both
@@ -1055,7 +1089,12 @@ class PredictiveBrain:
             score = validation_scores[key]
             trade_count = int(score.get("trades", 0))
             trade_rate = float(score.get("trade_rate", 0.0))
-            if trade_count >= MIN_VALIDATION_TRADES and trade_rate >= MIN_VALIDATION_TRADE_RATE:
+            stability = score.get("development_stability", {})
+            if (
+                trade_count >= MIN_VALIDATION_TRADES
+                and trade_rate >= MIN_VALIDATION_TRADE_RATE
+                and stability.get("all_folds_pass") is True
+            ):
                 validation_eligible.append(candidate)
 
         if not validation_eligible:
@@ -1063,7 +1102,7 @@ class PredictiveBrain:
                 "REJECTED",
                 version,
                 {"validation_families": validation_scores},
-                "No candidate cleared the pre-OOS minimum validation trade-coverage guard.",
+                "No candidate cleared the pre-OOS trade-coverage and per-fold economic-stability guard.",
             )
 
         def _candidate_score(c):
@@ -1076,6 +1115,7 @@ class PredictiveBrain:
             exp = float(score.get("avg_trade_net_return", -1e99))
             total = float(score.get("total_net_return", -1e99))
             dd = float(score.get("max_drawdown", 1e99))
+            stability_ok = score.get("development_stability", {}).get("all_folds_pass") is True
             predicted_fractions = score.get("prediction_class_fractions", [0.0, 0.0, 0.0])
             directional_coverage_ok = float(predicted_fractions[0]) >= 0.02 and float(predicted_fractions[2]) >= 0.02
             # Classification bars relaxed for 3-class trading systems with
@@ -1084,6 +1124,7 @@ class PredictiveBrain:
             economic_ok = exp > 0.0 and total > 0.0 and dd <= 0.15
             both_ok = classification_ok and economic_ok and directional_coverage_ok
             return (
+                1 if stability_ok else 0,
                 1 if both_ok else 0,
                 1 if economic_ok else 0,          # economic first
                 1 if classification_ok else 0,
