@@ -140,14 +140,14 @@ def build_rows(candles, funding_rates):
     return rows
 
 
-def verify_causal_contract(candles, rows, report):
+def verify_causal_contract(candles, funding_rates, rows, report):
     """Fail closed on the Phase 2 feature/target alignment contract."""
     timestamps = [str(r["observed_at"]) for r in rows]
     assert timestamps == sorted(timestamps) and len(timestamps) == len(set(timestamps)), "row timestamps are not strictly increasing"
     assert all(set(r["features"]) == set(FEATURES) for r in rows), "feature schema mismatch"
     assert not any("outcome" in name.lower() or "target" in name.lower() or "label" in name.lower() for name in FEATURES), "target/label leaked into feature schema"
 
-    candle_by_ts = {int(c[0]): c for c in candles}
+    funding_times = sorted(funding_rates)
     sample = rows[::max(1, len(rows) // 100)]
     for row in sample:
         ts_ms = int(datetime.fromisoformat(row["observed_at"]).timestamp() * 1000)
@@ -155,7 +155,9 @@ def verify_causal_contract(candles, rows, report):
         window = [{"timestamp": c[0], "open": c[1], "high": c[2], "low": c[3], "close": c[4], "volume": c[5]} for c in candles[idx - LOOKBACK:idx + 1]]
         # Rebuild the exact point-in-time feature vector and require byte-level
         # agreement within floating-point tolerance with the training row.
-        rebuilt = build_model_features(window, context={"market": {"funding_rate": 0.0}})
+        prior = [ts for ts in funding_times if ts <= ts_ms]
+        funding_rate = float(funding_rates[prior[-1]]) if prior else 0.0
+        rebuilt = build_model_features(window, context={"market": {"funding_rate": funding_rate}})
         for key in FEATURES:
             assert np.isclose(float(row["features"][key]), float(rebuilt[key]), rtol=1e-10, atol=1e-12), f"feature mismatch at {row['observed_at']}:{key}"
         # Every supervised target is computed strictly after the observation bar.
@@ -192,7 +194,7 @@ def main():
     brain = PredictiveBrain("phase2_evidence/brain_artifacts")
     report = brain.train(rows, version="phase2-authoritative-production-brain")
 
-    causal_checks = verify_causal_contract(candles, rows, {"metrics": report.metrics})
+    causal_checks = verify_causal_contract(candles, funding, rows, {"metrics": report.metrics})
     result = {
         "status": report.status,
         "reason": report.reason,
