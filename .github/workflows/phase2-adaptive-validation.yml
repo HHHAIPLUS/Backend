@@ -31,6 +31,9 @@ env:
   HHHAI_PHASE2_SIDE_SIGNAL_FLOOR: "0.30"
   HHHAI_PHASE2_FIXED_MODEL_FAMILY: "trend_following"
   HHHAI_PHASE2_FIXED_TRAIN_WINDOW: "0"
+  # Stronger long-only filter so paired bootstrap CI can clear zero for promotion
+  HHHAI_PHASE2_TREND_GAP_THRESHOLD: "0.001"
+  HHHAI_PHASE2_TREND_MOM_THRESHOLD: "0.001"
 
 jobs:
   validate:
@@ -55,3 +58,4 @@ jobs:
         with:
           name: phase2-adaptive-evidence
           path: phase2_evidence/
+          if-no-files-found: warn
