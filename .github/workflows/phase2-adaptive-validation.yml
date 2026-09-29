@@ -28,6 +28,7 @@ env:
   # Trend parameters are registered defaults; they are not used to tune the untouched OOS.
 
 jobs:
+  # Authoritative verification job.
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 90
