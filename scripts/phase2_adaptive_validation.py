@@ -168,12 +168,54 @@ def verify_causal_contract(candles, funding_rates, rows, report):
             assert np.isclose(actual, expected, rtol=1e-12, atol=1e-12), f"target alignment mismatch at {row['observed_at']}:{h}"
 
     split = report.get("metrics", {}).get("split_evidence", {})
-    purge_rows = int(split.get("purge_rows", 0))
-    assert purge_rows >= max(HORIZONS), "chronological partitions are not purged by maximum target horizon"
+    # Validate the actual partition boundaries, not a copied metadata field.
+    # A valid purge means that no row whose forward-looking target can reach
+    # across a boundary is included in the earlier partition.
     oos = split.get("oos", [0, 0])
     cal = split.get("calibration", [0, 0])
     val = split.get("validation", [0, 0])
-    assert int(val[1]) <= int(cal[0]) <= int(oos[0]), "validation/calibration/OOS ordering is invalid"
+    train = split.get("train", [0, 0])
+    bounds = [int(train[1]), int(val[0]), int(val[1]), int(cal[0]), int(cal[1]), int(oos[0]), int(oos[1])]
+    assert bounds[0] <= bounds[1] <= bounds[2] <= bounds[3] <= bounds[4] <= bounds[5] <= bounds[6], "chronological partition ordering is invalid"
+
+    # The report stores half-open row ranges. For each boundary, require at
+    # least MAX(HORIZONS) untouched rows between the end of the earlier
+    # partition and the start of the later partition. This is the causal
+    # condition we actually need; it is independent of the report's
+    # purge_rows metadata.
+    required_purge = max(HORIZONS)
+    boundary_gaps = {
+        "train_validation": bounds[1] - bounds[0],
+        "validation_calibration": bounds[3] - bounds[2],
+        "calibration_oos": bounds[5] - bounds[4],
+    }
+    assert all(gap >= required_purge for gap in boundary_gaps.values()), (
+        f"chronological partitions are not purged by maximum target horizon: {boundary_gaps}, "
+        f"required={required_purge}"
+    )
+
+    # Also verify the actual timestamps at the boundaries. For hourly,
+    # single-symbol Phase 2 data, the maximum forward label horizon is
+    # MAX(HORIZONS) candles; the last supervised row in an earlier partition
+    # must therefore be strictly before the first row of the next partition
+    # by at least that many rows.
+    def _index_for_observed_at(value):
+        return next(i for i, row in enumerate(rows) if str(row["observed_at"]) == str(value))
+
+    split_times = split.get("timestamps", {})
+    train_end_ts = split_times.get("train_end")
+    validation_start_ts = split_times.get("validation_start")
+    validation_end_ts = split_times.get("validation_end")
+    calibration_start_ts = split_times.get("calibration_start")
+    calibration_end_ts = split_times.get("calibration_end")
+    oos_start_ts = split_times.get("oos_start")
+    assert all(v for v in (
+        train_end_ts, validation_start_ts, validation_end_ts,
+        calibration_start_ts, calibration_end_ts, oos_start_ts
+    )), "split timestamp evidence is incomplete"
+    assert _index_for_observed_at(validation_start_ts) - _index_for_observed_at(train_end_ts) >= required_purge, "train/validation target horizon overlap detected"
+    assert _index_for_observed_at(calibration_start_ts) - _index_for_observed_at(validation_end_ts) >= required_purge, "validation/calibration target horizon overlap detected"
+    assert _index_for_observed_at(oos_start_ts) - _index_for_observed_at(calibration_end_ts) >= required_purge, "calibration/OOS target horizon overlap detected"
     return {
         "chronological": True,
         "strict_unique_timestamps": True,
