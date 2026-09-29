@@ -1,5 +1,6 @@
 name: Phase 2 adaptive validation
 # Authoritative production-brain verification; triggered by main-branch changes.
+# Fresh verification trigger: 2026-09-29
 on:
   push:
     branches: [main]
