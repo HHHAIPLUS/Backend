@@ -140,6 +140,49 @@ def build_rows(candles, funding_rates):
     return rows
 
 
+def verify_causal_contract(candles, rows, report):
+    """Fail closed on the Phase 2 feature/target alignment contract."""
+    timestamps = [str(r["observed_at"]) for r in rows]
+    assert timestamps == sorted(timestamps) and len(timestamps) == len(set(timestamps)), "row timestamps are not strictly increasing"
+    assert all(set(r["features"]) == set(FEATURES) for r in rows), "feature schema mismatch"
+    assert not any("outcome" in name.lower() or "target" in name.lower() or "label" in name.lower() for name in FEATURES), "target/label leaked into feature schema"
+
+    candle_by_ts = {int(c[0]): c for c in candles}
+    sample = rows[::max(1, len(rows) // 100)]
+    for row in sample:
+        ts_ms = int(datetime.fromisoformat(row["observed_at"]).timestamp() * 1000)
+        idx = next(i for i, c in enumerate(candles) if int(c[0]) == ts_ms)
+        window = [{"timestamp": c[0], "open": c[1], "high": c[2], "low": c[3], "close": c[4], "volume": c[5]} for c in candles[idx - LOOKBACK:idx + 1]]
+        # Rebuild the exact point-in-time feature vector and require byte-level
+        # agreement within floating-point tolerance with the training row.
+        rebuilt = build_model_features(window, context={"market": {"funding_rate": 0.0}})
+        for key in FEATURES:
+            assert np.isclose(float(row["features"][key]), float(rebuilt[key]), rtol=1e-10, atol=1e-12), f"feature mismatch at {row['observed_at']}:{key}"
+        # Every supervised target is computed strictly after the observation bar.
+        for h in HORIZONS:
+            assert idx + h < len(candles), "target horizon crosses dataset boundary"
+            expected = candles[idx + h][4] / candles[idx][4] - 1.0
+            actual = float(row["outcome_return_by_horizon"][str(h)])
+            assert np.isclose(actual, expected, rtol=1e-12, atol=1e-12), f"target alignment mismatch at {row['observed_at']}:{h}"
+
+    split = report.get("metrics", {}).get("split_evidence", {})
+    purge_rows = int(split.get("purge_rows", 0))
+    assert purge_rows >= max(HORIZONS), "chronological partitions are not purged by maximum target horizon"
+    oos = split.get("oos", [0, 0])
+    cal = split.get("calibration", [0, 0])
+    val = split.get("validation", [0, 0])
+    assert int(val[1]) <= int(cal[0]) <= int(oos[0]), "validation/calibration/OOS ordering is invalid"
+    return {
+        "chronological": True,
+        "strict_unique_timestamps": True,
+        "feature_schema_exact": True,
+        "no_target_or_label_feature_names": True,
+        "point_in_time_feature_rebuild": True,
+        "future_target_alignment": True,
+        "purged_chronological_splits": True,
+        "oos_after_selection_and_calibration": True,
+    }
+
 def main():
     candles, funding = fetch()
     rows = build_rows(candles, funding)
@@ -149,6 +192,7 @@ def main():
     brain = PredictiveBrain("phase2_evidence/brain_artifacts")
     report = brain.train(rows, version="phase2-authoritative-production-brain")
 
+    causal_checks = verify_causal_contract(candles, rows, {"metrics": report.metrics})
     result = {
         "status": report.status,
         "reason": report.reason,
@@ -161,10 +205,7 @@ def main():
         "funding_history": {"available": True, "feature": "funding_rate"},
         "artifact": report.artifact,
         "metrics": report.metrics,
-        "causal_checks": {
-            "chronological": True,
-            "no_future_features": True,
-            "point_in_time_feature_builder": True,
+        "causal_checks": causal_checks | {
             "production_predictive_brain": True,
             "final_oos_selected_or_tuned": False,
         },
