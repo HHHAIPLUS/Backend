@@ -885,7 +885,16 @@ class PredictiveBrain:
                             model.fit(_slice(x, train_bounds), y_train_fold)
                         pred = model.predict(_slice(x, val_bounds))
                         probs = model.predict_proba(_slice(x, val_bounds))
-                        horizon_fold_candidates.append(_metrics(y_val_fold, pred, probs, model.classes_, val_returns, execution_horizon=h))
+                        # Evaluate the core cost-aware trading policy during
+                        # development, not just the raw classifier. The
+                        # expected-return model is trained only on this fold's
+                        # training history and the fixed cost hurdle is not tuned
+                        # on validation.
+                        edge_model = _regressor("xgboost_regressor")
+                        edge_model.fit(_slice(x, train_bounds), train_returns)
+                        expected = np.asarray(edge_model.predict(_slice(x, val_bounds)), dtype=float)
+                        policy_pred = _apply_edge_filter(pred, expected, COST_RATE)
+                        horizon_fold_candidates.append(_metrics(y_val_fold, policy_pred, probs, model.classes_, val_returns, execution_horizon=h))
                     fold_scores.append(max(
                         horizon_fold_candidates,
                         key=lambda z: (
@@ -1029,7 +1038,14 @@ class PredictiveBrain:
                         model.fit(x_train_fold, y_train_fold)
                     pred = model.predict(_slice(x, val_bounds))
                     probs = model.predict_proba(_slice(x, val_bounds))
-                    fold_scores.append(_metrics(y_val_fold, pred, probs, model.classes_, _slice(returns, val_bounds), execution_horizon=chosen_horizon))
+                    # Score the same cost-aware decision policy used by the
+                    # production architecture: directional signal plus an
+                    # independently trained expected-return cost hurdle.
+                    edge_model = _regressor("xgboost_regressor")
+                    edge_model.fit(_slice(x, train_bounds), r_train_fold)
+                    expected = np.asarray(edge_model.predict(_slice(x, val_bounds)), dtype=float)
+                    policy_pred = _apply_edge_filter(pred, expected, COST_RATE)
+                    fold_scores.append(_metrics(y_val_fold, policy_pred, probs, model.classes_, _slice(returns, val_bounds), execution_horizon=chosen_horizon))
                 score = aggregate_scores(fold_scores)
                 key = f"{family}@window={train_window}"
                 validation_scores[key] = score
