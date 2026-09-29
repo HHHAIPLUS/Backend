@@ -14,7 +14,7 @@ on:
 env:
   # Frozen Phase 2 configuration (completion-gate evidence).
   # COST_RATE: Bitget USDT-M ~0.02% maker + 0.06% taker + modest slippage ≈ 0.08%.
-  # Family/horizon/window frozen from pre-OOS validation research; untouched OOS is not retuned.
+  # Family, horizon and train window are selected only from pre-OOS chronological validation.
   PHASE2_PROVIDER: bitget
   PHASE2_SYMBOL: BTCUSDT
   PHASE2_INTERVAL: 1h
@@ -24,9 +24,6 @@ env:
   HHHAI_PHASE2_COST_RATE: "0.0008"
   HHHAI_BRAIN_LABEL_THRESHOLD: "0.0010"
   HHHAI_PHASE2_SIDE_SIGNAL_FLOOR: "0.30"
-  HHHAI_PHASE2_FIXED_HORIZON: "6"
-  HHHAI_PHASE2_FIXED_MODEL_FAMILY: "trend_following"
-  HHHAI_PHASE2_FIXED_TRAIN_WINDOW: "0"
   HHHAI_PHASE2_TREND_GAP_THRESHOLD: "0.001"
   HHHAI_PHASE2_TREND_MOM_THRESHOLD: "0.001"
 
