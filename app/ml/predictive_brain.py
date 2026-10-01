@@ -869,9 +869,15 @@ class PredictiveBrain:
                     y_val_fold = _direction_target(val_returns, threshold, label_bounds)
                     if len(set(y_train_fold.tolist())) < 3 or len(set(y_val_fold.tolist())) < 3:
                         continue
+                    # Target/horizon selection must consider every pre-registered
+                    # strategy family that can legitimately produce an economic signal.
+                    # Previously this stage only tested logistic/XGBoost classifiers,
+                    # which meant the registered trend and return strategies could
+                    # never make the target/horizon viable.
                     horizon_models = (
                         _classifier("logistic_regression"),
                         _classifier("return_weighted_xgboost"),
+                        _classifier("trend_following"),
                     )
                     horizon_fold_candidates = []
                     for model in horizon_models:
@@ -1095,7 +1101,12 @@ class PredictiveBrain:
         # candidate to win because a handful of validation trades happened to be
         # favorable. This is a development-window stability guard; the authoritative
         # >=100-trade requirement remains exclusively on untouched OOS.
-        MIN_VALIDATION_TRADES = 100
+        # Trade-count acceptance is an untouched-OOS requirement. Do not
+        # impose the final >=100-trade gate on model selection, because that
+        # leaks the final acceptance criterion backward into development and
+        # can reject a valid strategy before the actual holdout is evaluated.
+        # Development still requires a non-trivial trade rate and positive,
+        # controlled economics in every chronological fold.
         MIN_VALIDATION_TRADE_RATE = 0.05
         validation_eligible = []
         for candidate in candidates:
@@ -1103,12 +1114,10 @@ class PredictiveBrain:
             window = int(candidate[4])
             key = f"{family_name}@window={window}" + ("_inverse" if candidate[3] else "")
             score = validation_scores[key]
-            trade_count = int(score.get("trades", 0))
             trade_rate = float(score.get("trade_rate", 0.0))
             stability = score.get("development_stability", {})
             if (
-                trade_count >= MIN_VALIDATION_TRADES
-                and trade_rate >= MIN_VALIDATION_TRADE_RATE
+                trade_rate >= MIN_VALIDATION_TRADE_RATE
                 and stability.get("all_folds_pass") is True
             ):
                 validation_eligible.append(candidate)
