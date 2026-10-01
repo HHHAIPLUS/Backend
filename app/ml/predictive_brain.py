@@ -809,7 +809,7 @@ class PredictiveBrain:
             if val_bounds[1] - val_bounds[0] >= 100
         ]
         if len(selection_folds) < 2:
-            return BrainReport("REJECTED", version, {}, "Multiple chronological validation folds are required for model selection.")
+            return BrainReport("REJECTED", version, {"split_evidence": splits}, "Multiple chronological validation folds are required for model selection.")
 
         def aggregate_scores(scores):
             if not scores:
@@ -1007,7 +1007,7 @@ class PredictiveBrain:
             }
 
         if any(len(set(part.tolist())) < 3 for part in (y_train, y_val, y_cal, y_oos)):
-            return BrainReport("REJECTED", version, {"chosen_horizon": chosen_horizon, "chosen_threshold": chosen_threshold},
+            return BrainReport("REJECTED", version, {"chosen_horizon": chosen_horizon, "chosen_threshold": chosen_threshold, "split_evidence": splits},
                                "Every chronological partition must contain long, flat and short classes.")
 
         # Model-family and direction selection are validation-only across the
@@ -1135,7 +1135,7 @@ class PredictiveBrain:
             return BrainReport(
                 "REJECTED",
                 version,
-                {"validation_families": validation_scores},
+                {"validation_families": validation_scores, "split_evidence": splits},
                 "No candidate cleared the pre-OOS trade-coverage and per-fold economic-stability guard.",
             )
 
@@ -1180,7 +1180,7 @@ class PredictiveBrain:
                                    "Phase 2 fixed model family must be a registered directional classifier or return forecaster.")
             fixed = [candidate for candidate in candidates if candidate[2] == fixed_family and candidate[4] == fixed_window]
             if not fixed:
-                return BrainReport("REJECTED", version, {"validation_families": validation_scores},
+                return BrainReport("REJECTED", version, {"validation_families": validation_scores, "split_evidence": splits},
                                    f"Requested fixed model family/window unavailable: {fixed_family}@{fixed_window}")
             best = fixed[0]
         else:
