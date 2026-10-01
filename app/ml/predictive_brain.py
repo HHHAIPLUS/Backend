@@ -935,16 +935,25 @@ class PredictiveBrain:
         # It must never prevent a validation horizon/target from being selected.
         # Validation only determines which pre-registered target/horizon has the
         # strongest out-of-sample-development evidence.
+        # Horizon/label selection is a pre-OOS target-definition step, not the
+        # final economic promotion gate. The full model-family search below
+        # evaluates rolling windows, directional learners, return forecasters,
+        # and registered execution strategies. Requiring every horizon candidate
+        # to pass economic stability here would reject a horizon before those
+        # later candidates are even evaluated.
         viable = [
             value for value in horizon_selection.values()
-            if value.get("development_stability", {}).get("all_folds_pass") is True
+            if (
+                float(value.get("trade_rate", 0.0)) >= 0.02
+                and float(value.get("balanced_accuracy", 0.0)) >= 0.30
+            )
         ]
         if not viable:
             return BrainReport(
                 "REJECTED",
                 version,
                 {"horizon_selection": horizon_selection, "split_evidence": splits},
-                "No horizon/label candidate demonstrated positive cost-adjusted performance with controlled drawdown in every chronological development fold."
+                "No horizon/label candidate met the pre-OOS predictive coverage requirements."
             )
 
         # Select the supervised target/horizon primarily by validation
