@@ -167,14 +167,17 @@ def verify_causal_contract(candles, funding_rates, rows, report):
             actual = float(row["outcome_return_by_horizon"][str(h)])
             assert np.isclose(actual, expected, rtol=1e-12, atol=1e-12), f"target alignment mismatch at {row['observed_at']}:{h}"
 
-    split = report.get("metrics", {}).get("split_evidence", {})
+    split = report.get("metrics", {}).get("split_evidence")
+    assert isinstance(split, dict) and all(k in split for k in ("train", "validation", "calibration", "oos")), (
+        "split evidence is missing from the training report"
+    )
     # Validate the actual partition boundaries, not a copied metadata field.
     # A valid purge means that no row whose forward-looking target can reach
     # across a boundary is included in the earlier partition.
-    oos = split.get("oos", [0, 0])
-    cal = split.get("calibration", [0, 0])
-    val = split.get("validation", [0, 0])
-    train = split.get("train", [0, 0])
+    oos = split["oos"]
+    cal = split["calibration"]
+    val = split["validation"]
+    train = split["train"]
     bounds = [int(train[1]), int(val[0]), int(val[1]), int(cal[0]), int(cal[1]), int(oos[0]), int(oos[1])]
     assert bounds[0] <= bounds[1] <= bounds[2] <= bounds[3] <= bounds[4] <= bounds[5] <= bounds[6], "chronological partition ordering is invalid"
 
